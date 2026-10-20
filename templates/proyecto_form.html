@@ -1,0 +1,38 @@
+<!-- templates/proyecto_form.html -->
+{% extends "base.html" %}
+
+{% macro campo(name, label, type='text', req=False) %}
+<label class="lbl">{{ label }}<input class="field" type="{{ type }}" name="{{ name }}" value="{{ p[name] or '' }}" {{ 'required' if req }}></label>
+{% endmacro %}
+
+{% block content %}
+<section class="hero">
+    <h1>Editar proyecto</h1>
+    <p>{{ p.nombre }} · {{ p.cliente.nombre_comercial }}</p>
+</section>
+
+<form method="post" class="stack" style="max-width: 820px; margin: 0 auto;">
+    <div class="luxury-card">
+        <div class="grid-2">
+            {{ campo('nombre', 'Nombre del proyecto', req=True) }}
+            <label class="lbl">Estado
+                <select class="field" name="estado">{% for e in ['Desarrollo','Activo','Mantenido','Suspendido'] %}<option {{ 'selected' if p.estado == e }}>{{ e }}</option>{% endfor %}</select>
+            </label>
+            {{ campo('repo_url', 'URL del repositorio (GitHub)', 'url') }}
+            {{ campo('rama_produccion', 'Rama de producción') }}
+            {{ campo('carpeta_local', 'Carpeta del proyecto (ruta)') }}
+            {{ campo('stack', 'Stack tecnológico') }}
+            {{ campo('dominio_registrador', 'Dominio / registrador') }}
+            {{ campo('frontend_plataforma', 'Plataforma de frontend') }}
+            {{ campo('backend_plataforma', 'Plataforma de backend') }}
+            {{ campo('bd_storage', 'Base de datos y storage') }}
+            {{ campo('ia_cuentas', 'Cuentas de IA (nombre, no la llave)') }}
+            {{ campo('boveda_ref', 'Bóveda de credenciales (carpeta o enlace en tu gestor)') }}
+        </div>
+    </div>
+    <div class="modal-actions">
+        <a class="btn" href="/clientes/{{ p.cliente_id }}">Cancelar</a>
+        <button class="btn btn-primary" type="submit">Guardar proyecto</button>
+    </div>
+</form>
+{% endblock %}

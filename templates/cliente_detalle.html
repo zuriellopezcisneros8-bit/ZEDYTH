@@ -1,0 +1,140 @@
+<!-- templates/cliente_detalle.html -->
+{% extends "base.html" %}
+
+{% macro entrada(name, label, type='text', req=False, valor='') %}
+<label class="lbl">{{ label }}<input class="field" type="{{ type }}" name="{{ name }}" value="{{ valor }}" {{ 'required' if req }}></label>
+{% endmacro %}
+
+{% block content %}
+{% set s = c.suscripcion %}
+<section class="hero">
+    <h1>{{ c.nombre_comercial }}</h1>
+    <p>{{ c.razon_social or 'Sin razón social registrada' }}</p>
+    <div class="toolbar"><a class="btn" href="/clientes">Volver</a><a class="btn btn-primary" href="/clientes/{{ c.id }}/editar">Editar datos</a></div>
+</section>
+
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="luxury-card"><h3 class="stat-label">Tarifa mensual</h3><div class="stat-value">{{ resumen.tarifa }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Costo de servicios</h3><div class="stat-value">{{ resumen.costos }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label"><span class="dot"></span> Ganancia mensual</h3><div class="stat-value">{{ resumen.ganancia }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Total pagado</h3><div class="stat-value">{{ resumen.pagado }}</div></div>
+</div>
+
+<div class="grid-2" style="gap: 20px;">
+    <div class="luxury-card">
+        <h3 class="stat-label">Fiscal y contacto</h3>
+        <dl class="kv">
+            <dt>RFC</dt><dd>{{ c.rfc or '—' }}</dd>
+            <dt>Dirección fiscal</dt><dd>{{ c.direccion_fiscal or '—' }}</dd>
+            <dt>Contacto</dt><dd>{{ c.contacto_nombre or '—' }}</dd>
+            <dt>Correo</dt><dd>{{ c.contacto }}</dd>
+            <dt>Teléfono</dt><dd>{{ c.telefono or '—' }}</dd>
+        </dl>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Plan y cobro</h3>
+        <dl class="kv">
+            <dt>Plan</dt><dd>{{ c.membresia_actual }}</dd>
+            <dt>Estado de cobro</dt><dd>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro == 'Atrasado' else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</dd>
+            <dt>Periodicidad</dt><dd>{% if s %}{{ s.periodicidad }} · {{ '${:,.0f}'.format(s.monto_periodo) }} por periodo{% else %}—{% endif %}</dd>
+            <dt>Fecha de corte</dt><dd>{{ s.fecha_corte if s and s.fecha_corte else '—' }}</dd>
+            <dt>Próximo pago</dt><dd>{{ s.proxima_fecha_pago if s and s.proxima_fecha_pago else '—' }}</dd>
+        </dl>
+        {% if s %}<form method="post" action="/clientes/{{ c.id }}/cobrar" style="margin-top:18px;"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro del periodo</button></form>{% endif %}
+    </div>
+</div>
+
+<div class="section-title">Proyectos y servicios</div>
+<div class="stack">
+    {% for p in c.proyectos %}
+    <div class="luxury-card">
+        <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            <strong style="font-size:16px; font-weight:500;">{{ p.nombre }} <a class="mono" href="/proyectos/{{ p.id }}/editar">editar</a></strong>
+            <span class="badge {{ 'badge-green' if p.estado in ['Activo','Mantenido'] else 'badge-amber' if p.estado == 'Desarrollo' else 'badge-red' }}">{{ p.estado }}</span>
+        </div>
+        <dl class="kv">
+            <dt>Repositorio</dt><dd>{{ p.repo_url or '—' }}{% if p.rama_produccion %} <span class="mono">({{ p.rama_produccion }})</span>{% endif %}</dd>
+            <dt>Carpeta</dt><dd class="mono">{{ p.carpeta_local or '—' }}</dd>
+            <dt>Stack</dt><dd>{{ p.stack or '—' }}</dd>
+            <dt>Dominio</dt><dd>{{ p.dominio_registrador or '—' }}</dd>
+            <dt>Frontend / Backend</dt><dd>{{ p.frontend_plataforma or '—' }} / {{ p.backend_plataforma or '—' }}</dd>
+            <dt>BD y storage</dt><dd>{{ p.bd_storage or '—' }}</dd>
+            <dt>Cuentas de IA</dt><dd>{{ p.ia_cuentas or '—' }}</dd>
+        </dl>
+        <div class="table-wrap" style="margin-top:20px;">
+            <table class="table-luxury">
+                <thead><tr><th>Proveedor</th><th>Concepto</th><th>Periodo</th><th>Monto</th><th>Próximo pago</th><th></th></tr></thead>
+                <tbody>
+                    {% for k in p.costos %}
+                    <tr><td>{{ k.proveedor }}</td><td style="color:var(--text-muted);">{{ k.concepto or '' }}</td><td>{{ k.periodicidad or 'Mensual' }}</td><td>{{ '${:,.0f}'.format(k.monto_periodo or k.monto_mensual or 0) }}</td><td class="mono">{{ k.proxima_fecha_pago or '—' }}</td><td style="text-align:right;">{% if k.proxima_fecha_pago %}<form method="post" action="/costos/{{ k.id }}/pagar"><button class="btn btn-sm" type="submit">Marcar pagado</button></form>{% endif %}</td></tr>
+                    {% else %}
+                    <tr><td colspan="6" style="color:var(--text-muted);">Sin costos de servicios registrados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <details style="margin-top:16px;">
+            <summary class="btn btn-sm">+ Agregar costo de servicio</summary>
+            <form method="post" action="/proyectos/{{ p.id }}/costo" class="grid-2" style="margin-top:16px;">
+                {{ entrada('proveedor', 'Proveedor (Render, Vercel…)', req=True) }}
+                {{ entrada('concepto', 'Concepto') }}
+                {{ entrada('monto', 'Monto por periodo (MXN)', 'number', True) }}
+                <label class="lbl">Periodicidad<select class="field" name="periodicidad"><option>Mensual</option><option>Trimestral</option><option>Anual</option></select></label>
+                {{ entrada('proxima_fecha_pago', 'Próximo pago', 'date') }}
+                <div><button class="btn btn-primary" type="submit">Guardar costo</button></div>
+            </form>
+        </details>
+    </div>
+    {% else %}
+    <div class="luxury-card" style="color:var(--text-muted);">Este cliente aún no tiene proyectos.</div>
+    {% endfor %}
+
+    <details class="luxury-card">
+        <summary>+ Nuevo proyecto</summary>
+        <form method="post" action="/clientes/{{ c.id }}/proyecto" class="grid-2">
+            {{ entrada('nombre', 'Nombre del proyecto', req=True) }}
+            <label class="lbl">Estado
+                <select class="field" name="estado">{% for e in ['Desarrollo','Activo','Mantenido','Suspendido'] %}<option>{{ e }}</option>{% endfor %}</select>
+            </label>
+            {{ entrada('repo_url', 'URL del repositorio', 'url') }}
+            {{ entrada('rama_produccion', 'Rama de producción', valor='main') }}
+            {{ entrada('carpeta_local', 'Carpeta del proyecto (ruta)') }}
+            {{ entrada('stack', 'Stack tecnológico') }}
+            {{ entrada('dominio_registrador', 'Dominio / registrador') }}
+            {{ entrada('frontend_plataforma', 'Plataforma de frontend') }}
+            {{ entrada('backend_plataforma', 'Plataforma de backend') }}
+            {{ entrada('bd_storage', 'Base de datos y storage') }}
+            {{ entrada('ia_cuentas', 'Cuentas de IA (nombre, no la llave)') }}
+            <div><button class="btn btn-primary" type="submit">Guardar proyecto</button></div>
+        </form>
+    </details>
+</div>
+
+<div class="section-title">Pagos del cliente</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Monto</th><th>Estado</th></tr></thead>
+            <tbody>
+                {% for pg in pagos %}
+                <tr><td class="mono">{{ pg.fecha }}</td><td>{{ pg.concepto or '—' }}</td><td style="color:var(--text-muted);">{{ pg.metodo or '—' }}</td><td>{{ '${:,.0f}'.format(pg.monto) }}</td>
+                    <td><span class="badge {{ 'badge-green' if pg.estado == 'Pagado' else 'badge-amber' }}">{{ pg.estado }}</span></td></tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-muted);">Aún no hay pagos registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<details class="luxury-card" style="margin-top:16px;">
+    <summary>+ Registrar pago</summary>
+    <form method="post" action="/clientes/{{ c.id }}/pago" class="grid-2">
+        {{ entrada('monto', 'Monto (MXN)', 'number', True) }}
+        {{ entrada('fecha', 'Fecha', 'date', valor=hoy) }}
+        {{ entrada('concepto', 'Concepto (ej. Mensualidad octubre)') }}
+        {{ entrada('metodo', 'Método (transferencia, efectivo…)') }}
+        <label class="lbl">Estado<select class="field" name="estado"><option>Pagado</option><option>Pendiente</option></select></label>
+        <div><button class="btn btn-primary" type="submit">Guardar pago</button></div>
+    </form>
+</details>
+{% endblock %}

@@ -1,0 +1,91 @@
+<!-- templates/admin_index.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Control Supremo</h1>
+    <p>Resumen general de operaciones de ZEDYTH.</p>
+    <button class="btn btn-primary" onclick="toggleModal('modalNuevoCliente')">+ Nuevo Cliente</button>
+</section>
+
+<div class="stats-grid">
+    <div class="luxury-card">
+        <h3 class="stat-label">Clientes Activos</h3>
+        <div class="stat-value">{{ stats.clientes_activos }}</div>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">En Desarrollo</h3>
+        <div class="stat-value">{{ stats.proyectos_desarrollo }}</div>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label"><span class="dot"></span> Ingresos Mensuales</h3>
+        <div class="stat-value">{{ stats.ingresos_mensuales }}</div>
+    </div>
+</div>
+
+<div class="luxury-card" style="padding: 0; overflow: hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Razón Social</th>
+                    <th>Contacto</th>
+                    <th>Plan Activo</th>
+                    <th style="text-align: right;">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cliente in clientes %}
+                <tr>
+                    <td class="mono">#{{ cliente.id }}</td>
+                    <td style="font-weight: 500;">{{ cliente.nombre_comercial }}</td>
+                    <td style="color: var(--text-muted);">{{ cliente.contacto }}</td>
+                    <td>
+                        {% if "Inclusive" in cliente.membresia_actual or "Core" in cliente.membresia_actual %}
+                            <span class="badge badge-hi">{{ cliente.membresia_actual }}</span>
+                        {% else %}
+                            <span class="badge">{{ cliente.membresia_actual }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        <a class="btn btn-sm" href="/clientes/{{ cliente.id }}">Gestionar</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 48px; color: var(--text-muted);">Aún no hay clientes. Usa «Nuevo Cliente» para registrar el primero.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal de Registro -->
+<div id="modalNuevoCliente" class="modal-overlay">
+    <div class="modal-content">
+        <h2>Nuevo Cliente ZEDYTH</h2>
+        <form action="/nuevo_cliente" method="POST">
+            <input class="field" type="text" name="nombre_comercial" placeholder="Nombre Comercial" required>
+            <input class="field" type="text" name="contacto" placeholder="Correo electrónico" required>
+            <select class="field" name="membresia">
+                {% for plan in planes %}
+                <option value="{{ plan.nombre }}">{{ plan.nombre }}</option>
+                {% endfor %}
+            </select>
+            <div class="modal-actions">
+                <button type="button" class="btn" onclick="toggleModal('modalNuevoCliente')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Registrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function toggleModal(id) {
+        const el = document.getElementById(id);
+        el.style.display = (el.style.display === 'flex') ? 'none' : 'flex';
+    }
+</script>
+{% endblock %}

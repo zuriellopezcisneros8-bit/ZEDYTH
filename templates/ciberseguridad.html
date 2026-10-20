@@ -1,0 +1,38 @@
+<!-- templates/ciberseguridad.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Ciberseguridad</h1>
+    <p>Estado de seguridad de cada proyecto: respaldos, vencimientos, checklist e incidentes.</p>
+</section>
+
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="luxury-card"><h3 class="stat-label">Vencimientos próximos</h3><div class="stat-value">{{ stats.vencimientos }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Sin respaldo reciente</h3><div class="stat-value">{{ stats.sin_respaldo }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Incidentes abiertos</h3><div class="stat-value">{{ stats.incidentes }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label"><span class="dot"></span> Cumplimiento del checklist</h3><div class="stat-value">{{ stats.cumplimiento }}</div></div>
+</div>
+
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead><tr><th>Proyecto</th><th>Último respaldo</th><th>Checklist</th><th>Próximo vencimiento</th><th>Incidentes</th><th></th></tr></thead>
+            <tbody>
+                {% for f in filas %}
+                <tr>
+                    <td><div style="font-weight:500;">{{ f.p.nombre }}</div><a class="mono" href="/clientes/{{ f.p.cliente.id }}">{{ f.p.cliente.nombre_comercial }}</a></td>
+                    <td>{% if f.ult %}<span class="badge {{ 'badge-red' if f.dias > dias_respaldo else 'badge-green' }}">hace {{ f.dias }} d</span>{% else %}<span class="badge badge-amber">Sin respaldos</span>{% endif %}</td>
+                    <td><span class="badge {{ 'badge-green' if f.hechos == total_items else 'badge-amber' if f.hechos else '' }}">{{ f.hechos }}/{{ total_items }}</span></td>
+                    <td>{% if f.prox %}<span style="color:var(--text-muted);">{{ f.prox.tipo }} {{ f.prox.nombre }}</span><div class="mono">{{ f.prox.fecha }}</div>{% else %}—{% endif %}</td>
+                    <td>{% if f.abiertos %}<span class="badge badge-red">{{ f.abiertos }} abierto{{ 's' if f.abiertos > 1 }}</span>{% else %}—{% endif %}</td>
+                    <td style="text-align:right;"><a class="btn btn-sm" href="/proyectos/{{ f.p.id }}/seguridad">Abrir</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center; padding:48px; color:var(--text-muted);">Aún no hay proyectos. Agrégalos desde la ficha de un cliente.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

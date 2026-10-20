@@ -1,0 +1,37 @@
+<!-- templates/membresias.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Planes ZEDYTH</h1>
+    <p>Administración de membresías y suscripciones.</p>
+</section>
+
+<div class="plans-grid">
+    {% for plan in planes %}
+    <!-- El borde y el botón toman sus colores de app.py (blanco para el plan destacado) -->
+    <div class="luxury-card plan-card" style="border-color: {{ plan.color }};">
+
+        <div class="plan-head">
+            <i class="ph-fill ph-hexagon" style="color: var(--text-muted);"></i>
+            <h3>{{ plan.nombre }}</h3>
+            {% if plan.color == 'var(--accent-purple)' %}<span class="plan-tag">Recomendado</span>{% endif %}
+        </div>
+
+        <div class="plan-price">{{ plan.precio }}{% if plan.precio.startswith('$') %}<small>/mes</small>{% endif %}</div>
+        <div class="plan-desc">{{ plan.desc }}</div>
+
+        <ul class="plan-list">
+            {% for item in plan.incluye %}
+            <li><i class="ph-fill ph-check-circle"></i> {{ item }}</li>
+            {% endfor %}
+        </ul>
+
+        <button class="plan-btn" style="background: {{ plan.btn }}; color: {% if plan.btn == 'var(--card-bg)' %}var(--text-primary){% else %}var(--bg-base){% endif %};">
+            Actualizar Plan
+        </button>
+
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

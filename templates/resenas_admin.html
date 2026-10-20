@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<style>.rz{max-width:980px;margin:0 auto;display:grid;gap:22px}.rz .bx{border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:22px}.rz h2{margin:0 0 14px;font-size:20px}
+.rz input,.rz textarea{width:100%;padding:10px 14px;margin-bottom:8px;background:#000;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#fff;font:inherit}
+.rz .row{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;border-top:1px solid rgba(255,255,255,.08);padding:12px 0}
+.rz button{padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#fff;cursor:pointer;font:inherit}.rz button.w{background:#fff;color:#000}.rz small{color:#888}</style>
+<div class="rz">
+ <div class="bx"><h2>Reseñas pendientes ({{ pendientes|length }})</h2>
+  {% for r in pendientes %}<div class="row"><div><b>{{ r.nombre }}</b> · {{ '★' * r.calificacion }} <small>sobre «{{ r.proyecto.nombre }}»</small><br>{{ r.comentario }}</div>
+   <form method="POST" style="display:flex;gap:6px"><button class="w" formaction="{{ url_for('resena_moderar', rid=r.id, accion='aprobar') }}">Aprobar</button><button formaction="{{ url_for('resena_moderar', rid=r.id, accion='borrar') }}">Borrar</button></form></div>
+  {% else %}<small>No hay reseñas por revisar.</small>{% endfor %}</div>
+ <div class="bx"><h2>Proyectos públicos</h2>
+  {% for p in proyectos %}<div class="row"><div><b>{{ p.nombre }}</b> <small>{{ p.categoria }} · {{ p.resenas|selectattr('aprobada')|list|length }} reseñas aprobadas</small></div>
+   <form method="POST" action="{{ url_for('proyecto_publico_toggle', pid=p.id) }}"><button>{{ 'Ocultar' if p.visible else 'Mostrar' }}</button></form></div>{% else %}<small>Aún no hay proyectos.</small>{% endfor %}
+  <form method="POST" style="margin-top:16px"><input name="nombre" placeholder="Nombre del proyecto" required><input name="categoria" placeholder="Categoría (Punto de venta, Hotel, E-commerce…)" required>
+   <textarea name="descripcion" placeholder="Descripción pública (sin datos privados del cliente)" required></textarea><input name="tecnologias" placeholder="Tecnologías (opcional)"><button class="w">Agregar proyecto</button></form></div>
+</div>
+{% endblock %}

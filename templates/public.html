@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e0d0c">
+<meta name="description" content="ZEDYTH Technologies: software a la medida, ciberseguridad e informática para cualquier tipo de negocio.">
+<title>ZEDYTH Technologies | Software, ciberseguridad e informática</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050505;--tx:#fff;--mu:#9a9a9a;--gl:rgba(255,255,255,.04);--bd:rgba(255,255,255,.1);--ok:#4ade80;--st:#f5c542}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg) radial-gradient(circle at 50% 0,rgba(60,60,60,.35),transparent 55%) no-repeat;color:var(--tx);line-height:1.6;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+nav{position:sticky;top:0;z-index:20;background:rgba(5,5,5,.8);backdrop-filter:blur(14px);border-bottom:1px solid var(--bd)}
+nav .wrap{display:flex;align-items:center;gap:24px;height:72px}
+nav img{height:42px;width:auto;display:block}
+nav .links{display:flex;gap:22px;margin-left:auto;font-size:14px;color:var(--mu)}
+nav .links a:hover{color:#fff}
+.btn{display:inline-block;padding:12px 22px;border-radius:999px;font-weight:600;font-size:14px;border:1px solid var(--bd);transition:.2s;cursor:pointer;font-family:inherit;color:#fff;background:transparent}
+.btn.w{background:#fff;color:#000;border-color:#fff}.btn:hover{transform:translateY(-1px);opacity:.9}
+section{padding:80px 0;scroll-margin-top:72px}
+h1{text-wrap:balance;font-size:clamp(32px,5.4vw,56px);line-height:1.08;margin:0 0 20px;letter-spacing:-1.5px}
+h2{font-size:clamp(26px,4vw,40px);margin:0 0 12px;letter-spacing:-.8px;text-align:center}
+.sub{color:var(--mu);text-align:center;max-width:680px;margin:0 auto 44px}
+.hero{text-align:center;padding:100px 0 70px}.hero .sub{font-size:18px}
+.hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:36px}
+.chips span{border:1px solid var(--bd);border-radius:999px;padding:6px 14px;font-size:13px;color:var(--mu)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}
+.card{background:var(--gl);border:1px solid var(--bd);border-radius:18px;padding:28px;backdrop-filter:blur(10px)}
+.card h3{margin:0 0 8px;font-size:20px}.card p{color:var(--mu);margin:0;font-size:15px}
+.card ul{list-style:none;padding:0;margin:16px 0 0;font-size:14px;color:#ccc}
+.card li{padding:5px 0 5px 22px;position:relative}.card li:before{content:"✓";position:absolute;left:0;color:var(--ok)}
+.price{font-size:40px;font-weight:700;margin:10px 0}.price small{font-size:14px;color:var(--mu);font-weight:400}
+.card.hl{border-color:rgba(255,255,255,.4);box-shadow:0 0 40px rgba(255,255,255,.06)}
+.tag{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--mu)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.no li:before{content:"✕";color:#f87171}
+.note{text-align:center;color:var(--mu);font-size:14px;max-width:760px;margin:26px auto 0}
+.stars{color:var(--st);letter-spacing:2px}.rev{border-top:1px solid var(--bd);margin-top:14px;padding-top:12px;font-size:14px}
+.rev b{font-weight:600}.rev p{margin:2px 0 8px;color:#bbb}
+details{margin-top:14px}summary{cursor:pointer;font-size:14px;font-weight:600}
+form.rf{display:grid;gap:10px;margin-top:12px}
+.rf input[type=text],.rf textarea{width:100%;padding:11px 14px;background:rgba(0,0,0,.5);border:1px solid var(--bd);border-radius:10px;color:#fff;font:inherit;font-size:14px}
+.rf textarea{min-height:80px;resize:vertical}.hp{position:absolute;left:-9999px}
+.rate{display:inline-flex;flex-direction:row-reverse;justify-self:start}
+.rate input{position:absolute;opacity:0;width:1px;height:1px}
+.rate label{font-size:28px;color:#444;cursor:pointer;padding:0 2px}
+.rate input:checked~label,.rate label:hover,.rate label:hover~label{color:var(--st)}
+.ok{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.4);color:var(--ok);padding:12px 18px;border-radius:12px;text-align:center;margin-bottom:24px}
+footer{border-top:1px solid var(--bd);padding:36px 0;text-align:center;color:var(--mu);font-size:13px}
+
+/* NUEVA SECCIÓN DE MENÚ MÓVIL RESPONSIVO */
+.menu-toggle { display: none; cursor: pointer; font-size: 24px; color: var(--mu); margin-left: auto; }
+@media(max-width:720px) {
+    .menu-toggle { display: block; }
+    nav .links {
+        display: none; 
+        position: absolute; 
+        top: 72px; 
+        left: 0; 
+        width: 100%; 
+        background: rgba(5,5,5,0.95); 
+        flex-direction: column; 
+        padding: 20px; 
+        border-bottom: 1px solid var(--bd);
+    }
+    nav .links.active { display: flex; }
+    nav .btn { margin-left: 0; margin-top: 15px; }
+    section { padding: 56px 0; }
+    .hero { padding: 64px 0 48px; }
+}
+{% raw %}
+h1,h2,.price{font-family:'Bricolage Grotesque',Inter,sans-serif}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:22px}
+.tabs button{font:inherit;font-size:14px;font-weight:600;color:#fff;background:transparent;border:1px solid var(--bd);border-radius:999px;padding:10px 18px;cursor:pointer}
+.tabs button[aria-selected=true]{background:#fff;color:#000;border-color:#fff}
+.cmp{--x:50%;position:relative;border:1px solid var(--bd);border-radius:22px;overflow:hidden;min-height:400px;background:#0d0d0d}
+.pane{position:absolute;inset:0;padding:38px;display:flex;align-items:center}
+.pane .in{width:44%}
+.pane.on{background:#f2f2f2;color:#050505;clip-path:inset(0 0 0 var(--x))}
+.pane.on .in{margin-left:auto}
+.pane h3{font-family:'Bricolage Grotesque',Inter,sans-serif;font-size:30px;margin:4px 0 0;letter-spacing:-.5px}
+.pane.off{filter:grayscale(1);color:#bbb}.pane small{font-size:13px;opacity:.7}
+.cmp ul{list-style:none;padding:0;margin:16px 0 0}.cmp li{padding:7px 0 7px 26px;position:relative;font-size:15px}
+.cmp li:before{content:"✕";position:absolute;left:0;color:#f87171}.pane.on li:before{content:"✓";color:#15803d;font-weight:700}
+.cmp:after{content:"";position:absolute;top:0;bottom:0;left:var(--x);width:2px;background:#fff;pointer-events:none}
+.knob{position:absolute;top:50%;left:var(--x);transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:#fff;color:#000;display:grid;place-items:center;z-index:2;pointer-events:none;font-weight:700;box-shadow:0 0 0 8px rgba(255,255,255,.15)}
+#rng{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;z-index:3;margin:0}
+.cmp:focus-within .knob{outline:2px solid #fff;outline-offset:4px}
+.pitch{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:20px}.pitch p{margin:0;font-size:18px;max-width:640px}
+.bars{margin-top:6px}.row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin-bottom:16px;font-size:14px}
+.row i{grid-column:1/-1;height:10px;border-radius:9px;background:rgba(255,255,255,.08);position:relative;overflow:hidden}
+.row i:after{content:"";position:absolute;inset:0;width:0;background:#777;border-radius:9px;transition:width 1.2s cubic-bezier(.2,.8,.2,1);transition-delay:calc(var(--i)*.18s)}
+.bars.in .row i:after{width:var(--w)}.row.top i:after{background:var(--ok)}.row.top,.row.top b{color:var(--ok)}
+.wc{border-radius:20px;padding:22px;background:linear-gradient(145deg,#222,#090909);border:1px solid rgba(255,255,255,.2);margin:6px 0 16px}
+.wc header{display:flex;justify-content:space-between;font-weight:600}
+.sts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0 8px}
+.sts i{aspect-ratio:1;border-radius:50%;border:2px dashed rgba(255,255,255,.25);display:grid;place-items:center;font-style:normal;color:#000;transition:.25s}
+.sts i.f{background:var(--ok);border:2px solid var(--ok)}
+.wal p{color:var(--mu);font-size:14px;margin:0 0 14px;min-height:42px}
+.calc label{display:grid;gap:6px;font-size:14px;color:var(--mu);margin-bottom:14px}
+.calc input{width:100%;padding:11px 14px;background:rgba(0,0,0,.5);border:1px solid var(--bd);border-radius:10px;color:#fff;font:inherit}
+.res .bar{height:14px;border-radius:9px;background:rgba(255,255,255,.08);margin:6px 0 16px;overflow:hidden}.res .bar i{display:block;height:100%;background:#777;transition:width .5s}
+.res .bar.b i{background:var(--ok)}.res div b{float:right}
+.big{font-family:'Bricolage Grotesque',Inter,sans-serif;font-size:56px;font-weight:800;color:var(--ok);line-height:1}
+.fab{position:fixed;right:18px;bottom:18px;z-index:30;border:0;border-radius:999px;padding:14px 20px;font:600 14px Inter,sans-serif;background:#fff;color:#000;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.pnl{position:fixed;right:18px;bottom:78px;z-index:30;width:min(370px,calc(100vw - 36px));height:min(520px,70vh);display:flex;flex-direction:column;background:#101010;border:1px solid var(--bd);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.pnl[hidden]{display:none}.pnl header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--bd)}
+.pnl header button{background:none;border:0;color:#fff;font-size:16px;cursor:pointer}
+.msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.m{background:var(--gl);border:1px solid var(--bd);padding:10px 13px;border-radius:14px 14px 14px 4px;font-size:14px;max-width:90%}
+.m.me{align-self:flex-end;background:#fff;color:#000;border-radius:14px 14px 4px 14px}.m a{text-decoration:underline}
+.qs{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px}.qs button{font:inherit;font-size:12px;color:#ddd;background:transparent;border:1px solid var(--bd);border-radius:999px;padding:5px 11px;cursor:pointer}
+#bf{display:flex;gap:8px;padding:10px;border-top:1px solid var(--bd)}#bf input{flex:1;min-width:0;padding:10px 12px;background:#000;border:1px solid var(--bd);border-radius:999px;color:#fff;font:inherit;font-size:14px}
+:is(button,a,input):focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media(max-width:720px){.cmp{min-height:0}.pane{position:static;clip-path:none!important;padding:26px}.pane .in,.pane.on .in{width:auto;margin:0}.knob,#rng,.cmp:after{display:none}}
+@media(prefers-reduced-motion:reduce){.row i:after,.res .bar i{transition:none}}
+
+/* TEMA AZUL / MORADO */
+:root{--bg:#060a14;--s1:#0b1222;--s2:#101a33;--tx:#e8eefc;--mu:#a39a8b;--gl:#0d1528;--bd:rgba(110,140,255,.16);--ok:#e2cfa3;--st:#fbbf24;--b:#3b82f6;--p:#7c3aed;--c:#c8a96a}
+body{background:var(--bg);background-image:radial-gradient(800px 420px at 10% -4%,rgba(124,58,237,.3),transparent 60%),radial-gradient(700px 400px at 92% 0,rgba(34,211,238,.16),transparent 60%);background-repeat:no-repeat;color:var(--tx)}
+nav{background:rgba(6,10,20,.85)}nav .links a:hover{color:var(--c)}
+.btn{color:var(--tx)}.btn:hover{border-color:var(--c)}
+.btn.w{background:linear-gradient(135deg,var(--p),var(--b));border-color:transparent;color:#fff;box-shadow:0 6px 24px rgba(91,80,255,.35)}
+.card{background:linear-gradient(180deg,var(--s2),var(--s1));border-color:var(--bd)}
+.card.hl{border-color:rgba(124,92,255,.55);box-shadow:0 0 50px rgba(124,58,237,.18)}
+#precios .two>.card.hl{background:linear-gradient(160deg,#5b21b6,#25104f 75%)}
+#precios .two>.card.hl p,#precios .two>.card.hl li{color:#ddd6fe}
+.tag{color:var(--c)}.chips span{border-color:rgba(124,92,255,.35);background:rgba(124,92,255,.08);color:#c4b5fd}
+#servicios .card:nth-child(1){border-top:3px solid var(--b)}#servicios .card:nth-child(2){border-top:3px solid var(--p)}#servicios .card:nth-child(3){border-top:3px solid var(--c)}
+.tabs button{color:var(--tx)}.tabs button[aria-selected=true]{background:linear-gradient(135deg,var(--p),var(--b));color:#fff;border-color:transparent}
+.cmp{background:#0a1020}.pane.off{color:#9aa7c4}.pane.on{background:linear-gradient(135deg,#1e1b4b,#312e81 55%,#1d4ed8);color:#fff}
+.pane.on li:before{color:var(--c)}.pane small{opacity:.75}
+.row i:after{background:linear-gradient(90deg,var(--b),var(--p))}.row.top i:after{background:linear-gradient(90deg,var(--ok),var(--c))}
+.res .bar i{background:linear-gradient(90deg,#475569,#94a3b8)}.res .bar.b i{background:linear-gradient(90deg,var(--ok),var(--c))}
+.big{background:linear-gradient(90deg,var(--ok),var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+.fab,.m.me{background:linear-gradient(135deg,var(--p),var(--b));color:#fff}.pnl{background:var(--s1)}
+footer{background:rgba(255,255,255,.02)}
+.rf[hidden]{display:none}
+@media(max-width:1000px){nav .links{gap:14px;font-size:13px}}
+.dash{max-width:920px;margin:48px auto 0;text-align:left;border:1px solid var(--bd);border-radius:20px;padding:16px;background:linear-gradient(180deg,#0e1730,#08101f);box-shadow:0 30px 80px rgba(60,40,200,.28)}
+.dk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px}
+.dk div,.dp{border:1px solid var(--bd);border-radius:12px;padding:12px 14px;background:rgba(255,255,255,.02)}
+.dk small,.dp small{color:var(--mu);font-size:12px;display:block}.dk b{font-size:26px;font-family:'Bricolage Grotesque',Inter,sans-serif}.dk em{font-style:normal;font-size:12px;color:var(--ok);margin-left:6px}
+.dg{display:grid;grid-template-columns:1fr 1.6fr;gap:12px}.dp svg{width:100%;height:auto;display:block;margin-top:6px}
+.dash>small{display:block;color:var(--mu);font-size:11px;margin-top:10px;text-align:right}
+.gp{animation:gd 1.6s .2s cubic-bezier(.2,.8,.2,1) backwards}@keyframes gd{from{stroke-dasharray:0 252}}
+.ln{stroke-dasharray:1;stroke-dashoffset:1;animation:dr 1.8s .4s forwards}@keyframes dr{to{stroke-dashoffset:0}}
+.rz-cfg{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:22px}
+.rz-cfg input{padding:12px 16px;background:var(--s2);border:1px solid var(--bd);border-radius:12px;color:#fff;font:inherit;min-width:min(280px,100%)}.rz-cfg .tabs{margin:0}
+.rz-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:start}
+.rz-head{display:flex;gap:12px;align-items:center;margin-bottom:16px}.rz-head small{display:block;color:var(--mu);font-size:13px}
+.logo{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-family:'Bricolage Grotesque',Inter,sans-serif;background:linear-gradient(135deg,var(--p),var(--b))}
+.days{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px}
+.days button{flex:none;font:inherit;font-size:13px;color:var(--tx);background:transparent;border:1px solid var(--bd);border-radius:10px;padding:8px 14px;cursor:pointer}
+.days button.on{background:rgba(59,130,246,.2);border-color:var(--b)}
+.rrow{margin-bottom:14px}.rrow>b{font-size:14px}.sl{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin-top:6px}
+.sl button{padding:9px 0;border-radius:9px;border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.08);color:#a7f3d0;font:inherit;font-size:13px;cursor:pointer}
+.sl button.busy{border-color:var(--bd);background:rgba(255,255,255,.03);color:#64748b;text-decoration:line-through}
+.sl button.mine{background:linear-gradient(135deg,var(--p),var(--b));border-color:transparent;color:#fff;font-weight:600}
+.leg{font-size:12px;color:var(--mu);margin:0 0 12px}
+.kp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.kp div{border:1px solid var(--bd);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.03)}
+.kp b{display:block;font-size:24px;font-family:'Bricolage Grotesque',Inter,sans-serif}.kp small{color:var(--mu);font-size:12px}
+.zr{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-size:14px}.zr li{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--bd);border-radius:10px;padding:9px 12px}
+.zr small{display:block;color:var(--mu)}.zr li.empty{color:var(--mu);display:block}.zr li.w{border-color:rgba(251,191,36,.45)}
+.zr button{font:inherit;font-size:12px;color:var(--tx);background:transparent;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer}
+.rz-msg{margin-top:16px;padding:12px 16px;border-radius:12px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.35);color:#bfdbfe;min-height:46px}
+@media(max-width:900px){.rz-grid,.dg{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.gp{animation:none}.ln{animation:none;stroke-dashoffset:0}}
+
+/* TEMA LUXURY MODERN */
+:root{--bg:#0e0d0c;--s1:#151412;--s2:#1b1916;--tx:#f3ede2;--mu:#a39a8b;--gl:#151412;--bd:rgba(214,190,150,.15);--ok:#9bb59a;--st:#d9b56a;--g:#c8a96a;--g2:#e2cfa3;--iv:#ece0cb;--p:#c8a96a;--b:#a88b52;--c:#e2cfa3}
+body{background:var(--bg);background-image:radial-gradient(900px 380px at 50% -8%,rgba(200,169,106,.09),transparent 70%);background-repeat:no-repeat;color:var(--tx)}
+h1,h2,.price,.pane h3,.big,.kp b,.dk b,.logo,.card h3{font-family:'Cormorant Garamond',Georgia,serif;font-variant-numeric:lining-nums}
+h1{font-size:clamp(40px,6vw,70px);font-weight:600;letter-spacing:-.5px;line-height:1.02}
+h2{font-size:clamp(32px,4.6vw,48px);font-weight:600;letter-spacing:-.3px;line-height:1.1}
+.card h3{font-size:25px;font-weight:700}.price{font-weight:600}
+nav{background:rgba(14,13,12,.9)}nav img{mix-blend-mode:lighten}nav .links a:hover{color:var(--g2)}
+.btn{color:var(--tx);border-color:rgba(214,190,150,.3)}.btn:hover{border-color:var(--g)}
+.btn.w{background:var(--g);border-color:var(--g);color:#14110b;box-shadow:none}.btn.w:hover{background:var(--g2)}
+.card{background:var(--s1);border-color:var(--bd);backdrop-filter:none}
+.card.hl{background:var(--s2);border-color:rgba(200,169,106,.5);box-shadow:none}
+#precios .two>.card.hl{background:linear-gradient(160deg,#2b2417,#17140f)}
+#precios .two>.card.hl p,#precios .two>.card.hl li{color:var(--mu)}
+#servicios .card:nth-child(n){border-top:2px solid var(--g)}
+.tag{color:var(--g)}.chips span{border-color:var(--bd);background:transparent;color:var(--mu)}
+.card li:before,.stars{color:var(--g)}.no li:before{color:#c98a82}
+.tabs button{color:var(--tx);border-color:var(--bd)}.tabs button[aria-selected=true]{background:var(--g);color:#14110b;border-color:var(--g)}
+.cmp{background:#12110f}.pane.off{color:#9a9183}.pane.on{background:var(--iv);color:#17130c}.pane.on li:before{color:#7a6230}
+.cmp:after{background:var(--g)}.knob{background:var(--g);color:#14110b;box-shadow:0 0 0 6px rgba(200,169,106,.16)}
+.row i{background:rgba(255,255,255,.07)}.row i:after{background:#6e675b}.row.top i:after{background:var(--g)}.row.top,.row.top b{color:var(--g2)}
+.wc{background:linear-gradient(145deg,#26221b,#14120f);border-color:rgba(200,169,106,.35)}
+.sts i.f{background:var(--g);border-color:var(--g);color:#14110b}
+.calc input,.rz-cfg input{background:var(--s2);border-color:var(--bd);color:var(--tx)}
+.res .bar{background:rgba(255,255,255,.07)}.res .bar i{background:#6e675b}.res .bar.b i{background:var(--g)}
+.big{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:var(--g2);font-size:66px}
+.fab,.m.me{background:var(--g);color:#14110b}.pnl{background:var(--s1)}.m{background:var(--s2)}#bf input{background:var(--bg)}
+.dash{background:linear-gradient(180deg,#181613,#100f0d);box-shadow:0 30px 70px rgba(0,0,0,.5)}
+.logo{background:var(--g);color:#14110b}
+.days button.on{background:rgba(200,169,106,.16);border-color:var(--g)}
+.sl button{border-color:rgba(155,181,154,.45);background:rgba(155,181,154,.08);color:#cfe0cd}
+.sl button.busy{border-color:var(--bd);background:rgba(255,255,255,.03);color:#6f685c}
+.sl button.mine{background:var(--g);border-color:var(--g);color:#14110b}
+.zr li.w{border-color:rgba(214,168,91,.5)}
+.rz-msg{background:rgba(200,169,106,.08);border-color:rgba(200,169,106,.35);color:var(--g2)}
+.feat{display:grid;grid-template-columns:1.1fr 1fr;gap:32px;align-items:center;padding:34px}.feat ul{margin:0}.feat h3{font-size:36px;margin:8px 0 0}
+@media(max-width:900px){.feat{grid-template-columns:1fr;gap:18px;padding:26px}}
+/* TEXTO MÁS BLANCO: más contraste sobre fondo oscuro */
+:root{--tx:#fff;--mu:#ebe6db}
+nav .links{color:#fff;gap:15px}
+@media(max-width:1100px){nav .links{gap:11px;font-size:13px}}
+@media(max-width:1040px){
+.menu-toggle{display:block}
+nav .links{display:none;position:absolute;top:72px;left:0;width:100%;background:rgba(14,13,12,.97);flex-direction:column;align-items:flex-start;gap:14px;font-size:14px;padding:20px;border-bottom:1px solid var(--bd)}
+nav .links.active{display:flex}
+nav .btn{margin-left:0;margin-top:6px}
+}
+.card ul{color:#fff}
+.rev p{color:#f1ede4}
+.qs button{color:#fff}
+.chips span{color:#f4efe5}
+.pane.off{color:#f1ede4}.pane.off small{opacity:.9;color:#fff}
+.pane.on small{opacity:1;color:#3a2f1c}
+.sl button{color:#eaf4e8}
+.sl button.busy{color:#cfc8ba}
+.dp svg text:last-of-type{fill:#ebe6db}
+.rz-msg{color:#fff}
+.logo{color:#fff}
+.leg{color:#ebe6db}
+
+/* DEMO PIZZERÍA EN VIVO */
+.pz [hidden]{display:none!important}
+.pz-row{display:grid;grid-template-columns:1fr auto auto;gap:4px 16px;align-items:center;padding:13px 0;border-top:1px solid var(--bd)}
+.pz-row:first-child{border-top:0}
+.pz-i b{display:block;font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;font-weight:700;line-height:1.1}
+.pz-i small{display:block;color:var(--mu);font-size:13px;margin-top:2px}
+.pz-row .pr{color:var(--g2);font-weight:600;font-variant-numeric:tabular-nums}
+.pz-step{display:flex;align-items:center;gap:10px}
+.pz-step button{width:34px;height:34px;padding:0;border-radius:50%;border:1px solid var(--bd);background:transparent;color:#fff;font:600 18px/1 Inter,sans-serif;cursor:pointer;display:grid;place-items:center}
+.pz-step button:hover:not(:disabled){border-color:var(--g)}
+.pz-step button:disabled{opacity:.35;cursor:not-allowed}
+.pz-step .q{min-width:18px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums}
+.pz-tag{font-size:12px;font-weight:600;color:#f3c27a;border:1px solid rgba(224,161,74,.5);border-radius:999px;padding:5px 12px}
+.pz-sum{display:flex;justify-content:space-between;align-items:baseline;gap:6px 14px;flex-wrap:wrap;margin-top:6px}
+.pz-sum b{font-family:'Cormorant Garamond',Georgia,serif;font-size:32px;font-weight:600;line-height:1;font-variant-numeric:lining-nums}
+.pz-sum small{color:var(--mu);font-size:13px}
+.pz-h{display:flex;gap:8px;align-items:center;margin:20px 0 9px;font:600 14px Inter,sans-serif;color:#fff}
+.pz-h span{color:var(--g);font-variant-numeric:tabular-nums}
+.pz-ov{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pz-oven{border:1px solid var(--bd);border-radius:12px;padding:10px 10px 12px;background:rgba(255,255,255,.02);text-align:center;transition:border-color .3s}
+.pz-oven.on{border-color:rgba(200,169,106,.6)}
+.pz-oven svg{width:100%;max-width:170px;height:auto;display:block;margin:0 auto}
+.pz-oven path{fill:none;stroke-width:16;stroke-linecap:round}
+.pz-oven .t{stroke:rgba(255,255,255,.14)}
+.pz-oven .f{stroke:var(--g);transition:stroke-dasharray 1s linear}
+.pz-oven:not(.on) .f{opacity:0}
+.pz-oven text{fill:#fff;font:600 40px 'Cormorant Garamond',Georgia,serif;font-variant-numeric:lining-nums}
+.pz-oven b{display:block;font-size:14px}
+.pz-oven small{display:block;color:var(--mu);font-size:12px;line-height:1.35;min-height:2.7em}
+.zr li.rd{border-color:rgba(155,181,154,.55)}
+.pz-st{display:grid;gap:9px}
+.pz-s{display:grid;grid-template-columns:84px 1fr 52px;gap:10px;align-items:center;font-size:13px}
+.pz-bar{height:8px;border-radius:8px;background:rgba(255,255,255,.12);overflow:hidden}
+.pz-bar span{display:block;height:100%;width:100%;background:var(--g);border-radius:8px;transition:width .5s}
+.pz-s .v{text-align:right;font-variant-numeric:tabular-nums}
+.pz-s.low .pz-bar span{background:#e0a14a}
+.pz-s.low .v{color:#f3c27a;font-weight:600}
+.pz-mini{justify-self:start;margin-top:4px;font:inherit;font-size:12px;color:#fff;background:transparent;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer}
+.pz-mini:hover{border-color:var(--g)}
+.pz-ctl{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:24px}
+.pz-ctl .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.pz .rf .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+@media(max-width:520px){.pz-row{grid-template-columns:1fr auto}.pz-step,.pz-tag{grid-column:1/-1;justify-self:start}}
+@media(prefers-reduced-motion:reduce){.pz-oven .f,.pz-bar span{transition:none}}
+nav .links a{white-space:nowrap}
+.zr li:before{content:none}
+#pzq,#pzrd{max-height:236px;overflow-y:auto;padding-right:2px}
+#pzrd{max-height:160px}
+@media(min-width:901px) and (min-height:700px){.pz .rz-grid>.card:first-child{position:sticky;top:92px}}
+{% endraw %}
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+ <a href="#inicio"><img alt="ZEDYTH Technologies" width="1000" height="207" src="data:image/png;base64,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)"></a>
+    <!-- EL NUEVO BOTÓN DE MENÚ HAMBURGUESA -->
+    <div class="menu-toggle" onclick="document.querySelector('.links').classList.toggle('active')">☰</div>
+    <div class="links">
+       <a href="#reservas" onclick="document.querySelector('.links').classList.remove('active')">Demo reservas</a>
+       <a href="#pizzeria" onclick="document.querySelector('.links').classList.remove('active')">Demo pizzería</a>
+       <a href="#sistemas" onclick="document.querySelector('.links').classList.remove('active')">Sistemas</a>
+       <a href="#servicios" onclick="document.querySelector('.links').classList.remove('active')">Servicios</a>
+       <a href="#precios" onclick="document.querySelector('.links').classList.remove('active')">Precios</a>
+       <a href="#proyectos" onclick="document.querySelector('.links').classList.remove('active')">Proyectos</a>
+       <a href="#garantia" onclick="document.querySelector('.links').classList.remove('active')">Garantía</a>
+       <a href="#contacto" onclick="document.querySelector('.links').classList.remove('active')">Contacto</a>
+       <a class="btn" href="{{ url_for('login') }}">Acceso clientes</a>
+    </div>
+</div></nav>
+
+<header class="hero" id="inicio"><div class="wrap">
+ <h1>Software, ciberseguridad e informática hechos a la medida de tu negocio</h1>
+ <p class="sub">Consultorios, hoteles, comercio electrónico o cualquier otro giro: diseñamos, protegemos y mantenemos tu tecnología, y cada proyecto se afina contigo hasta que queda exactamente como lo imaginaste.</p>
+ <div class="cta"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar mi proyecto</a><a class="btn" href="{{ url_for('demo_pos') }}">Probar punto de venta</a><a class="btn" href="#reservas">Probar reservas en vivo</a></div>
+ <div class="chips"><span>Consultorios</span><span>Hoteles</span><span>Comercio electrónico</span><span>Restaurantes</span><span>Escuelas</span><span>Logística</span><span>Y cualquier otro negocio</span></div>
+<div class="dash" aria-hidden="true">
+ <div class="dk"><div><small>Reservas hoy</small><b>38</b><em>+12%</em></div><div><small>Ocupación</small><b>86%</b><em>+5%</em></div><div><small>Clientes que vuelven</small><b>64%</b><em>+9%</em></div><div><small>Ingresos del mes</small><b>$184,200</b><em>+18%</em></div></div>
+ <div class="dg">
+  <div class="dp"><small>Ocupación semanal</small><svg viewBox="0 0 200 118"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#e2cfa3"/><stop offset="1" stop-color="#c8a96a"/></linearGradient></defs><path d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="#2a2620" stroke-width="16" stroke-linecap="round"/><path class="gp" d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="url(#gg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="191 252"/><text x="100" y="92" text-anchor="middle" fill="#fff" font-size="30" font-weight="700">76%</text><text x="100" y="110" text-anchor="middle" fill="#a39a8b" font-size="10">de turnos llenos</text></svg></div>
+  <div class="dp"><small>Reservas por día: reales y pronosticadas</small><svg viewBox="0 0 320 130"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8a96a" stop-opacity=".35"/><stop offset="1" stop-color="#c8a96a" stop-opacity="0"/></linearGradient></defs><path d="M0 30H320M0 65H320M0 100H320" stroke="#2a2620" fill="none"/><path d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20V130H0Z" fill="url(#cg)"/><path class="ln" pathLength="1" d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20" fill="none" stroke="#c8a96a" stroke-width="2.5"/><path d="M0 108L45 95 90 98 135 70 180 74 225 56 270 62 320 44" fill="none" stroke="#8c8374" stroke-width="2" stroke-dasharray="5 5"/></svg></div>
+ </div><small>Datos de ejemplo</small></div>
+</div></header>
+
+<section id="sistemas"><div class="wrap">
+ <h2>Misma cuadra, mismos precios. ¿Por qué uno siempre está lleno?</h2>
+ <p class="sub">Porque tiene un sistema. Elige tu giro y desliza para ver la diferencia.</p>
+ <div class="tabs" role="tablist" id="tabs"></div>
+ <div class="cmp" id="cmp">
+  <div class="pane off"><div class="in"><small>El que sigue sin sistema</small><h3 id="offT"></h3><ul id="offL"></ul></div></div>
+  <div class="pane on"><div class="in"><small>El que tiene sistema</small><h3 id="onT"></h3><ul id="onL"></ul></div></div>
+  <div class="knob" aria-hidden="true">⇄</div>
+  <input type="range" min="8" max="92" value="50" id="rng" aria-label="Comparar sin sistema y con sistema">
+ </div>
+ <div class="pitch"><p id="pitch"></p><a class="btn w" id="ctaSys" target="_blank" rel="noopener" href="#">Lo quiero para mi negocio</a></div>
+</div></section>
+
+<section id="reservas"><div class="wrap">
+ <h2>Prueba un sistema de reservas en vivo</h2>
+ <p class="sub">Escribe el nombre de tu negocio, elige un giro y reserva como lo haría tu cliente. Del otro lado ves el panel del dueño.</p>
+ <div class="rz-cfg"><input id="zn" value="Club Aurora" maxlength="30" aria-label="Nombre de tu negocio" placeholder="Nombre de tu negocio"><div class="tabs" id="zg" role="tablist"></div></div>
+ <div class="rz-grid">
+  <div class="card">
+   <div class="rz-head"><span class="logo" id="zl">CA</span><div><b id="zt">Club Aurora</b><small>Reserva en línea, sin crear cuenta</small></div></div>
+   <div class="days" id="zd"></div>
+   <p class="leg">Verde: libre · Tachado: ocupado · Dorado: tu reserva</p>
+   <div id="zs"></div>
+   <form class="rf" id="zf" hidden><b id="zft"></b><input type="text" id="zcn" placeholder="Tu nombre" maxlength="40" required><input type="text" inputmode="tel" placeholder="Tu WhatsApp (opcional)" maxlength="20"><div style="display:flex;gap:8px"><button class="btn w" id="zfb" type="submit">Confirmar reserva</button><button class="btn" id="zfx" type="button">Cancelar</button></div></form>
+  </div>
+  <div class="card hl"><span class="tag">Panel del dueño, en vivo</span>
+   <div class="kp"><div><b id="kb">0</b><small>Reservas tuyas</small></div><div><b id="ko">0%</b><small>Ocupación del día</small></div><div><b id="kw">0</b><small>En lista de espera</small></div><div><b id="kp">0</b><small>Puntos ganados</small></div></div>
+   <ul class="zr" id="zr"></ul></div>
+ </div>
+ <p class="rz-msg" id="zm" role="status"></p>
+ <div style="text-align:center;margin-top:20px"><a class="btn w" id="zcta" target="_blank" rel="noopener" href="#">Quiero este sistema para mi negocio</a></div>
+</div></section>
+
+<section id="pizzeria"><div class="wrap pz">
+ <h2>Maneja una pizzería en vivo</h2>
+ <p class="sub">Escribe el nombre de tu pizzería, haz un pedido como lo haría tu cliente y mira la cocina del otro lado: hornos, cola de pedidos, inventario y ventas.</p>
+ <div class="rz-cfg"><input id="pzn" value="Pizzería Aurora" maxlength="30" aria-label="Nombre de tu pizzería" placeholder="Nombre de tu pizzería"></div>
+ <div class="rz-grid">
+  <div class="card">
+   <div class="rz-head"><span class="logo" id="pzl">PA</span><div><b id="pznm">Pizzería Aurora</b><small>Pide en línea, sin crear cuenta</small></div></div>
+   <div class="tabs" id="pzmode" role="tablist"></div>
+   <div id="pzmenu"></div>
+   <form class="rf" id="pzf">
+    <input type="text" id="pzc" placeholder="Tu nombre" maxlength="40" required aria-label="Tu nombre">
+    <div class="pz-sum"><b id="pzt">$0</b><small id="pze"></small></div>
+    <button class="btn w" id="pzb" type="submit" disabled>Confirmar pedido</button>
+   </form>
+  </div>
+  <div class="card hl"><span class="tag">Cocina y panel del dueño, en vivo</span>
+   <div class="kp"><div><b id="pk1">0</b><small>Pedidos hoy</small></div><div><b id="pk2">$0</b><small>Ventas</small></div><div><b id="pk3">—</b><small>Tiempo promedio</small></div><div><b id="pk4">0/2</b><small>Hornos en uso</small></div></div>
+   <h4 class="pz-h">Hornos</h4>
+   <div class="pz-ov" id="pzov"></div>
+   <h4 class="pz-h">En cola <span id="pzqn">0</span></h4>
+   <ul class="zr" id="pzq"></ul>
+   <h4 class="pz-h">Listos para entregar <span id="pzrn">0</span></h4>
+   <ul class="zr" id="pzrd"></ul>
+   <h4 class="pz-h">Inventario</h4>
+   <div class="pz-st" id="pzst"></div>
+  </div>
+ </div>
+ <div class="pz-ctl"><button class="btn w" id="pzrush" type="button">Simular hora pico</button><button class="btn" id="pzpause" type="button">Pausar cocina</button><button class="btn" id="pzreset" type="button">Reiniciar demo</button></div>
+ <p class="leg" style="text-align:center;margin:14px 0 0">Tiempo acelerado: 1 segundo equivale a 1 minuto de cocina.</p>
+ <p class="rz-msg" id="pzmsg" role="status"></p>
+ <div style="text-align:center;margin-top:20px"><a class="btn w" id="pzcta" target="_blank" rel="noopener" href="#">Quiero este sistema para mi pizzería</a></div>
+</div></section>
+
+<section id="lealtad"><div class="wrap">
+ <h2>¿En qué porcentaje de restaurantes estás?</h2>
+ <p class="sub">Con tu logo, tus colores, tus sellos y tu premio. Tu cliente escanea el QR del local y guarda la tarjeta en Apple Wallet o Google Wallet, sin descargar ninguna app.</p>
+ <div class="two">
+  <div class="card"><div class="bars" id="bars">
+   <div class="row" style="--w:80%;--i:0"><span>Tiene página web</span><b>80%</b><i></i></div>
+   <div class="row" style="--w:71%;--i:1"><span>Tiene tarjeta de sellos</span><b>71%</b><i></i></div>
+   <div class="row" style="--w:50%;--i:2"><span>Tiene lealtad en el celular del cliente</span><b>50%</b><i></i></div>
+   <div class="row" style="--w:20%;--i:3"><span>Tiene proximidad para atraer clientes</span><b>20%</b><i></i></div>
+   <div class="row top" style="--w:1%;--i:4"><span>Wallet + proximidad + sellos + análisis de datos</span><b>1%</b><i></i></div>
+  </div><p class="note" style="margin:6px 0 0">Desde tu panel ves quién vuelve, con qué frecuencia y quién está cerca de su premio. Con avisos automáticos les recuerdas que les falta un sello.</p></div>
+  <div class="card hl wal"><span class="tag">Pruébala: así la ve tu cliente</span>
+   <div class="wc"><header><span>Tu logo aquí</span><span>Café Aurora</span></header><div class="sts" id="sts"></div><small style="color:var(--mu)">8 sellos = café gratis</small></div>
+   <p id="stT"></p><button class="btn w" id="stB" type="button">Registrar visita</button></div>
+ </div>
+</div></section>
+
+<section id="clientes"><div class="wrap">
+ <h2>Dos clientes. ¿Cuál vale más para tu negocio?</h2>
+ <p class="sub">El A vino una vez. El B vuelve cada semana. Cambia los números por los de tu negocio.</p>
+ <div class="two">
+  <div class="card calc">
+   <label>Cliente A gastó una sola vez ($)<input type="number" id="ca" value="50000" min="0"></label>
+   <label>Cliente B gasta por visita ($)<input type="number" id="cb" value="12000" min="0"></label>
+   <label>Visitas de B por mes<input type="number" id="cv" value="4" min="0"></label>
+   <label>Meses<input type="number" id="cm" value="12" min="0"></label></div>
+  <div class="card hl res"><div>Cliente A<b id="ra"></b></div><div class="bar"><i id="ba"></i></div>
+   <div>Cliente B<b id="rb"></b></div><div class="bar b"><i id="bb"></i></div>
+   <div class="big" id="rx"></div><p style="color:var(--mu);margin:6px 0 0">veces lo que dejó el cliente A.</p></div>
+ </div>
+ <p class="note">Casi todo lo que se hace en redes busca más clientes A. En ZEDYTH hacemos lo contrario: no traemos clientes, hacemos que vuelvan, con club de clientes, puntos y avisos con tu marca.</p>
+</div></section>
+
+<section id="servicios"><div class="wrap">
+ <h2>Una sola empresa para toda tu tecnología</h2>
+ <p class="sub">Somos una empresa de software, ciberseguridad e informática.</p>
+ <div class="grid">
+  <div class="card"><h3>Software a la medida</h3><p>Aplicaciones web y móviles, sistemas internos y tiendas en línea, hechas para cómo trabaja tu negocio.</p><ul><li>Puntos de venta personalizados</li><li>Comercio electrónico</li><li>Sistemas de gestión y reservas</li></ul></div>
+  <div class="card"><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación, y te damos seguimiento de incidentes.</p><ul><li>Revisión y endurecimiento de sistemas</li><li>Respaldos y control de vencimientos</li><li>Monitoreo y atención de incidentes</li></ul></div>
+  <div class="card"><h3>Servicios informáticos</h3><p>Soporte y mantenimiento para que tu equipo y tus sistemas siempre estén funcionando.</p><ul><li>Soporte técnico y mantenimiento</li><li>Redes, equipos y configuraciones</li><li>Asesoría tecnológica</li></ul></div>
+ </div>
+</div></section>
+
+<section id="precios"><div class="wrap">
+ <h2>Precios claros</h2>
+ <p class="sub">Un precio fijo para el punto de venta y proyectos personalizados para todo lo demás.</p>
+ <div class="two">
+  <div class="card hl"><span class="tag">Punto de venta a la medida</span><div class="price">$1,500 <small>MXN · pago único · sin importar el giro</small></div>
+   <p>Un punto de venta hecho para tu negocio, entregado completo y sin dependencia de nosotros.</p>
+   <ul><li>Código fuente completo entregado a ti</li><li>Acceso total: el sistema es tuyo</li><li>Nosotros solo conservamos una copia de respaldo</li><li>Personalizado a tu forma de vender</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a></div>
+  <div class="card"><span class="tag">Aplicaciones, comercio electrónico y ciberseguridad</span><div class="price"><small>Desde</small> $10,000 <small>MXN</small></div>
+   <p>Cotización personalizada según lo que necesites. Cuidamos cada detalle para que quede a la perfección.</p>
+   <ul><li>Diseño y desarrollo a tu medida</li><li>Revisiones contigo hasta quedar conforme</li><li>Servicios de ciberseguridad según tu caso</li><li>Opción de membresía de mantenimiento</li></ul></div>
+ </div>
+ {% if planes %}<h2 style="margin-top:70px">Membresías</h2><p class="sub">Mantenimiento, mejoras y tranquilidad continua para tu proyecto.</p>
+ <div class="grid">{% for p in planes %}<div class="card {{ 'hl' if p.destacado }}"><h3>{{ p.nombre }}</h3>
+  <div class="price" style="font-size:30px">{% if p.precio and not p.a_medida %}${{ "{:,.0f}".format(p.precio) }} <small>MXN</small>{% else %}A tu medida{% endif %}</div>
+  <p>{{ p.descripcion or '' }}</p>{% if p.incluye %}<ul>{% for i in p.incluye.split('|') if i.strip() %}<li>{{ i.strip() }}</li>{% endfor %}</ul>{% endif %}
+  <a class="btn w" style="margin-top:20px" href="#contacto">Me interesa</a></div>{% endfor %}</div>{% endif %}
+</div></section>
+
+<section id="proyectos"><div class="wrap">
+ <h2>Proyectos y opiniones</h2><p class="sub">Lo que hemos construido y lo que opinan quienes lo usan. Tú también puedes calificar.</p>
+ {% if gracias %}<div class="ok">¡Gracias! Tu reseña se publicará en cuanto la revisemos.</div>{% endif %}
+ <div class="card hl feat" style="margin-bottom:18px">
+ <div><span class="tag">Zmarth · Grupo empresarial ZEDYTH · Comercio electrónico</span>
+  <h3>Zelecte México</h3>
+  <p style="font-size:16px;margin-top:10px">Supermercado premium en línea, una aplicación de Zmarth, empresa de nuestro grupo. Desde la despensa y los frescos hasta electrónica, hogar y moda, con entrega a domicilio o retiro en tienda.</p>
+  <div class="chips" style="justify-content:flex-start;margin:18px 0 22px"><span>Fresh</span><span>Gourmet</span><span>Living</span><span>Tech</span><span>Style</span><span>Select</span></div>
+  <a class="btn w" href="https://zelecte.onrender.com" target="_blank" rel="noopener">Visitar Zelecte</a></div>
+ <ul><li>Catálogo por departamentos, con productos por pieza, por peso o por monto</li><li>Inventario por sucursal, con aviso «Avísame» cuando un producto se agota</li><li>Retiro en tienda, domicilio con salidas programadas y entrega por dron en fase beta</li><li>Pago en efectivo, SPEI, vales o tarjeta en terminal, con códigos de descuento</li><li>Cada pedido genera un código QR en el perfil del cliente para recibirlo</li><li>Reseñas, favoritos y ZEDITH, un asistente de compras en beta</li></ul>
+</div>
+ {% if vitrina %}<div class="grid">{% for v in vitrina %}{% set p = v.p %}<div class="card"><span class="tag">{{ p.categoria }}</span><h3>{{ p.nombre }}</h3><p>{{ p.descripcion }}</p>
+  {% if p.tecnologias %}<p style="margin-top:8px;font-size:13px">{{ p.tecnologias }}</p>{% endif %}
+  <div style="margin-top:12px">{% if v.prom %}<span class="stars">{{ '★' * v.prom|round|int }}{{ '☆' * (5 - v.prom|round|int) }}</span> <b>{{ v.prom }}</b> <span style="color:var(--mu);font-size:13px">({{ v.n }})</span>{% else %}<span style="color:var(--mu);font-size:13px">Aún sin calificaciones</span>{% endif %}</div>
+  {% for r in v.recientes %}<div class="rev"><span class="stars">{{ '★' * r.calificacion }}</span> <b>{{ r.nombre }}</b><p>{{ r.comentario }}</p></div>{% endfor %}
+  <details><summary>Calificar este proyecto</summary>
+   <form class="rf" method="POST" action="{{ url_for('resena_enviar', pid=p.id) }}">
+    <input type="text" name="nombre" placeholder="Tu nombre" maxlength="80" required>
+    <div class="rate">{% for n in [5,4,3,2,1] %}<input type="radio" name="calificacion" id="s{{ n }}-{{ p.id }}" value="{{ n }}" required><label for="s{{ n }}-{{ p.id }}" title="{{ n }} estrellas">★</label>{% endfor %}</div>
+    <textarea name="comentario" placeholder="Tu comentario" maxlength="600" required></textarea>
+    <input class="hp" type="text" name="web" tabindex="-1" autocomplete="off">
+    <button class="btn w" type="submit">Enviar reseña</button>
+   </form></details></div>{% endfor %}</div>
+ {% endif %}
+</div></section>
+
+<section id="garantia"><div class="wrap">
+ <h2>Responsabilidad clara, sin letras chiquitas</h2>
+ <p class="sub">En membresías, aplicaciones de comercio y servicios de ciberseguridad firmamos un contrato de responsabilidad.</p>
+ <div class="two">
+  <div class="card"><h3>Lo que sí cubrimos</h3><ul><li>Mantenimiento de la aplicación</li><li>Correcto funcionamiento del código y de la app</li><li>Corrección de fallas en lo que desarrollamos</li><li>Acompañamiento para resolver cualquier incidente</li></ul></div>
+  <div class="card"><h3>Lo que depende de terceros</h3><ul class="no"><li>Daños en bases de datos de servidores externos</li><li>Fallas de hospedaje (por ejemplo Render)</li><li>Problemas con dominios o registradores</li><li>Cualquier servicio fuera de control</li></ul></div>
+ </div>
+ <p class="note">En esos casos no tenemos control directo, pero siempre haremos todo lo posible por ayudarte a manejarlo correctamente y resolver el inconveniente.</p>
+</div></section>
+
+<section id="contacto"><div class="wrap"><div class="card hl" style="text-align:center;padding:50px 24px">
+ <h2>Platiquemos de tu proyecto</h2><p class="sub" style="margin-bottom:26px">Cuéntanos qué necesita tu negocio y te respondemos con una propuesta.</p>
+ <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a><a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
+</div></div></section>
+
+<footer><div class="wrap">© {{ año }} ZEDYTH Technologies · Software, ciberseguridad e informática · Grupo empresarial: ZEDYTH, Zmarth y Zelecte · <a href="{{ url_for('login') }}">Acceso clientes</a></div></footer>
+<div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}">
+ <button class="fab" id="fab" type="button" aria-expanded="false">Pregúntame</button>
+ <div class="pnl" id="pnl" hidden role="dialog" aria-label="Asistente ZEDYTH"><header><b>Asistente ZEDYTH</b><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
+  <div class="msgs" id="msgs" aria-live="polite"></div><div class="qs" id="qs"></div>
+  <form id="bf"><input id="bi" placeholder="Escribe tu duda" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
+</div>
+{% raw %}<script>
+(function(){
+const $=s=>document.querySelector(s),bot=$('#bot'),WA=bot.dataset.wa,POS=bot.dataset.pos,mo=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const D={
+ pad:{t:'Club de pádel',n:'Canchera',off:['Anotan los turnos en un cuaderno','Contestan WhatsApp a las 11 de la noche','Se pisan dos turnos y nadie sabe de quién era','Una cancelación es una cancha vacía'],on:['Los jugadores reservan solos desde el link del club, a cualquier hora y sin crear cuenta','La agenda no deja que se pisen dos turnos, nunca más','Si alguien cancela, la lista de espera se entera al toque','Cada partido suma puntos que se cambian por premios del club'],p:'Ese sistema se llama Canchera. ¿Cuál de los dos clubes quieres ser?'},
+ caf:{t:'Café',n:'Coffeezey',off:['No sabe qué pide cada cliente','Nadie se entera de quién dejó de venir','Las reseñas dependen de la suerte','Los sellos de cartón se pierden en la cartera'],on:['Los clientes escanean un QR en la mesa y suman sellos para su premio','Recuerda lo que pide cada cliente','Los invita a recomendarte en Google y en Instagram','Te avisa cuando alguien deja de venir, para que vuelva'],p:'Ese sistema se llama Coffeezey: la memoria de tu café.'},
+ res:{t:'Restaurante',n:'Restaurantzey',off:['Ni aparece en Google','La mesa 7 llama al mesero tres veces','Nadie sabe qué es apto celíaco','Se compra a ojo: o sobra o falta, y la caja se cierra a mano'],on:['Página propia con carta, fotos y reservas en dos toques, y una IA que responde dudas hasta de madrugada','Tótem en cada mesa: piden, llaman al mesero o piden la cuenta con un toque','Alérgenos, punto de cocción y reseñas en cada plato','Comandas, stock, caja y facturación juntos, con pronóstico de ventas'],p:'Ese sistema se llama Restaurantzey. En la demo lo ves con tu carta y en tus mesas.'},
+ loc:{t:'Cualquier local',n:'ZEDYTH',off:['El cliente paga y se va: ¿volverá? No lo sabes','Sin razón para regresar','Su tarjeta de sellos quedó en otra cartera'],on:['Tarjetas digitales con tu marca en la wallet del celular','Sellos y recompensas que acercan al cliente a su premio','Aviso al celular: «te falta un sello»','Club de clientes con puntos'],p:'No traemos clientes: hacemos que vuelvan.'}};
+const tabs=$('#tabs'),cmp=$('#cmp'),rng=$('#rng');
+const setX=v=>{cmp.style.setProperty('--x',v+'%');rng.value=v};
+function show(k){const d=D[k];tabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.k===k));
+ $('#offT').textContent='Sin sistema';$('#onT').textContent=d.n;
+ $('#offL').innerHTML=d.off.map(x=>'<li>'+x+'</li>').join('');$('#onL').innerHTML=d.on.map(x=>'<li>'+x+'</li>').join('');
+ $('#pitch').textContent=d.p;$('#ctaSys').href=WA+'?text='+encodeURIComponent('Hola, me interesa '+d.n+' para mi negocio ('+d.t+')');}
+Object.keys(D).forEach(k=>{const b=document.createElement('button');b.type='button';b.setAttribute('role','tab');b.dataset.k=k;b.textContent=D[k].t;b.onclick=()=>show(k);tabs.appendChild(b)});
+show('pad');rng.addEventListener('input',()=>setX(rng.value));
+if(!mo)setX(92);
+new IntersectionObserver((e,o)=>{if(!e[0].isIntersecting)return;o.disconnect();if(mo)return;const t0=performance.now(),f=t=>{const k=Math.min((t-t0)/1500,1);setX(92-42*(1-Math.pow(1-k,3)));if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)},{threshold:.5}).observe(cmp);
+new IntersectionObserver((e,o)=>{if(e[0].isIntersecting){$('#bars').classList.add('in');o.disconnect()}},{threshold:.4}).observe($('#bars'));
+let n=5;const N=8,sts=$('#sts'),stT=$('#stT'),stB=$('#stB');
+function wal(){sts.innerHTML='';for(let i=0;i<N;i++){const e=document.createElement('i');if(i<n){e.className='f';e.textContent='✓'}sts.appendChild(e)}
+ stT.textContent=n>=N?'¡Premio listo! Tu cliente lo canjea en su próxima visita.':(n===N-1?'Aviso automático al celular: «Te falta 1 sello para tu café gratis».':'Faltan '+(N-n)+' sellos para su premio.');stB.textContent=n>=N?'Reiniciar tarjeta':'Registrar visita'}
+stB.onclick=()=>{n=n>=N?0:n+1;wal()};wal();
+const nf=x=>'$'+Math.round(x).toLocaleString('es-MX');
+function calc(){const a=+$('#ca').value||0,b=+$('#cb').value||0,v=+$('#cv').value||0,m=+$('#cm').value||0,t=b*v*m,mx=Math.max(a,t,1);
+ $('#ra').textContent=nf(a);$('#rb').textContent=nf(t);$('#ba').style.width=a/mx*100+'%';$('#bb').style.width=t/mx*100+'%';$('#rx').textContent=a?(t/a).toFixed(1).replace(/\.0$/,'')+'×':'—'}
+['ca','cb','cv','cm'].forEach(i=>$('#'+i).addEventListener('input',calc));calc();
+const fab=$('#fab'),pnl=$('#pnl'),msgs=$('#msgs');let first=1;
+const A=(h,me)=>{const d=document.createElement('div');d.className='m'+(me?' me':'');me?d.textContent=h:d.innerHTML=h;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight};
+const wa=t=>'<a href="'+WA+'?text='+encodeURIComponent(t)+'" target="_blank" rel="noopener">Escríbenos por WhatsApp</a>';
+const KB=[
+[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta cuesta <b>$1,500 MXN</b>, pago único, con el código fuente completo para ti. Aplicaciones, comercio electrónico y ciberseguridad van <b>desde $10,000 MXN</b> según lo que necesites, y hay membresías de mantenimiento. '+wa('Hola, quiero una cotización')],
+[/pizza|pizzeria|horno/,'Puedes probar una <b>pizzería en vivo</b>: pides como cliente y del otro lado ves la cocina con hornos, cola de pedidos, inventario y ventas. <a href="#pizzeria">Ir a la demo</a>. Se adapta a tu menú y a tu forma de trabajar.'],
+[/\bpos\b|punto de venta|demo|caja/,'Puedes probar el punto de venta ahora mismo: <a href="'+POS+'">abrir demo en vivo</a>. Se adapta a tu forma de vender.'],
+[/demo.*reserva|reserva.*demo|probar.*reserva|sistema de reserva|agenda en linea/,'Puedes probar el sistema de reservas en vivo con el nombre de tu negocio: <a href="#reservas">ir a la demo</a>. Reserva como cliente y mira el panel del dueño, la lista de espera y los puntos.'],
+[/cancha|padel|club deportivo|reserva.*cancha/,'<b>Canchera</b> es el sistema para clubes de pádel: reservas solas desde el link del club sin crear cuenta, agenda sin turnos pisados, lista de espera cuando alguien cancela y puntos canjeables por premios.'],
+[/cafe|cafeteria|coffeezey/,'<b>Coffeezey</b> es la memoria de tu café: sellos con QR en la mesa, recuerda lo que pide cada cliente, pide reseñas en Google e Instagram y te avisa cuando alguien deja de venir.'],
+[/restaurante|mesa|comanda|mesero|restaurantzey|comida/,'<b>Restaurantzey</b> incluye tótem en cada mesa, carta con alérgenos y punto de cocción, comandas, stock, caja y facturación, pronóstico de ventas y club de clientes. Se hace a medida y se capacita a tu equipo.'],
+[/wallet|sello|lealtad|tarjeta|puntos|fidel|premio/,'Tu cliente escanea un QR y guarda la tarjeta en Apple Wallet o Google Wallet, sin descargar apps. Con tu logo y tus colores. Tu equipo la escanea en cada visita y desde el panel ves quién vuelve y quién está cerca de su premio.'],
+[/zelecte|zmarth|grupo|supermercado|tienda|ecommerce|comercio electronico|vender en linea/,'<b>Zelecte México</b> es un supermercado premium en línea de Zmarth, empresa de nuestro grupo: departamentos de frescos, gourmet, hogar, tecnología y moda, entrega a domicilio o retiro en tienda, y un asistente de compras. Míralo funcionando: <a href="https://zelecte.onrender.com" target="_blank" rel="noopener">abrir Zelecte</a>.'],
+[/ciber|seguridad|hack|respaldo|incidente/,'En ciberseguridad revisamos y endurecemos tus sistemas, controlamos respaldos y vencimientos, y damos monitoreo y atención de incidentes.'],
+[/garant|contrato|render|responsab/,'En membresías, apps de comercio y ciberseguridad firmamos un contrato de responsabilidad. Cubrimos el funcionamiento de lo que desarrollamos; hospedaje, dominios y servidores externos dependen de terceros, pero te ayudamos a resolverlos.'],
+[/volver|retenc|regres|cliente/,'Hacemos que los clientes que ya vinieron vuelvan: club de clientes, puntos, sellos digitales y avisos con tu marca. Mira la calculadora «Cliente A o B» en esta página.'],
+[/contacto|whatsapp|hablar|humano|telefono|llamar|correo|email/,'Con gusto te atienden personas. '+wa('Hola, quiero platicar de mi proyecto')],
+[/hola|buenas|hey|que tal/,'¡Hola! ¿Qué giro es tu negocio? Puedo contarte de precios, el punto de venta, Canchera, Coffeezey o Restaurantzey.']];
+const DEF='No tengo eso a la mano, pero una persona te responde rápido. '+wa('Hola, tengo una duda');
+function ask(q){A(q,1);const z=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');const r=KB.find(k=>k[0].test(z));setTimeout(()=>A(r?r[1]:DEF),350)}
+['Precios','Probar el POS','Pizzería en vivo','Canchera','Tarjeta en wallet','Hablar con alguien'].forEach(t=>{const b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=()=>ask(t);$('#qs').appendChild(b)});
+const tog=o=>{pnl.hidden=!o;fab.setAttribute('aria-expanded',o);if(o&&first){first=0;A('Hola, soy el asistente de ZEDYTH. Pregúntame por precios, el punto de venta o nuestros sistemas para clubes, cafés y restaurantes.')}if(o)$('#bi').focus()};
+fab.onclick=()=>tog(pnl.hidden);$('#bx').onclick=()=>tog(false);
+$('#bf').onsubmit=e=>{e.preventDefault();const v=$('#bi').value.trim();if(v){ask(v);$('#bi').value=''}};
+})();
+</script>{% endraw %}
+{% raw %}<script>
+(function(){
+const $=s=>document.querySelector(s),WA=$('#bot').dataset.wa;
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const G={c:{t:'Club deportivo',r:['Cancha 1','Cancha 2','Cancha 3']},m:{t:'Restaurante',r:['Mesa para 2','Mesa para 4','Mesa para 8']},s:{t:'Consultorio o servicios',r:['Dra. Soto','Dr. Ramos','Dra. Vega']}};
+const H=[9,10,11,12,13,14,15,16,17,18,19,20];
+let g='c',d=0,bk={},wl={},fr={},sel=null;
+const days=[0,1,2,3,4].map(i=>{if(!i)return'Hoy';const x=new Date();x.setDate(x.getDate()+i);return x.toLocaleDateString('es-MX',{weekday:'short',day:'numeric'})});
+const K=(a,r,h)=>a+'|'+r+'|'+h,busy=(a,r,h)=>(a*7+r*13+h*5)%7<2&&!fr[K(a,r,h)];
+const msg=t=>{$('#zm').textContent=t};
+function brand(){const n=$('#zn').value.trim()||'Tu negocio',h=[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+ $('#zt').textContent=n;$('#zl').textContent=n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+ $('#zl').style.background='hsl('+h+' 30% 40%)';
+ $('#zcta').href=WA+'?text='+encodeURIComponent('Hola, quiero un sistema de reservas para '+n)}
+const zg=$('#zg');
+Object.keys(G).forEach(k=>{const b=el('button','',G[k].t);b.type='button';b.setAttribute('role','tab');b.dataset.k=k;
+ b.onclick=()=>{g=k;bk={};wl={};fr={};sel=null;$('#zf').hidden=true;draw();msg('Giro: '+G[k].t+'. Elige un turno libre.')};zg.appendChild(b)});
+function pick(r,h){const k=K(d,r,h);if(bk[k]){msg('Esta es tu reserva. Puedes cancelarla desde el panel del dueño.');return}
+ const t=busy(d,r,h);sel={r,h,t};$('#zf').hidden=false;
+ $('#zft').textContent=(t?'Lista de espera · ':'Reservar · ')+G[g].r[r]+' · '+days[d]+' '+h+':00';
+ $('#zfb').textContent=t?'Avisarme si se libera':'Confirmar reserva';
+ msg(t?'Ese turno ya está ocupado: la agenda no deja que se pisen dos reservas. Entra a la lista de espera.':'Turno libre. Deja tu nombre y confirma, sin crear cuenta.');
+ $('#zcn').focus({preventScroll:true})}
+function draw(){
+ zg.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.k===g));
+ const D=$('#zd');D.innerHTML='';days.forEach((t,i)=>{const b=el('button',i===d?'on':'',t);b.type='button';b.onclick=()=>{d=i;$('#zf').hidden=true;draw()};D.appendChild(b)});
+ const S=$('#zs');S.innerHTML='';
+ G[g].r.forEach((rn,r)=>{const w=el('div','rrow'),sl=el('div','sl');w.appendChild(el('b','',rn));
+  H.forEach(h=>{const m=bk[K(d,r,h)],t=m||busy(d,r,h),b=el('button',m?'mine':t?'busy':'',h+':00');b.type='button';
+   b.setAttribute('aria-label',rn+' a las '+h+':00, '+(m?'tu reserva':t?'ocupado':'libre'));b.onclick=()=>pick(r,h);sl.appendChild(b)});
+  w.appendChild(sl);S.appendChild(w)});
+ own()}
+function own(){const L=$('#zr');L.innerHTML='';const a=Object.entries(bk),w=Object.entries(wl);
+ if(!a.length&&!w.length)L.appendChild(el('li','empty','Aún no hay movimientos. Elige un turno a la izquierda.'));
+ a.forEach(([k,b])=>{const li=el('li'),s=el('span','',days[b.d]+' · '+b.h+':00 · '+G[g].r[b.r]),x=el('button','','Cancelar');s.appendChild(el('small','',b.n));x.type='button';x.onclick=()=>cancel(k);li.append(s,x);L.appendChild(li)});
+ w.forEach(([k,b])=>{const li=el('li','w'),s=el('span','','En espera · '+days[b.d]+' · '+b.h+':00 · '+G[g].r[b.r]),x=el('button','','Simular cancelación');s.appendChild(el('small','',b.n));x.type='button';x.onclick=()=>free(k);li.append(s,x);L.appendChild(li)});
+ let tk=0;G[g].r.forEach((_,r)=>H.forEach(h=>{if(bk[K(d,r,h)]||busy(d,r,h))tk++}));
+ $('#kb').textContent=a.length;$('#ko').textContent=Math.round(tk/(H.length*3)*100)+'%';$('#kw').textContent=w.length;$('#kp').textContent=a.length*10}
+function cancel(k){const b=bk[k];delete bk[k];msg('Reserva cancelada: el turno de las '+b.h+':00 vuelve a quedar libre al instante.');draw()}
+function free(k){const w=wl[k];delete wl[k];fr[k]=1;bk[k]=w;msg('El otro cliente canceló. Lista de espera avisada: '+w.n+' recibe el aviso al toque y toma el turno de las '+w.h+':00.');draw()}
+$('#zf').onsubmit=e=>{e.preventDefault();if(!sel)return;const n=$('#zcn').value.trim();if(!n)return;const k=K(d,sel.r,sel.h),o={d,r:sel.r,h:sel.h,n};
+ if(sel.t){wl[k]=o;msg('Listo, '+n+': estás en la lista de espera. Prueba «Simular cancelación» en el panel del dueño.')}
+ else{bk[k]=o;msg('Reserva confirmada para '+n+'. Recibe confirmación por WhatsApp y suma 10 puntos para premios.')}
+ $('#zf').hidden=true;$('#zf').reset();sel=null;draw()};
+$('#zfx').onclick=()=>{$('#zf').hidden=true;sel=null};
+$('#zn').oninput=brand;brand();draw();msg('Elige un turno libre para empezar.');
+})();
+</script>{% endraw %}
+{% raw %}<script>
+(function(){
+const $=s=>document.querySelector(s),WA=$('#bot').dataset.wa;
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const mx=n=>'$'+n.toLocaleString('es-MX');
+const OV=2,ENV=35,ARC=251;
+const ING={masa:['Masa',24],queso:['Queso',30],pep:['Pepperoni',14],jam:['Jamón',12],ver:['Verduras',16]};
+const MENU=[
+ {id:'mar',n:'Margarita',d:'Tomate, mozzarella y albahaca',p:140,r:{masa:1,queso:1}},
+ {id:'pep',n:'Pepperoni',d:'Doble pepperoni y mozzarella',p:165,r:{masa:1,queso:1,pep:2}},
+ {id:'haw',n:'Hawaiana',d:'Jamón, piña y mozzarella',p:170,r:{masa:1,queso:1,jam:2}},
+ {id:'cua',n:'Cuatro quesos',d:'Mozzarella, parmesano, gouda y queso azul',p:185,r:{masa:1,queso:2}},
+ {id:'mex',n:'Mexicana',d:'Pepperoni, jalapeño y cebolla',p:180,r:{masa:1,queso:1,pep:1,ver:1}},
+ {id:'veg',n:'Vegetariana',d:'Pimiento, champiñón y aceituna',p:160,r:{masa:1,queso:1,ver:2}}];
+const NAMES=['Ana','Luis','Marisol','Diego','Paola','Hugo','Valeria','Iván'];
+const byId=id=>MENU.find(m=>m.id===id);
+let S,cart,mode='rec',run=true,vis=false,seeded=false,rt=[],rushing=false,QR={};
+
+function fresh(){S={stock:{},orders:[],n:100,count:0,sales:0,rn:0,rw:0,warn:{}};Object.keys(ING).forEach(k=>S.stock[k]=ING[k][1]);cart={}}
+const msg=t=>{$('#pzmsg').textContent=t};
+const used=()=>{const u={};MENU.forEach(m=>{const q=cart[m.id]||0;if(q)Object.keys(m.r).forEach(k=>u[k]=(u[k]||0)+m.r[k]*q)});return u};
+const can=m=>{const u=used();return Object.keys(m.r).every(k=>S.stock[k]-(u[k]||0)>=m.r[k])};
+const cartQ=()=>MENU.reduce((a,m)=>a+(cart[m.id]||0),0);
+const cartTotal=()=>MENU.reduce((a,m)=>a+(cart[m.id]||0)*m.p,0)+(mode==='dom'&&cartQ()?ENV:0);
+const durOf=q=>6+2*q;
+const ovN=()=>S.orders.filter(o=>o.st==='oven').length;
+const desc=o=>o.items.map(i=>i.q+' × '+byId(i.id).n).join(', ')+' · '+(o.m==='dom'?'Domicilio':'Recoger');
+function trim(){let ch=false;MENU.forEach(m=>{while((cart[m.id]||0)>0&&Object.keys(used()).some(k=>used()[k]>S.stock[k])){cart[m.id]--;if(!cart[m.id])delete cart[m.id];ch=true}});return ch}
+function slotsNow(){const sl=Array(OV).fill(0);S.orders.filter(o=>o.st==='oven').forEach(o=>{sl[o.ov]=o.dur-o.prog});return sl}
+function eta(dur){const sl=slotsNow();S.orders.filter(o=>o.st==='new').forEach(o=>{sl.sort((a,b)=>a-b);sl[0]+=o.dur});sl.sort((a,b)=>a-b);return Math.ceil(sl[0]+dur)}
+function queueStart(){const sl=slotsNow(),r={};S.orders.filter(o=>o.st==='new').forEach(o=>{sl.sort((a,b)=>a-b);r[o.id]=Math.ceil(sl[0]);sl[0]+=o.dur});return r}
+function promote(){const taken=S.orders.filter(o=>o.st==='oven').map(o=>o.ov);
+ for(const o of S.orders){if(o.st!=='new')continue;let f=-1;for(let i=0;i<OV;i++)if(!taken.includes(i)){f=i;break}
+  if(f<0)break;o.st='oven';o.ov=f;o.prog=0;taken.push(f)}}
+function add(name,items,m){
+ const q=items.reduce((a,i)=>a+i.q,0),total=items.reduce((a,i)=>a+i.q*byId(i.id).p,0)+(m==='dom'?ENV:0);
+ items.forEach(i=>{const mm=byId(i.id);Object.keys(mm.r).forEach(k=>S.stock[k]-=mm.r[k]*i.q)});
+ const o={id:'P-'+(++S.n),name,items,q,total,m,st:'new',prog:0,dur:durOf(q),wait:0,age:0,ov:-1};
+ S.orders.push(o);S.count++;S.sales+=total;promote();return o}
+function lowCheck(){const n=Object.keys(ING).filter(k=>S.stock[k]/ING[k][1]<=.25&&!S.warn[k]);n.forEach(k=>S.warn[k]=1);return n.map(k=>ING[k][0])}
+
+/* ---------- Menú del cliente ---------- */
+const R=[];
+function buildMenu(){const box=$('#pzmenu');box.innerHTML='';
+ MENU.forEach(m=>{
+  const row=el('div','pz-row'),i=el('div','pz-i'),st=el('div','pz-step'),mi=el('button','','−'),pl=el('button','','+'),q=el('span','q','0'),tag=el('span','pz-tag','Agotado');
+  i.append(el('b','',m.n),el('small','',m.d));
+  mi.type='button';pl.type='button';
+  mi.setAttribute('aria-label','Quitar una '+m.n);pl.setAttribute('aria-label','Agregar una '+m.n);
+  mi.onclick=()=>{if(cart[m.id]){cart[m.id]--;if(!cart[m.id])delete cart[m.id];updMenu();updCart()}};
+  pl.onclick=()=>{if(can(m)){cart[m.id]=(cart[m.id]||0)+1;updMenu();updCart()}};
+  st.append(mi,q,pl);tag.hidden=true;
+  row.append(i,el('span','pr',mx(m.p)),st,tag);box.appendChild(row);R.push({m,q,mi,pl,st,tag})})}
+function updMenu(){R.forEach(r=>{const q=cart[r.m.id]||0,c=can(r.m);r.q.textContent=q;r.mi.disabled=!q;r.pl.disabled=!c;r.st.hidden=!c&&!q;r.tag.hidden=!(!c&&!q)})}
+function updCart(){const q=cartQ(),dom=mode==='dom';
+ $('#pzt').textContent=q?mx(cartTotal()):'$0';
+ $('#pze').textContent=q?(dom?'Llegaría':'Estaría listo')+' en ~'+(eta(durOf(q))+(dom?10:0))+' min'+(dom?' · incluye envío '+mx(ENV):''):'Elige tus pizzas para ver el total y el tiempo estimado';
+ $('#pzb').disabled=!q}
+const modes={rec:'Recoger en tienda',dom:'A domicilio'},tm=$('#pzmode');
+function tabs(){tm.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.k===mode))}
+Object.keys(modes).forEach(k=>{const b=el('button','',modes[k]);b.type='button';b.setAttribute('role','tab');b.dataset.k=k;b.onclick=()=>{mode=k;tabs();updCart()};tm.appendChild(b)});
+
+/* ---------- Hornos ---------- */
+const GA='M20 105A80 80 0 0 1 180 105',G=[];
+function buildOvens(){const box=$('#pzov');box.innerHTML='';
+ for(let i=0;i<OV;i++){const d=el('div','pz-oven');
+  d.innerHTML='<svg viewBox="0 0 200 118" aria-hidden="true"><path class="t" d="'+GA+'"/><path class="f" d="'+GA+'" stroke-dasharray="0 252"/><text x="100" y="98" text-anchor="middle">—</text></svg>';
+  const b=el('b'),s=el('small');d.append(b,s);box.appendChild(d);G.push({d,f:d.querySelector('.f'),t:d.querySelector('text'),b,s})}}
+function updOvens(){for(let i=0;i<OV;i++){const o=S.orders.find(x=>x.st==='oven'&&x.ov===i),g=G[i];
+ if(o){g.f.setAttribute('stroke-dasharray',(o.prog/o.dur*ARC).toFixed(1)+' 252');g.t.textContent=o.dur-o.prog;
+  g.b.textContent='Horno '+(i+1)+' · '+o.id;g.s.textContent=o.name+' · '+o.q+(o.q>1?' pizzas':' pizza')+' · restan '+(o.dur-o.prog)+' min';g.d.classList.add('on')}
+ else{g.f.setAttribute('stroke-dasharray','0 252');g.t.textContent='—';g.b.textContent='Horno '+(i+1);g.s.textContent='Libre';g.d.classList.remove('on')}}}
+
+/* ---------- Inventario ---------- */
+const RF={};
+function buildStock(){const box=$('#pzst');box.innerHTML='';
+ Object.keys(ING).forEach(k=>{const row=el('div','pz-s'),bar=el('div','pz-bar'),fl=el('span'),v=el('span','v');bar.appendChild(fl);row.append(el('span','',ING[k][0]),bar,v);box.appendChild(row);RF[k]={row,fl,v}});
+ const b=el('button','pz-mini','Reabastecer inventario');b.type='button';
+ b.onclick=()=>{Object.keys(ING).forEach(k=>S.stock[k]=ING[k][1]);S.warn={};msg('Inventario repuesto. En el sistema real registras cada compra y el stock baja solo con cada pizza que sale.');updStock();updMenu();updCart()};
+ box.appendChild(b)}
+function updStock(){Object.keys(ING).forEach(k=>{const v=S.stock[k],m=ING[k][1],p=v/m;RF[k].fl.style.width=(p*100)+'%';RF[k].v.textContent=v+'/'+m;RF[k].row.classList.toggle('low',p<=.25);if(p>.25)delete S.warn[k]})}
+
+/* ---------- Panel del dueño ---------- */
+function kpis(){$('#pk1').textContent=S.count;$('#pk2').textContent=mx(S.sales);$('#pk3').textContent=S.rn?Math.round(S.rw/S.rn)+' min':'—';$('#pk4').textContent=ovN()+'/'+OV}
+function drawLists(){
+ const q=S.orders.filter(o=>o.st==='new'),r=S.orders.filter(o=>o.st==='ready'),qs=queueStart();
+ $('#pzqn').textContent=q.length;$('#pzrn').textContent=r.length;
+ const Q=$('#pzq'),D=$('#pzrd');Q.innerHTML='';D.innerHTML='';QR={};
+ if(!q.length)Q.appendChild(el('li','empty','Sin pedidos esperando: los hornos están al día.'));
+ q.forEach(o=>{const li=el('li'),s=el('span','',o.id+' · '+o.name),sm=el('small'),x=el('button','','Cancelar');
+  sm.textContent=desc(o)+' · hornea en ~'+qs[o.id]+' min';QR[o.id]={sm,base:desc(o)};
+  x.type='button';x.onclick=()=>cancelO(o);s.appendChild(sm);li.append(s,x);Q.appendChild(li)});
+ if(!r.length)D.appendChild(el('li','empty','Aquí aparecen los pedidos que salen del horno.'));
+ r.forEach(o=>{const li=el('li','rd'),s=el('span','',o.id+' · '+o.name),x=el('button','','Entregar');
+  s.appendChild(el('small','',desc(o)+' · '+(o.m==='dom'?'sale con el repartidor':'listo para recoger')));
+  x.type='button';x.onclick=()=>deliver(o);li.append(s,x);D.appendChild(li)})}
+function drawAll(){kpis();updOvens();drawLists();updStock();updCart()}
+function upd(){kpis();updOvens();const qs=queueStart();Object.keys(QR).forEach(id=>{if(qs[id]!=null)QR[id].sm.textContent=QR[id].base+' · hornea en ~'+qs[id]+' min'});updCart()}
+function cancelO(o){o.items.forEach(i=>{const m=byId(i.id);Object.keys(m.r).forEach(k=>S.stock[k]=Math.min(ING[k][1],S.stock[k]+m.r[k]*i.q))});
+ S.orders=S.orders.filter(x=>x!==o);S.count--;S.sales-=o.total;promote();
+ msg('Pedido '+o.id+' cancelado: los ingredientes vuelven al inventario y la venta se descuenta al instante.');drawAll();updMenu()}
+function deliver(o){S.orders=S.orders.filter(x=>x!==o);
+ msg(o.name+' recibe su pedido '+o.id+'. Entregado y registrado: suma '+o.q*10+' puntos para su próxima pizza.');drawAll()}
+
+/* ---------- Reloj de la cocina (1 s = 1 min) ---------- */
+function tick(){
+ if(!vis||!run)return;
+ let ch=false;
+ S.orders.forEach(o=>{
+  if(o.st==='oven'){o.wait++;o.prog++;if(o.prog>=o.dur){o.st='ready';o.age=0;S.rn++;S.rw+=o.wait;ch=true}}
+  else if(o.st==='new')o.wait++;
+  else if(o.st==='ready'){o.age++;if(o.age>=10){o.st='gone';ch=true}}});
+ S.orders=S.orders.filter(o=>o.st!=='gone');
+ const b=ovN();promote();if(ovN()!==b)ch=true;
+ ch?drawAll():upd()}
+setInterval(tick,1000);
+
+/* ---------- Pedido del cliente ---------- */
+$('#pzf').onsubmit=e=>{e.preventDefault();
+ const n=$('#pzc').value.trim(),q=cartQ();if(!n||!q)return;
+ if(trim()){msg('Mientras elegías se terminó un ingrediente: ajustamos tu pedido a lo que sí se puede preparar.');updMenu();updCart();return}
+ const items=MENU.filter(m=>cart[m.id]).map(m=>({id:m.id,q:cart[m.id]})),o=add(n,items,mode);
+ cart={};$('#pzf').reset();
+ const low=lowCheck();
+ msg('Pedido '+o.id+' confirmado para '+n+'. '+(o.st==='oven'?'Entra directo al horno '+(o.ov+1)+'. ':'Los hornos están ocupados: queda en cola y tu cliente ya sabe cuánto tarda. ')+'Recibe aviso por WhatsApp cuando salga y suma '+o.q*10+' puntos.'+(low.length?' Stock bajo de '+low.join(', ')+': el sistema te avisa antes de que se acabe.':''));
+ drawAll();updMenu()};
+
+/* ---------- Hora pico ---------- */
+function pickRush(){const tmp=Object.assign({},S.stock),n=1+((Math.random()*3)|0),map={};
+ for(let t=0;t<n;t++){const m=MENU[(Math.random()*MENU.length)|0];
+  if(Object.keys(m.r).every(k=>tmp[k]>=m.r[k])){Object.keys(m.r).forEach(k=>tmp[k]-=m.r[k]);map[m.id]=(map[m.id]||0)+1}}
+ return Object.keys(map).map(id=>({id,q:map[id]}))}
+function rushGo(){
+ if(rushing)return;rushing=true;$('#pzrush').disabled=true;
+ msg('Hora pico: llegan 6 pedidos en pocos minutos. Mira cómo se llenan los hornos y la cola.');
+ let n=0,out=false;
+ (function nxt(){
+  if(n>=6){rushing=false;$('#pzrush').disabled=false;const w=S.orders.filter(o=>o.st==='new').length;
+   msg('Hora pico atendida: '+(w?w+(w>1?' pedidos esperan':' pedido espera')+' en cola':'sin cola')+', hornos al '+Math.round(ovN()/OV*100)+'%'+(out?' y parte del menú ya marca agotado':'')+'. El siguiente cliente ya ve ~'+eta(durOf(1))+' min antes de pedir.');return}
+  n++;const items=pickRush();
+  if(items.length)add(NAMES[(Math.random()*NAMES.length)|0],items,Math.random()<.4?'dom':'rec');else out=true;
+  lowCheck();if(trim())msg('Se agotó un ingrediente mientras elegías: ajustamos tu carrito a lo que sí se puede preparar.');
+  drawAll();updMenu();rt.push(setTimeout(nxt,900))})()}
+$('#pzrush').onclick=rushGo;
+$('#pzpause').onclick=()=>{run=!run;$('#pzpause').textContent=run?'Pausar cocina':'Reanudar cocina';msg(run?'Cocina en marcha.':'Cocina en pausa. Reanuda para ver cómo avanzan los pedidos.')};
+$('#pzreset').onclick=()=>{rt.forEach(clearTimeout);rt=[];rushing=false;$('#pzrush').disabled=false;run=true;$('#pzpause').textContent='Pausar cocina';
+ fresh();drawAll();updMenu();msg('Demo reiniciada. Elige tus pizzas y confirma un pedido, o lanza una hora pico.')};
+
+/* ---------- Marca y arranque ---------- */
+function brand(){const n=$('#pzn').value.trim()||'Tu pizzería',h=[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+ $('#pznm').textContent=n;$('#pzl').textContent=n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+ $('#pzl').style.background='hsl('+h+' 30% 40%)';
+ $('#pzcta').href=WA+'?text='+encodeURIComponent('Hola, quiero un sistema para mi pizzería: '+n)}
+function seed(){seeded=true;const a=add('Mariana',[{id:'pep',q:2}],'rec');a.prog=3;add('Luis',[{id:'mex',q:1}],'dom');add('Paola',[{id:'mar',q:1},{id:'cua',q:1}],'rec');
+ drawAll();updMenu();msg('La cocina ya está trabajando. Elige tus pizzas y haz un pedido, o lanza una hora pico.')}
+$('#pzn').oninput=brand;
+fresh();buildMenu();buildOvens();buildStock();tabs();drawAll();updMenu();brand();
+msg('Elige tus pizzas y confirma un pedido. Del otro lado ves la cocina.');
+new IntersectionObserver(es=>{vis=es[0].isIntersecting;if(vis&&!seeded)seed()},{threshold:.15}).observe($('#pizzeria'));
+})();
+</script>{% endraw %}
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!-- templates/avisos.html -->
+{% extends "base.html" %}
+
+{% macro estado(a) %}
+    {% if a.dias < 0 %}<span class="badge badge-red">Vencido hace {{ -a.dias }} d</span>
+    {% elif a.dias == 0 %}<span class="badge badge-amber">Hoy</span>
+    {% else %}<span class="badge">En {{ a.dias }} d</span>{% endif %}
+{% endmacro %}
+
+{% block content %}
+<section class="hero">
+    <h1>Avisos</h1>
+    <p>Pagos que vencen en los próximos {{ dias_aviso }} días o que ya vencieron.</p>
+</section>
+
+<div class="section-title" style="margin-top:0;">Por cobrar a clientes</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead><tr><th>Cliente</th><th>Plan</th><th>Fecha</th><th>Monto</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead>
+            <tbody>
+                {% for a in por_cobrar %}
+                <tr>
+                    <td><a href="/clientes/{{ a.cliente.id }}" style="font-weight:500;">{{ a.cliente.nombre_comercial }}</a></td>
+                    <td style="color:var(--text-muted);">{{ a.plan }} · {{ a.periodicidad }}</td>
+                    <td class="mono">{{ a.fecha }}</td>
+                    <td>{{ '${:,.0f}'.format(a.monto) }}</td>
+                    <td>{{ estado(a) }}</td>
+                    <td><div class="btn-row">
+                        {% if a.wa %}<a class="btn btn-sm" href="{{ a.wa }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+                        <a class="btn btn-sm" href="{{ a.mail }}">Correo</a>
+                        <form method="post" action="/clientes/{{ a.cliente.id }}/cobrar"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro</button></form>
+                    </div></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">Nada por cobrar en este periodo.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="section-title">Por pagar a proveedores</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead><tr><th>Proveedor</th><th>Proyecto</th><th>Fecha</th><th>Monto</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead>
+            <tbody>
+                {% for a in por_pagar %}
+                <tr>
+                    <td><div style="font-weight:500;">{{ a.proveedor }}</div><div class="mono">{{ a.concepto or '' }} · {{ a.periodicidad }}</div></td>
+                    <td style="color:var(--text-muted);">{{ a.proyecto.nombre }}</td>
+                    <td class="mono">{{ a.fecha }}</td>
+                    <td>{{ '${:,.0f}'.format(a.monto or 0) }}</td>
+                    <td>{{ estado(a) }}</td>
+                    <td><div class="btn-row"><form method="post" action="/costos/{{ a.id }}/pagar"><button class="btn btn-sm btn-primary" type="submit">Marcar pagado</button></form></div></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">Nada por pagar en este periodo.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="section-title">Seguridad</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead><tr><th>Proyecto</th><th>Alerta</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead>
+            <tbody>
+                {% for a in seguridad %}
+                <tr>
+                    <td><a href="/proyectos/{{ a.proyecto.id }}/seguridad" style="font-weight:500;">{{ a.proyecto.nombre }}</a></td>
+                    <td style="color:var(--text-muted);">{{ a.tipo }} · {{ a.detalle }}</td>
+                    <td>{% if a.tipo == 'Vencimiento' %}{{ estado(a) }}{% else %}<span class="badge badge-amber">Sin respaldo reciente</span>{% endif %}</td>
+                    <td><div class="btn-row">
+                        {% if a.vid %}<form method="post" action="/vencimientos/{{ a.vid }}/renovar"><button class="btn btn-sm btn-primary" type="submit">Renovado</button></form>{% endif %}
+                        <a class="btn btn-sm" href="/proyectos/{{ a.proyecto.id }}/seguridad">Abrir</a>
+                    </div></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" style="text-align:center; padding:32px; color:var(--text-muted);">Sin alertas de seguridad.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

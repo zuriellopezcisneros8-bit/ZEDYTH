@@ -1,0 +1,61 @@
+<!-- templates/finanzas.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Finanzas</h1>
+    <p>Ingresos contra costos de todos los clientes. Cobrado este mes: {{ stats.cobrado }}.</p>
+</section>
+
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="luxury-card"><h3 class="stat-label">Ingresos mensuales</h3><div class="stat-value">{{ stats.ingresos }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Costos mensuales</h3><div class="stat-value">{{ stats.costos }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label"><span class="dot"></span> Ganancia · margen {{ stats.margen }}</h3><div class="stat-value">{{ stats.ganancia }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Vencido por cobrar</h3><div class="stat-value {{ 'neg' if stats.vencido != '$0' }}">{{ stats.vencido }}</div></div>
+</div>
+
+<div class="section-title" style="margin-top:0;">Rentabilidad por cliente</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Cliente</th><th>Plan</th><th>Ingreso/mes</th><th>Costo/mes</th><th>Ganancia</th><th>Margen</th><th>Vencido</th></tr></thead>
+        <tbody>
+            {% for f in filas %}
+            <tr>
+                <td><a href="/clientes/{{ f.c.id }}" style="font-weight:500;">{{ f.c.nombre_comercial }}</a></td>
+                <td style="color:var(--text-muted);">{{ f.c.membresia_actual }}{% if f.s %} · {{ f.s.periodicidad }}{% endif %}</td>
+                <td>{{ '${:,.0f}'.format(f.ingreso) }}</td>
+                <td>{{ '${:,.0f}'.format(f.costo) }}</td>
+                <td class="{{ 'pos' if f.ganancia > 0 else 'neg' if f.ganancia < 0 }}">{{ '${:,.0f}'.format(f.ganancia) }}</td>
+                <td>{{ (f.margen ~ '%') if f.margen is not none else '—' }}</td>
+                <td>{% if f.vencido %}<span class="badge badge-red">{{ '${:,.0f}'.format(f.vencido) }}</span>{% else %}—{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="text-align:center; padding:48px; color:var(--text-muted);">Aún no hay clientes registrados.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+
+<div class="section-title">Flujo de los próximos 12 meses</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Mes</th><th style="width:34%;">Entra / sale</th><th>Entra</th><th>Sale</th><th>Neto</th></tr></thead>
+        <tbody>
+            {% for p in proy %}
+            <tr>
+                <td class="mono">{{ p.mes }}</td>
+                <td>
+                    <div class="bar-track"><div class="bar-in" style="width: {{ (100 * p.ent / maximo)|round(1) }}%;"></div></div>
+                    <div class="bar-track"><div class="bar-out" style="width: {{ (100 * p.sal / maximo)|round(1) }}%;"></div></div>
+                </td>
+                <td>{{ '${:,.0f}'.format(p.ent) }}</td>
+                <td style="color:var(--text-muted);">{{ '${:,.0f}'.format(p.sal) }}</td>
+                <td class="{{ 'pos' if p.neto > 0 else 'neg' if p.neto < 0 }}">{{ '${:,.0f}'.format(p.neto) }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="font-weight:600;"><td>Total</td><td></td><td>{{ '${:,.0f}'.format(totales.ent) }}</td><td>{{ '${:,.0f}'.format(totales.sal) }}</td><td>{{ '${:,.0f}'.format(totales.ent - totales.sal) }}</td></tr>
+        </tbody>
+    </table></div>
+</div>
+<p style="color:var(--text-muted); font-size:13px; margin-top:14px; line-height:1.6;">Se proyecta con las próximas fechas de pago y la periodicidad de cada cobro y cada costo. Un pago ya vencido se cuenta una vez en el mes actual.{% if sin_fecha %} Hay {{ sin_fecha }} cobro{{ 's' if sin_fecha > 1 }} o costo{{ 's' if sin_fecha > 1 }} sin fecha de pago que no entran en la proyección.{% endif %}</p>
+{% endblock %}

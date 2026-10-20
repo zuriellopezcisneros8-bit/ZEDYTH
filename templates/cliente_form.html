@@ -1,0 +1,86 @@
+<!-- templates/cliente_form.html -->
+{% extends "base.html" %}
+
+{% macro campo(name, label, type='text', req=False) %}
+<label class="lbl">{{ label }}
+    <input class="field" type="{{ type }}" name="{{ name }}" value="{{ (cliente[name] if cliente else '') or '' }}" {{ 'required' if req }}>
+</label>
+{% endmacro %}
+
+{% block content %}
+{% set s = cliente.suscripcion if cliente else none %}
+<section class="hero">
+    <h1>{{ 'Editar cliente' if cliente else 'Nuevo cliente' }}</h1>
+    <p>Datos generales, fiscales y de contacto, más el plan contratado.</p>
+</section>
+
+<form method="post" class="stack" style="max-width: 820px; margin: 0 auto;">
+    <div class="luxury-card">
+        <h3 class="stat-label">Datos generales</h3>
+        <div class="grid-2">
+            {{ campo('nombre_comercial', 'Nombre comercial', req=True) }}
+            {{ campo('razon_social', 'Razón social') }}
+        </div>
+    </div>
+
+    <div class="luxury-card">
+        <h3 class="stat-label">Datos fiscales</h3>
+        <div class="grid-2">
+            {{ campo('rfc', 'RFC') }}
+            {{ campo('direccion_fiscal', 'Dirección fiscal') }}
+        </div>
+    </div>
+
+    <div class="luxury-card">
+        <h3 class="stat-label">Contacto principal</h3>
+        <div class="grid-2">
+            {{ campo('contacto_nombre', 'Nombre') }}
+            {{ campo('contacto', 'Correo electrónico', 'email', True) }}
+            {{ campo('telefono', 'Teléfono', 'tel') }}
+        </div>
+    </div>
+
+    <div class="luxury-card">
+        <h3 class="stat-label">Plan y cobro</h3>
+        <div class="grid-2">
+            <label class="lbl">Plan
+                <select class="field" name="plan_id">
+                    <option value="">Sin plan</option>
+                    {% for p in planes %}
+                    <option value="{{ p.id }}" {{ 'selected' if s and s.plan_id == p.id }}>{{ p.nombre }}{% if p.precio %} — ${{ '{:,.0f}'.format(p.precio) }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="lbl">Tarifa mensual (MXN)
+                <input class="field" type="number" step="0.01" min="0" name="tarifa" value="{{ s.tarifa if s else '' }}" placeholder="Vacío = precio del plan">
+            </label>
+            <label class="lbl">Periodicidad de cobro
+                <select class="field" name="periodicidad">
+                    {% for e in ['Mensual', 'Trimestral', 'Anual'] %}<option {{ 'selected' if s and s.periodicidad == e }}>{{ e }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="lbl">Descuento por periodo largo (%)
+                <input class="field" type="number" step="0.1" min="0" max="100" name="descuento_pct" value="{{ s.descuento_pct if s and s.descuento_pct else '' }}" placeholder="0">
+            </label>
+            <label class="lbl">Fecha de corte
+                <input class="field" type="date" name="fecha_corte" value="{{ s.fecha_corte if s and s.fecha_corte else '' }}">
+            </label>
+            <label class="lbl">Próxima fecha de pago
+                <input class="field" type="date" name="proxima_fecha_pago" value="{{ s.proxima_fecha_pago if s and s.proxima_fecha_pago else '' }}">
+            </label>
+            <label class="lbl">Estado de cobro
+                <select class="field" name="estado_cobro">
+                    {% for e in ['Al corriente', 'Pendiente', 'Atrasado'] %}
+                    <option {{ 'selected' if s and s.estado_cobro == e }}>{{ e }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+    </div>
+
+    <div class="modal-actions">
+        <a class="btn" href="{{ '/clientes/%d' % cliente.id if cliente else '/clientes' }}">Cancelar</a>
+        <button class="btn btn-primary" type="submit">Guardar cliente</button>
+    </div>
+</form>
+{% endblock %}

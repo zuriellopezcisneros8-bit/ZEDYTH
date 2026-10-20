@@ -1,0 +1,40 @@
+<!-- templates/repositorios.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Repositorios</h1>
+    <p>Todos los proyectos con su repositorio, carpeta e infraestructura.</p>
+    <form class="toolbar" method="get" action="/repositorios">
+        <input class="field" type="search" name="q" value="{{ q }}" placeholder="Buscar por proyecto, cliente o stack">
+        <select class="field" name="estado" style="width:170px; border-radius:999px; margin:0;">
+            <option value="">Todos los estados</option>
+            {% for e in ['Desarrollo','Activo','Mantenido','Suspendido'] %}<option {{ 'selected' if estado == e }}>{{ e }}</option>{% endfor %}
+        </select>
+        <button class="btn" type="submit">Filtrar</button>
+    </form>
+</section>
+
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead><tr><th>Proyecto</th><th>Estado</th><th>Repositorio</th><th>Carpeta</th><th>Stack</th><th>Infraestructura</th><th></th></tr></thead>
+            <tbody>
+                {% for p in proyectos %}
+                <tr>
+                    <td><div style="font-weight:500;">{{ p.nombre }}</div><a class="mono" href="/clientes/{{ p.cliente.id }}">{{ p.cliente.nombre_comercial }}</a></td>
+                    <td><span class="badge {{ 'badge-green' if p.estado in ['Activo','Mantenido'] else 'badge-amber' if p.estado == 'Desarrollo' else 'badge-red' }}">{{ p.estado }}</span></td>
+                    <td>{% if p.repo_url %}<a href="{{ p.repo_url }}" target="_blank" rel="noopener" style="text-decoration:underline;">GitHub</a> <span class="mono">{{ p.rama_produccion or '' }}</span>{% else %}—{% endif %}</td>
+                    <td class="mono">{{ p.carpeta_local or '—' }}</td>
+                    <td style="color:var(--text-muted);">{{ p.stack or '—' }}</td>
+                    <td style="color:var(--text-muted);">{{ p.dominio_registrador or '—' }}<div class="mono">{{ p.frontend_plataforma or '—' }} / {{ p.backend_plataforma or '—' }}</div></td>
+                    <td style="text-align:right;"><a class="btn btn-sm" href="/proyectos/{{ p.id }}/editar">Editar</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; padding:48px; color:var(--text-muted);">No hay proyectos que coincidan. Agrégalos desde la ficha de cada cliente.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

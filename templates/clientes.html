@@ -1,0 +1,40 @@
+<!-- templates/clientes.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Clientes</h1>
+    <p>Directorio de clientes con su plan, estado de cobro y próximos pagos.</p>
+    <form class="toolbar" method="get" action="/clientes">
+        <input class="field" type="search" name="q" value="{{ q }}" placeholder="Buscar por nombre, correo o RFC">
+        <button class="btn" type="submit">Buscar</button>
+        <a class="btn btn-primary" href="/clientes/nuevo">+ Nuevo cliente</a>
+    </form>
+</section>
+
+<div class="luxury-card" style="padding: 0; overflow: hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead>
+                <tr><th>Cliente</th><th>Contacto</th><th>Plan</th><th>Tarifa</th><th>Cobro</th><th>Próximo pago</th><th style="text-align:right;">Ficha</th></tr>
+            </thead>
+            <tbody>
+                {% for c in clientes %}
+                {% set s = c.suscripcion %}
+                <tr>
+                    <td><div style="font-weight:500;">{{ c.nombre_comercial }}</div><div class="mono">{{ c.razon_social or '—' }}</div></td>
+                    <td style="color: var(--text-muted);">{{ c.contacto_nombre or '' }}<div class="mono">{{ c.contacto }}</div></td>
+                    <td><span class="badge {% if 'Core' in c.membresia_actual or 'Inclusive' in c.membresia_actual %}badge-hi{% endif %}">{{ c.membresia_actual }}</span></td>
+                    <td>{{ '${:,.0f}'.format(s.tarifa or 0) if s else '—' }}</td>
+                    <td>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro == 'Atrasado' else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</td>
+                    <td class="mono">{{ s.proxima_fecha_pago if s and s.proxima_fecha_pago else '—' }}</td>
+                    <td style="text-align:right;"><a class="btn btn-sm" href="/clientes/{{ c.id }}">Abrir</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; padding:48px; color: var(--text-muted);">{% if q %}Ningún cliente coincide con «{{ q }}».{% else %}Aún no hay clientes. Usa «Nuevo cliente» para registrar el primero.{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

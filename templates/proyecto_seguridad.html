@@ -1,0 +1,107 @@
+<!-- templates/proyecto_seguridad.html -->
+{% extends "base.html" %}
+
+{% macro entrada(name, label, type='text', req=False, valor='') %}
+<label class="lbl">{{ label }}<input class="field" type="{{ type }}" name="{{ name }}" value="{{ valor }}" {{ 'required' if req }}></label>
+{% endmacro %}
+
+{% block content %}
+<section class="hero">
+    <h1>Seguridad · {{ p.nombre }}</h1>
+    <p>{{ p.cliente.nombre_comercial }}</p>
+    <div class="toolbar"><a class="btn" href="/ciberseguridad">Volver</a><a class="btn" href="/proyectos/{{ p.id }}/editar">Editar proyecto</a></div>
+</section>
+
+<div class="grid-2" style="gap:20px;">
+    <form method="post" action="/proyectos/{{ p.id }}/checklist" class="luxury-card">
+        <h3 class="stat-label">Checklist de seguridad</h3>
+        {% for clave, texto in checklist %}
+        <label style="display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; font-size:14px; cursor:pointer;">
+            <input type="checkbox" name="c_{{ clave }}" {{ 'checked' if marcados.get(clave) and marcados[clave].cumplido }} style="margin-top:3px; accent-color:#fff;"> {{ texto }}
+        </label>
+        {% endfor %}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:10px;">
+            <span class="mono">{% set r = marcados.values()|map(attribute='revisado')|select|list %}{{ 'Revisado ' ~ (r|max) if r else 'Sin revisar' }}</span>
+            <button class="btn btn-sm btn-primary" type="submit">Guardar revisión</button>
+        </div>
+    </form>
+
+    <div class="luxury-card">
+        <h3 class="stat-label">Bóveda de credenciales</h3>
+        <p style="margin:0 0 12px; font-size:14px;">{{ p.boveda_ref or 'Sin referencia registrada.' }}</p>
+        <p style="margin:0; color:var(--text-muted); font-size:13px; line-height:1.6;">Guarda aquí solo dónde están las credenciales (carpeta o enlace en tu gestor de contraseñas). Las contraseñas y llaves no deben escribirse en este panel.</p>
+    </div>
+</div>
+
+<div class="section-title">Vencimientos</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Tipo</th><th>Nombre</th><th>Vence</th><th>Notas</th><th></th></tr></thead>
+        <tbody>
+            {% for v in vencimientos %}
+            <tr><td>{{ v.tipo }}</td><td>{{ v.nombre }}</td><td class="mono">{{ v.fecha }}</td><td style="color:var(--text-muted);">{{ v.notas or '' }}</td>
+                <td style="text-align:right;"><form method="post" action="/vencimientos/{{ v.id }}/renovar"><button class="btn btn-sm" type="submit">Renovado</button></form></td></tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Sin vencimientos registrados.</td></tr>
+            {% endfor %}
+        </tbody></table></div>
+</div>
+<details class="luxury-card" style="margin-top:16px;"><summary>+ Agregar vencimiento</summary>
+    <form method="post" action="/proyectos/{{ p.id }}/vencimiento" class="grid-2">
+        <label class="lbl">Tipo<select class="field" name="tipo">{% for t in tipos %}<option>{{ t }}</option>{% endfor %}</select></label>
+        {{ entrada('nombre', 'Nombre (dominio, certificado…)', req=True) }}
+        {{ entrada('fecha', 'Fecha de vencimiento', 'date', True) }}
+        {{ entrada('notas', 'Notas') }}
+        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form></details>
+
+<div class="section-title">Respaldos</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Ubicación</th><th>Resultado</th></tr></thead>
+        <tbody>
+            {% for r in respaldos %}
+            <tr><td class="mono">{{ r.fecha }}</td><td>{{ r.tipo }}</td><td style="color:var(--text-muted);">{{ r.ubicacion or '—' }}</td><td><span class="badge {{ 'badge-green' if r.resultado == 'Correcto' else 'badge-red' }}">{{ r.resultado }}</span></td></tr>
+            {% else %}
+            <tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Sin respaldos registrados.</td></tr>
+            {% endfor %}
+        </tbody></table></div>
+</div>
+<details class="luxury-card" style="margin-top:16px;"><summary>+ Registrar respaldo</summary>
+    <form method="post" action="/proyectos/{{ p.id }}/respaldo" class="grid-2">
+        {{ entrada('fecha', 'Fecha', 'date', valor=hoy) }}
+        <label class="lbl">Tipo<select class="field" name="tipo"><option>Base de datos</option><option>Código</option><option>Archivos</option></select></label>
+        {{ entrada('ubicacion', 'Dónde quedó guardado') }}
+        <label class="lbl">Resultado<select class="field" name="resultado"><option>Correcto</option><option>Falló</option></select></label>
+        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form></details>
+
+<div class="section-title">Incidentes</div>
+<div class="stack">
+    {% for i in incidentes %}
+    <div class="luxury-card">
+        <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+            <strong style="font-weight:500;">{{ i.titulo }} <span class="mono">{{ i.fecha }}</span></strong>
+            <span><span class="badge {{ 'badge-red' if i.gravedad in ['Alta','Crítica'] else 'badge-amber' }}">{{ i.gravedad }}</span> <span class="badge {{ 'badge-green' if i.estado == 'Resuelto' }}">{{ i.estado }}</span></span>
+        </div>
+        <p style="margin:0; color:var(--text-muted); font-size:14px;">{{ i.descripcion or 'Sin descripción.' }}</p>
+        {% if i.estado == 'Resuelto' %}<p style="margin:10px 0 0; font-size:14px;"><span style="color:var(--text-muted);">Resolución:</span> {{ i.resolucion or '—' }}</p>
+        {% else %}
+        <form method="post" action="/incidentes/{{ i.id }}/resolver" style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+            <input class="field" style="flex:1; min-width:200px; margin:0;" name="resolucion" placeholder="Cómo se resolvió" required>
+            <button class="btn btn-sm btn-primary" type="submit">Marcar resuelto</button>
+        </form>{% endif %}
+    </div>
+    {% else %}
+    <div class="luxury-card" style="color:var(--text-muted);">Sin incidentes registrados.</div>
+    {% endfor %}
+</div>
+<details class="luxury-card" style="margin-top:16px;"><summary>+ Registrar incidente</summary>
+    <form method="post" action="/proyectos/{{ p.id }}/incidente" class="grid-2">
+        {{ entrada('titulo', 'Qué pasó', req=True) }}
+        <label class="lbl">Gravedad<select class="field" name="gravedad"><option>Baja</option><option selected>Media</option><option>Alta</option><option>Crítica</option></select></label>
+        {{ entrada('fecha', 'Fecha', 'date', valor=hoy) }}
+        {{ entrada('descripcion', 'Detalle') }}
+        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form></details>
+{% endblock %}
