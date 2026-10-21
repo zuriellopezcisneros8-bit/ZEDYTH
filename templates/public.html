@@ -483,11 +483,11 @@ nav .links a{white-space:nowrap}
 </div></div></section>
 
 <footer><div class="wrap">© {{ año }} ZEDYTH Technologies · Software, ciberseguridad e informática · Grupo empresarial: ZEDYTH, Zmarth y Zelecte · <a href="{{ url_for('login') }}">Acceso clientes</a></div></footer>
-<div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}">
- <button class="fab" id="fab" type="button" aria-expanded="false">Pregúntame</button>
- <div class="pnl" id="pnl" hidden role="dialog" aria-label="Asistente ZEDYTH"><header><b>Asistente ZEDYTH</b><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
+<div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}" data-ia="{{ url_for('zedith_chat') }}">
+ <button class="fab" id="fab" type="button" aria-expanded="false">Habla con Zedith</button>
+ <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><b>Zedith · asistente ZEDYTH</b><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
   <div class="msgs" id="msgs" aria-live="polite"></div><div class="qs" id="qs"></div>
-  <form id="bf"><input id="bi" placeholder="Escribe tu duda" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
+  <form id="bf"><input id="bi" placeholder="Cuéntame de tu negocio" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
 </div>
 {% raw %}<script>
 (function(){
@@ -535,9 +535,22 @@ const KB=[
 [/contacto|whatsapp|hablar|humano|telefono|llamar|correo|email/,'Con gusto te atienden personas. '+wa('Hola, quiero platicar de mi proyecto')],
 [/hola|buenas|hey|que tal/,'¡Hola! ¿Qué giro es tu negocio? Puedo contarte de precios, el punto de venta, Canchera, Coffeezey o Restaurantzey.']];
 const DEF='No tengo eso a la mano, pero una persona te responde rápido. '+wa('Hola, tengo una duda');
-function ask(q){A(q,1);const z=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');const r=KB.find(k=>k[0].test(z));setTimeout(()=>A(r?r[1]:DEF),350)}
-['Precios','Probar el POS','Pizzería en vivo','Canchera','Tarjeta en wallet','Hablar con alguien'].forEach(t=>{const b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=()=>ask(t);$('#qs').appendChild(b)});
-const tog=o=>{pnl.hidden=!o;fab.setAttribute('aria-expanded',o);if(o&&first){first=0;A('Hola, soy el asistente de ZEDYTH. Pregúntame por precios, el punto de venta o nuestros sistemas para clubes, cafés y restaurantes.')}if(o)$('#bi').focus()};
+function askKB(q){const z=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');const r=KB.find(k=>k[0].test(z));setTimeout(()=>A(r?r[1]:DEF),350)}
+const IA=bot.dataset.ia,hist=[];let busy=false;
+const esc=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmt=t=>esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+async function ask(q){
+ if(busy)return;busy=true;A(q,1);hist.push({role:'user',text:q});
+ const ty=document.createElement('div');ty.className='m';ty.textContent='Zedith está escribiendo…';msgs.appendChild(ty);msgs.scrollTop=msgs.scrollHeight;
+ try{
+  const r=await fetch(IA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensajes:hist.slice(-12)})});
+  if(!r.ok)throw new Error(r.status);
+  const d=await r.json();ty.remove();hist.push({role:'model',text:d.reply});
+  A(fmt(d.reply)+(d.wa&&d.wa.startsWith('https://wa.me/')?'<br><br><a href="'+d.wa+'" target="_blank" rel="noopener">Enviar mi pedido por WhatsApp</a>':''));
+ }catch(e){ty.remove();hist.pop();askKB(q)}
+ busy=false}
+['Quiero armar mi app','Precios','Probar el POS','Pizzería en vivo','Tarjeta en wallet','Hablar con alguien'].forEach(t=>{const b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=()=>ask(t);$('#qs').appendChild(b)});
+const tog=o=>{pnl.hidden=!o;fab.setAttribute('aria-expanded',o);if(o&&first){first=0;A('Hola, soy Zedith, el asistente de IA de ZEDYTH. Cuéntame qué negocio tienes y te ayudo a armar tu app o sistema y a dejar tu pedido listo.')}if(o)$('#bi').focus()};
 fab.onclick=()=>tog(pnl.hidden);$('#bx').onclick=()=>tog(false);
 $('#bf').onsubmit=e=>{e.preventDefault();const v=$('#bi').value.trim();if(v){ask(v);$('#bi').value=''}};
 })();

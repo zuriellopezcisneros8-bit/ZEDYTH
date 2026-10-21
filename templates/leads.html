@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedidos de Zedith | ZEDYTH</title>
+<style>
+body{margin:0;font:15px/1.5 Inter,system-ui,sans-serif;background:#050505;color:#fff;padding:24px}
+a{color:#9ecbff}h1{margin:0 0 4px}p.s{color:#9a9a9a;margin:0 0 20px}
+.c{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:16px;margin-bottom:12px}
+.c small{color:#9a9a9a}.c p{margin:6px 0;color:#ccc;white-space:pre-wrap}
+form{display:inline}select,button{font:inherit;background:#111;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 10px}
+.e{display:inline-block;border-radius:999px;border:1px solid rgba(255,255,255,.25);padding:1px 10px;font-size:12px;margin-left:8px}
+</style></head><body>
+<a href="{{ url_for('index') }}">← Panel</a>
+<h1>Pedidos de Zedith</h1><p class="s">Prospectos que armaron su app con la IA de la web pública.</p>
+{% for l in leads %}
+<div class="c"><b>{{ l.nombre }}</b><span class="e">{{ l.estado }}</span>
+ <small> · {{ l.creado_en.strftime('%d/%m/%Y %H:%M') }} UTC</small>
+ <p><b>Contacto:</b> {{ l.contacto }}{% if l.negocio %} · <b>Negocio:</b> {{ l.negocio }}{% endif %}{% if l.sistema %} · <b>Sistema:</b> {{ l.sistema }}{% endif %}</p>
+ {% if l.funciones %}<p><b>Funciones:</b> {{ l.funciones }}</p>{% endif %}
+ {% if l.presupuesto or l.plazo %}<p><b>Presupuesto:</b> {{ l.presupuesto or '—' }} · <b>Plazo:</b> {{ l.plazo or '—' }}</p>{% endif %}
+ {% if l.resumen %}<p>{{ l.resumen }}</p>{% endif %}
+ <form method="POST" action="{{ url_for('lead_estado', lid=l.id) }}"><select name="estado">
+  {% for e in ['Nuevo','Contactado','Cerrado','Descartado'] %}<option {{ 'selected' if e == l.estado }}>{{ e }}</option>{% endfor %}
+ </select> <button type="submit">Guardar</button></form></div>
+{% else %}<p class="s">Aún no hay pedidos.</p>{% endfor %}
+</body></html>

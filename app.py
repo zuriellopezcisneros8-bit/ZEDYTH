@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+import zedith
 
 app = Flask(__name__)
 # Recuerda cambiar esta clave en producción
@@ -187,6 +188,21 @@ class ChecklistSeg(db.Model):
     revisado = db.Column(db.Date)
     __table_args__ = (db.UniqueConstraint('proyecto_id', 'clave'),)
     proyecto = db.relationship('Proyecto', backref='checks')
+
+
+class Lead(db.Model):
+    """Pedido o prospecto capturado por Zedith (la IA de la web pública)."""
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    contacto = db.Column(db.String(150), nullable=False)
+    negocio = db.Column(db.String(200))
+    sistema = db.Column(db.String(200))
+    funciones = db.Column(db.Text)
+    presupuesto = db.Column(db.String(100))
+    plazo = db.Column(db.String(100))
+    resumen = db.Column(db.Text)
+    estado = db.Column(db.String(20), default="Nuevo")     # Nuevo, Contactado, Cerrado, Descartado
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # --- FUNCIONES DE SOPORTE Y CONFIGURACIÓN GLOBAL ---------------------------
@@ -819,7 +835,7 @@ def finanzas():
 
 # --- WEB PÚBLICA -----------------------------------------------------------
 # Únicas rutas que se pueden abrir sin iniciar sesión.
-RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo'}
+RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo', 'zedith_chat'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -912,6 +928,96 @@ def proyecto_publico_toggle(pid):
     p.visible = not p.visible
     db.session.commit()
     return redirect(url_for('resenas_admin'))
+
+# --- ZEDITH (IA de la web pública) -----------------------------------------
+_zed_ip = {}                       # ip -> [fechas]; límite por visitante
+_zed_dia = {"fecha": None, "n": 0}  # tope global diario: protege tu cuota y tu dinero
+ZED_MAX_IP = int(os.environ.get("ZEDITH_MAX_IP", "20"))      # mensajes por IP cada 10 min
+ZED_MAX_DIA = int(os.environ.get("ZEDITH_MAX_DIA", "1500"))  # mensajes por día (por proceso)
+
+
+def _ip_cliente():
+    return (request.headers.get('X-Forwarded-For', request.remote_addr or '-').split(',')[0].strip()) or '-'
+
+
+def hechos_zedith():
+    """Datos reales del negocio que Zedith puede citar como prueba social. Nada inventado."""
+    prom = db.session.query(db.func.avg(Resena.calificacion)).filter(Resena.aprobada.is_(True)).scalar()
+    return {
+        "planes": [(p.nombre, p.precio, p.a_medida, p.descripcion) for p in Plan.query.order_by(Plan.id).all()],
+        "resenas": Resena.query.filter_by(aprobada=True).count(),
+        "promedio": round(prom, 1) if prom else None,
+        "proyectos": ProyectoPublico.query.filter_by(visible=True).count(),
+        "cupo": os.environ.get("ZEDITH_CUPO_MES"),
+        "promo": os.environ.get("ZEDITH_PROMO"),
+        "promo_hasta": os.environ.get("ZEDITH_PROMO_HASTA"),
+    }
+
+
+def guardar_pedido(p):
+    """Guarda (o actualiza, si es el mismo contacto en la última hora) el pedido que armó Zedith."""
+    recorte = lambda k, n: (p.get(k) or "").strip()[:n] or None
+    contacto = recorte("contacto", 150)
+    lead = Lead.query.filter(Lead.contacto == contacto,
+                             Lead.creado_en >= datetime.utcnow() - timedelta(hours=1)).first() or Lead(contacto=contacto)
+    lead.nombre = recorte("nombre", 120) or "Sin nombre"
+    lead.negocio, lead.sistema = recorte("negocio", 200), recorte("sistema", 200)
+    lead.funciones, lead.presupuesto = recorte("funciones", 1000), recorte("presupuesto", 100)
+    lead.plazo, lead.resumen = recorte("plazo", 100), recorte("resumen", 1500)
+    db.session.add(lead)
+    db.session.flush()
+    registrar("pedido", "Lead", lead.id, f"{lead.nombre} · {lead.sistema or lead.negocio or ''}")
+    db.session.commit()
+    return lead
+
+
+@app.route('/api/zedith', methods=['POST'])
+def zedith_chat():
+    datos = request.get_json(silent=True) or {}
+    mensajes = datos.get('mensajes')
+    if not isinstance(mensajes, list) or not mensajes:
+        return {"error": "mensajes requeridos"}, 400
+
+    ahora, hoy = datetime.utcnow(), date.today()
+    ip = _ip_cliente()
+    recientes = [t for t in _zed_ip.get(ip, []) if ahora - t < timedelta(minutes=10)]
+    if _zed_dia["fecha"] != hoy:
+        _zed_dia.update(fecha=hoy, n=0)
+    if len(recientes) >= ZED_MAX_IP or _zed_dia["n"] >= ZED_MAX_DIA:
+        return {"error": "límite alcanzado"}, 429
+    _zed_ip[ip] = recientes + [ahora]
+    _zed_dia["n"] += 1
+
+    try:
+        r = zedith.responder(mensajes, hechos_zedith())
+    except zedith.ZedithError as e:
+        app.logger.warning("Zedith no respondió: %s", e)
+        return {"error": "no disponible"}, 503
+
+    wa = None
+    if r["pedido"]:
+        lead = guardar_pedido(r["pedido"])
+        texto = (f"Hola, soy {lead.nombre}. Armé mi pedido con Zedith:\n{lead.resumen or lead.sistema or lead.negocio or ''}"
+                 f"\nContacto: {lead.contacto}")
+        wa = f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"
+    return {"reply": r["reply"], "wa": wa}
+
+
+@app.route('/leads')
+def leads():
+    return render_template('leads.html', leads=Lead.query.order_by(Lead.id.desc()).limit(200).all())
+
+
+@app.route('/leads/<int:lid>/estado', methods=['POST'])
+def lead_estado(lid):
+    l = db.get_or_404(Lead, lid)
+    nuevo = campo('estado')
+    if nuevo in ("Nuevo", "Contactado", "Cerrado", "Descartado"):
+        l.estado = nuevo
+        registrar("estado", "Lead", l.id, nuevo)
+        db.session.commit()
+    return redirect(url_for('leads'))
+
 
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otros dispositivos en tu WiFi accedan a la PC
