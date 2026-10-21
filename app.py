@@ -9,6 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import zedith
+import notificar
 
 app = Flask(__name__)
 # Recuerda cambiar esta clave en producción
@@ -597,7 +598,7 @@ def inyectar_avisos():
          + CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.isnot(None),
                                       CostoServicio.proxima_fecha_pago <= _limite()).count()
          + len(alertas_seguridad()))
-    return {"n_avisos": n}
+    return {"n_avisos": n, "n_leads": Lead.query.filter_by(estado="Nuevo").count()}
 
 
 @app.route('/avisos')
@@ -955,11 +956,14 @@ def hechos_zedith():
 
 
 def guardar_pedido(p):
-    """Guarda (o actualiza, si es el mismo contacto en la última hora) el pedido que armó Zedith."""
+    """Guarda (o actualiza, si es el mismo contacto en la última hora) el pedido que armó Zedith.
+    Devuelve (lead, es_nuevo)."""
     recorte = lambda k, n: (p.get(k) or "").strip()[:n] or None
     contacto = recorte("contacto", 150)
     lead = Lead.query.filter(Lead.contacto == contacto,
-                             Lead.creado_en >= datetime.utcnow() - timedelta(hours=1)).first() or Lead(contacto=contacto)
+                             Lead.creado_en >= datetime.utcnow() - timedelta(hours=1)).first()
+    es_nuevo = lead is None
+    lead = lead or Lead(contacto=contacto)
     lead.nombre = recorte("nombre", 120) or "Sin nombre"
     lead.negocio, lead.sistema = recorte("negocio", 200), recorte("sistema", 200)
     lead.funciones, lead.presupuesto = recorte("funciones", 1000), recorte("presupuesto", 100)
@@ -968,7 +972,7 @@ def guardar_pedido(p):
     db.session.flush()
     registrar("pedido", "Lead", lead.id, f"{lead.nombre} · {lead.sistema or lead.negocio or ''}")
     db.session.commit()
-    return lead
+    return lead, es_nuevo
 
 
 @app.route('/api/zedith', methods=['POST'])
@@ -996,7 +1000,14 @@ def zedith_chat():
 
     wa = None
     if r["pedido"]:
-        lead = guardar_pedido(r["pedido"])
+        lead, es_nuevo = guardar_pedido(r["pedido"])
+        if es_nuevo:   # un solo aviso por pedido, aunque la conversación siga
+            notificar.avisar(
+                f"Nuevo pedido en ZEDYTH: {lead.nombre}",
+                f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
+                f"Sistema: {lead.sistema or '-'}\nFunciones: {lead.funciones or '-'}\n"
+                f"Presupuesto: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n\n"
+                f"{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
         texto = (f"Hola, soy {lead.nombre}. Armé mi pedido con Zedith:\n{lead.resumen or lead.sistema or lead.negocio or ''}"
                  f"\nContacto: {lead.contacto}")
         wa = f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"
@@ -1005,7 +1016,16 @@ def zedith_chat():
 
 @app.route('/leads')
 def leads():
-    return render_template('leads.html', leads=Lead.query.order_by(Lead.id.desc()).limit(200).all())
+    filas = Lead.query.order_by(Lead.id.desc()).limit(200).all()
+    for l in filas:
+        l.hora = l.creado_en - timedelta(hours=6)          # hora centro de México
+        if "@" in (l.contacto or ""):
+            l.enlace = f"mailto:{l.contacto}"
+        else:
+            tel = re.sub(r"\D", "", l.contacto or "")
+            tel = "52" + tel if len(tel) == 10 else tel
+            l.enlace = f"https://wa.me/{tel}" if len(tel) >= 10 else None
+    return render_template('leads.html', leads=filas)
 
 
 @app.route('/leads/<int:lid>/estado', methods=['POST'])

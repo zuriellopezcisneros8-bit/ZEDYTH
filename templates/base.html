@@ -207,6 +207,9 @@
             <a href="/resenas" class="nav-item {% if request.path.startswith('/resenas') %}active{% endif %}">
                 <i class="ph ph-star"></i> Reseñas
             </a>
+            <a href="/leads" class="nav-item {% if request.path.startswith('/leads') %}active{% endif %}">
+                <i class="ph ph-chat-circle-dots"></i> Pedidos{% if n_leads %}<span style="background:#c8a96a;color:#14110b;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;margin-left:2px">{{ n_leads }}</span>{% endif %}
+            </a>
         </nav>
 
         <div class="header-right">

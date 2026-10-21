@@ -1,25 +1,25 @@
-<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pedidos de Zedith | ZEDYTH</title>
+{% extends 'base.html' %}
+{% block content %}
 <style>
-body{margin:0;font:15px/1.5 Inter,system-ui,sans-serif;background:#050505;color:#fff;padding:24px}
-a{color:#9ecbff}h1{margin:0 0 4px}p.s{color:#9a9a9a;margin:0 0 20px}
-.c{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:16px;margin-bottom:12px}
-.c small{color:#9a9a9a}.c p{margin:6px 0;color:#ccc;white-space:pre-wrap}
-form{display:inline}select,button{font:inherit;background:#111;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 10px}
-.e{display:inline-block;border-radius:999px;border:1px solid rgba(255,255,255,.25);padding:1px 10px;font-size:12px;margin-left:8px}
-</style></head><body>
-<a href="{{ url_for('index') }}">← Panel</a>
-<h1>Pedidos de Zedith</h1><p class="s">Prospectos que armaron su app con la IA de la web pública.</p>
+.ld{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:16px 18px;margin-bottom:12px}
+.ld p{margin:6px 0;opacity:.85;white-space:pre-wrap}.ld small{opacity:.6}
+.ld .e{display:inline-block;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:1px 10px;font-size:12px;margin-left:8px}
+.ld .e.n{background:#c8a96a;color:#14110b;border-color:#c8a96a;font-weight:600}
+.ld form{display:inline}.ld select,.ld button{font:inherit;background:#111;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 10px}
+.ld a.c{display:inline-block;margin-right:10px;color:#c8a96a}
+</style>
+<h1 style="margin:0 0 4px">Pedidos de Zedith</h1>
+<p style="opacity:.7;margin:0 0 20px">Prospectos que armaron su app con la IA de la web pública. Hora del centro de México.</p>
 {% for l in leads %}
-<div class="c"><b>{{ l.nombre }}</b><span class="e">{{ l.estado }}</span>
- <small> · {{ l.creado_en.strftime('%d/%m/%Y %H:%M') }} UTC</small>
+<div class="ld"><b>{{ l.nombre }}</b><span class="e {{ 'n' if l.estado == 'Nuevo' }}">{{ l.estado }}</span>
+ <small> · {{ l.hora.strftime('%d/%m/%Y %H:%M') }}</small>
  <p><b>Contacto:</b> {{ l.contacto }}{% if l.negocio %} · <b>Negocio:</b> {{ l.negocio }}{% endif %}{% if l.sistema %} · <b>Sistema:</b> {{ l.sistema }}{% endif %}</p>
  {% if l.funciones %}<p><b>Funciones:</b> {{ l.funciones }}</p>{% endif %}
  {% if l.presupuesto or l.plazo %}<p><b>Presupuesto:</b> {{ l.presupuesto or '—' }} · <b>Plazo:</b> {{ l.plazo or '—' }}</p>{% endif %}
  {% if l.resumen %}<p>{{ l.resumen }}</p>{% endif %}
+ {% if l.enlace %}<a class="c" href="{{ l.enlace }}" target="_blank" rel="noopener">{{ 'Escribir correo' if l.enlace.startswith('mailto') else 'Abrir WhatsApp' }}</a>{% endif %}
  <form method="POST" action="{{ url_for('lead_estado', lid=l.id) }}"><select name="estado">
   {% for e in ['Nuevo','Contactado','Cerrado','Descartado'] %}<option {{ 'selected' if e == l.estado }}>{{ e }}</option>{% endfor %}
  </select> <button type="submit">Guardar</button></form></div>
-{% else %}<p class="s">Aún no hay pedidos.</p>{% endfor %}
-</body></html>
+{% else %}<p style="opacity:.7">Aún no hay pedidos.</p>{% endfor %}
+{% endblock %}
