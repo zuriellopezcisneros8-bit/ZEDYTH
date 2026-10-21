@@ -1,7 +1,8 @@
 """Zedith: asistente de IA de ZEDYTH (Gemini por REST, solo librería estándar).
 
 Variables de entorno (Render -> Environment):
-  GEMINI_API_KEYS    una o varias llaves separadas por coma (se rotan si una falla o se agota)
+  GEMINI_KEY_1, GEMINI_KEY_2, ...  una llave por variable (o GEMINI_API_KEYS con varias separadas por coma);
+                     se rotan si una falla o se agota
   GEMINI_MODEL       opcional, por defecto gemini-3.5-flash-lite
   ZEDITH_CUPO_MES    opcional: cupos de desarrollo REALES que te quedan este mes (0 = agenda llena)
   ZEDITH_PROMO       opcional: texto de una promoción REAL, ej. "10% en tu primer sistema"
@@ -49,8 +50,15 @@ class ZedithError(Exception):
 
 
 def _llaves():
-    crudo = os.environ.get("GEMINI_API_KEYS") or os.environ.get("GEMINI_API_KEY") or ""
-    llaves = [k.strip() for k in crudo.split(",") if k.strip()]
+    """Lee GEMINI_API_KEYS (varias, separadas por coma), GEMINI_API_KEY y cualquier GEMINI_KEY_1, GEMINI_KEY_2..."""
+    crudo = [os.environ.get("GEMINI_API_KEYS") or "", os.environ.get("GEMINI_API_KEY") or ""]
+    crudo += [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_KEY")]
+    llaves = []
+    for c in crudo:
+        for k in c.split(","):
+            k = k.strip().strip('"').strip("'")
+            if k and k not in llaves:
+                llaves.append(k)
     random.shuffle(llaves)          # reparte la carga entre llaves
     return llaves
 
