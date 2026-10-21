@@ -2,10 +2,12 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e0d0c">
-<meta name="description" content="ZEDYTH Technologies: software a la medida, ciberseguridad e informática para cualquier tipo de negocio.">
-<title>ZEDYTH Technologies | Software, ciberseguridad e informática</title>
+<meta name="description" content="ZEDYTH Technologies: aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos proyectos sencillos.">
+<link rel="icon" type="image/png" href="/static/img/zedyth/favicon.png">
+<link rel="apple-touch-icon" href="/static/img/zedyth/apple-touch-icon.png">
+<title>ZEDYTH Technologies | Aplicaciones complejas, IA y ciberseguridad</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#050505;--tx:#fff;--mu:#9a9a9a;--gl:rgba(255,255,255,.04);--bd:rgba(255,255,255,.1);--ok:#4ade80;--st:#f5c542}
@@ -390,12 +392,49 @@ nav .links{max-height:calc(100svh - 76px);overflow:auto}
 .fw{display:flex;align-items:center;gap:10px}.fw svg{width:30px;height:30px}
 .btn{white-space:nowrap}nav .links .btn{flex:none}
 @media(max-width:1040px){nav .links{background:#0b0a09!important}}
+
+/* ===== ZEDYTH v4 · MÓVIL PRIMERO + LOGOS REALES ===== */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+.brand{gap:0}
+.lg-nav{display:block;height:38px;width:auto;border-radius:8px}
+.lg-ft{display:block;width:150px;height:auto;border-radius:12px}
+.lg-zedith{display:block;width:min(300px,78%);height:auto;border-radius:10px;margin:2px 0 22px}
+.zb .zb-z{width:44px;height:44px;border-radius:10px;display:block;flex:none}
+.zb .zb-w{display:block;height:24px;width:auto;border-radius:5px;margin-bottom:5px}
+.zb em{display:block}
+.fab{gap:10px;padding:7px 20px 7px 7px;border-radius:999px;right:max(14px,env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom))}
+.fab:before{content:none}
+.fab .fab-z{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;display:block}
+.fab .l-sm{display:none}
+#enfoque .card li{padding-block:7px}
+#enfoque .card p{margin-top:16px}
+.pr-wide{grid-column:1/-1}
+.price{line-height:1.15}
+.pr-note{color:var(--mu);font-size:12px;margin:14px 0 0}
+@supports(height:100dvh){.pnl{height:100dvh}}
+#bf{padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+#bf input{font-size:16px}
+@media(max-width:900px){
+ .hero-bg{animation:none;will-change:auto;transform:none}
+ .zimg{animation:none}
+}
+@media(max-width:560px){
+ .lg-nav{height:32px}
+ .fab{padding:6px 18px 6px 6px}
+ .fab .l-lg{display:none}.fab .l-sm{display:inline;letter-spacing:.16em}
+ .btn{white-space:normal;text-align:center;min-height:46px;display:inline-flex;align-items:center;justify-content:center}
+ nav .links .btn{width:100%}
+ .lg-zedith{width:min(260px,80%)}
+ footer{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+ .lg-ft{width:130px}
+ .marq span{font-size:17px}
+}
 {% endraw %}
 </style>
 </head>
 <body>
 <nav><div class="wrap">
- <a href="#inicio" class="brand" aria-label="ZEDYTH Technologies"><svg viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="zg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f4e6cb"/><stop offset="1" stop-color="#c9a96a"/></linearGradient></defs><polygon points="5,5 35,5 35,11 18,29 35,29 35,35 5,35 5,29 22,11 5,11" fill="url(#zg)"/></svg><span><b>ZEDYTH</b><small>TECHNOLOGIES</small></span></a>
+ <a href="#inicio" class="brand" aria-label="ZEDYTH Technologies"><img class="lg-nav" src="/static/img/zedyth/logo-zedyth.webp" alt="ZEDYTH Technologies" width="254" height="38"></a>
     <!-- EL NUEVO BOTÓN DE MENÚ HAMBURGUESA -->
     <div class="menu-toggle" onclick="document.querySelector('.links').classList.toggle('active')">☰</div>
     <div class="links">
@@ -410,11 +449,11 @@ nav .links{max-height:calc(100svh - 76px);overflow:auto}
     </div>
 </div></nav>
 
-<header class="hero" id="inicio"><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><span class="eyebrow">Tecnología · Seguridad · Software · Infraestructura</span>
- <h1>La tecnología que impulsa tu empresa.</h1>
- <p class="sub">En ZEDYTH Technologies desarrollamos soluciones digitales a la medida: software, ciberseguridad e infraestructura, para consultorios, hoteles, comercio, restaurantes o cualquier otro negocio.</p>
- <div class="cta"><a class="btn w" href="#servicios">Explorar soluciones →</a><a class="btn" href="#proyectos-demo">Ver proyectos</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar mi proyecto</a></div>
- <div class="feats"><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Soluciones<br>a la medida</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad<br>avanzada</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Soporte<br>24/7</div></div>
+<header class="hero" id="inicio"><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><span class="eyebrow">Inteligencia artificial · Aplicaciones complejas · Ciberseguridad</span>
+ <h1>Tecnología compleja, resuelta a fondo.</h1>
+ <p class="sub">ZEDYTH Technologies diseña aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos páginas estáticas ni proyectos sencillos: nuestra capacidad está enfocada en lo más difícil.</p>
+ <div class="cta"><a class="btn w" href="#servicios">Explorar soluciones →</a><a class="btn" href="#proyectos-demo">Ver proyectos</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar un proyecto</a></div>
+ <div class="feats"><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Ingeniería<br>a la medida</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad<br>avanzada</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Soporte<br>24/7</div></div>
  </div></header>
 <div class="wrap dashw"><div class="dash" aria-hidden="true">
  <div class="dk"><div><small>Reservas hoy</small><b>38</b><em>+12%</em></div><div><small>Ocupación</small><b>86%</b><em>+5%</em></div><div><small>Clientes que vuelven</small><b>64%</b><em>+9%</em></div><div><small>Ingresos del mes</small><b>$184,200</b><em>+18%</em></div></div>
@@ -422,8 +461,28 @@ nav .links{max-height:calc(100svh - 76px);overflow:auto}
   <div class="dp"><small>Ocupación semanal</small><svg viewBox="0 0 200 118"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#e2cfa3"/><stop offset="1" stop-color="#c8a96a"/></linearGradient></defs><path d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="#2a2620" stroke-width="16" stroke-linecap="round"/><path class="gp" d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="url(#gg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="191 252"/><text x="100" y="92" text-anchor="middle" fill="#fff" font-size="30" font-weight="700">76%</text><text x="100" y="110" text-anchor="middle" fill="#a39a8b" font-size="10">de turnos llenos</text></svg></div>
   <div class="dp"><small>Reservas por día: reales y pronosticadas</small><svg viewBox="0 0 320 130"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8a96a" stop-opacity=".35"/><stop offset="1" stop-color="#c8a96a" stop-opacity="0"/></linearGradient></defs><path d="M0 30H320M0 65H320M0 100H320" stroke="#2a2620" fill="none"/><path d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20V130H0Z" fill="url(#cg)"/><path class="ln" pathLength="1" d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20" fill="none" stroke="#c8a96a" stroke-width="2.5"/><path d="M0 108L45 95 90 98 135 70 180 74 225 56 270 62 320 44" fill="none" stroke="#8c8374" stroke-width="2" stroke-dasharray="5 5"/></svg></div>
  </div><small>Datos de ejemplo</small></div></div>
-<div class="marq" aria-hidden="true"><div><span>Consultorios</span><span>Hoteles</span><span>Comercio electrónico</span><span>Restaurantes</span><span>Escuelas</span><span>Logística</span><span>Cualquier giro</span><span>Consultorios</span><span>Hoteles</span><span>Comercio electrónico</span><span>Restaurantes</span><span>Escuelas</span><span>Logística</span><span>Cualquier giro</span></div></div>
+<div class="marq" aria-hidden="true"><div><span>Inteligencia artificial</span><span>Aplicaciones complejas</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>PWA y Google Play</span><span>Comercio electrónico</span><span>Sistemas a la medida</span><span>Inteligencia artificial</span><span>Aplicaciones complejas</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>PWA y Google Play</span><span>Comercio electrónico</span><span>Sistemas a la medida</span></div></div>
 
+
+<section id="enfoque"><div class="wrap">
+ <span class="eyebrow">Nuestro enfoque</span>
+ <h2 style="text-align:left">Nos dedicamos a lo difícil.</h2>
+ <p class="sub" style="text-align:left;margin-left:0">Nuestra capacidad está reservada para proyectos de alta complejidad. Por eso no tomamos trabajos sencillos: cada proyecto recibe la ingeniería y el criterio que un sistema serio exige.</p>
+ <div class="two">
+  <div class="card hl"><h3>Lo que sí construimos</h3><ul>
+   <li>Aplicaciones complejas con base de datos en la nube y lógica de negocio a la medida</li>
+   <li>Inteligencia artificial integrada a tu operación: asistentes, automatización y análisis</li>
+   <li>Apps web progresivas (PWA), instalables y publicables en Google Play</li>
+   <li>Comercio electrónico, puntos de venta y plataformas de gestión en tiempo real</li>
+   <li>Ciberseguridad e infraestructura: dominios, hosting, respaldos y monitoreo</li></ul></div>
+  <div class="card"><h3>Lo que no hacemos</h3><ul class="no">
+   <li>Páginas web estáticas o sitios de presentación</li>
+   <li>Plantillas sin personalizar</li>
+   <li>Proyectos sencillos que no exigen ingeniería real</li></ul>
+   <p>Si tu proyecto es complejo, hablemos.</p>
+   <a class="btn w" style="margin-top:18px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20tengo%20un%20proyecto%20complejo" target="_blank" rel="noopener">Contarnos mi proyecto</a></div>
+ </div>
+</div></section>
 
 <section id="sistemas"><div class="wrap">
  <h2>Misma cuadra, mismos precios. ¿Por qué uno siempre está lleno?</h2>
@@ -525,15 +584,15 @@ nav .links{max-height:calc(100svh - 76px);overflow:auto}
 </div></section>
 
 <section id="servicios"><div class="wrap split">
- <div><span class="eyebrow">Nuestras soluciones</span><h2>Todo lo que tu empresa necesita, en un solo lugar.</h2><p class="sub">Una sola empresa de software, ciberseguridad e informática: tecnología, seguridad y gestión integradas para que tu negocio opere con eficiencia.</p><a class="btn" href="#contacto">Conocer más →</a></div>
- <div class="sol"><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span><h3>Desarrollo de software</h3><p>Aplicaciones web y móviles, sistemas internos y tiendas en línea a la medida.</p><ul><li>Puntos de venta</li><li>Comercio electrónico</li><li>Reservas y gestión</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación.</p><ul><li>Endurecimiento de sistemas</li><li>Respaldos y vencimientos</li><li>Atención de incidentes</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span><h3>Infraestructura</h3><p>Hosting, bases de datos, dominios y administración de servidores.</p><ul><li>Hosting y dominios</li><li>Bases de datos</li><li>Migración a la nube</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><h3>Gestión y soporte</h3><p>Monitoreo, mantenimiento y administración de tus sistemas.</p><ul><li>Soporte técnico</li><li>Redes y equipos</li><li>Asesoría tecnológica</li></ul><a class="more" href="#contacto">Ver servicios →</a></div></div>
+ <div><span class="eyebrow">Nuestras soluciones</span><h2>Resolvemos lo difícil, de punta a punta.</h2><p class="sub">Una sola empresa de software, inteligencia artificial, ciberseguridad e infraestructura. Tomamos proyectos de alta complejidad y los entregamos completos.</p><a class="btn" href="#contacto">Conocer más →</a></div>
+ <div class="sol"><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span><h3>Aplicaciones y software</h3><p>Apps web progresivas, sistemas y tiendas en línea de alta complejidad, publicables en Google Play.</p><ul><li>Puntos de venta en la nube</li><li>Comercio electrónico</li><li>Reservas y gestión</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><h3>Inteligencia artificial</h3><p>Asistentes y automatización integrados a tu operación, como nuestra propia IA ZEDITH.</p><ul><li>Asistentes conversacionales</li><li>Automatización de procesos</li><li>Análisis y pronósticos</li></ul><a class="more" href="#zedith">Conocer ZEDITH →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación.</p><ul><li>Endurecimiento de sistemas</li><li>Respaldos y vencimientos</li><li>Atención de incidentes</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span><h3>Infraestructura</h3><p>Hosting, bases de datos PostgreSQL en la nube, dominios y administración de servidores.</p><ul><li>Hosting y dominios</li><li>Bases de datos</li><li>Migración a la nube</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><h3>Gestión y soporte</h3><p>Monitoreo, mantenimiento y administración de tus sistemas.</p><ul><li>Soporte técnico</li><li>Redes y equipos</li><li>Asesoría tecnológica</li></ul><a class="more" href="#contacto">Ver servicios →</a></div></div>
 </div></section>
 
-<section id="zedith" class="zsec"><div class="wrap zgrid"><div><span class="eyebrow">ZEDYTH IA</span><h2>ZEDITH, tu asistente inteligente.</h2><p>ZEDITH es la IA de ZEDYTH. Te ayuda a armar tu app o sistema, resolver dudas y dejar tu pedido listo, siempre disponible, siempre contigo.</p><button class="btn w" type="button" onclick="document.getElementById('fab').click()">Hablar con ZEDITH →</button></div>
+<section id="zedith" class="zsec"><div class="wrap zgrid"><div><span class="eyebrow">ZEDYTH IA</span><img class="lg-zedith" src="/static/img/zedyth/logo-zedith.webp" alt="ZEDITH" width="300" height="79" loading="lazy"><h2>Tu asistente inteligente.</h2><p>ZEDITH es la IA de ZEDYTH. Te ayuda a armar tu app o sistema, resolver dudas y dejar tu pedido listo, siempre disponible, siempre contigo.</p><button class="btn w" type="button" onclick="document.getElementById('fab').click()">Hablar con ZEDITH →</button></div>
  <div class="zvis"><img class="zimg" src="/static/img/zedyth/zedith.jpg" alt="ZEDITH, asistente de IA de ZEDYTH" loading="lazy"></div></div><div class="wrap"><div style="height:30px"></div><ul class="zfe zrow"><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>Gestión de sistemas</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Armado de tu app</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad en tiempo real</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span>Integración de servicios</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Asistencia 24/7</li></ul></div></section>
 
 <section class="why" id="confianza"><div class="wrap whyg"><div><span class="eyebrow">Por qué elegir ZEDYTH</span><h2>Tecnología que inspira confianza.</h2><p>No solo desarrollamos software: protegemos lo que más importa, tu información, tus operaciones y tu futuro digital.</p></div>
-<div class="stats"><div class="stat"><b data-n="3">0</b><small>Demos en vivo que puedes probar</small></div><div class="stat"><b data-n="24" data-s="/7">0</b><small>Asistente de IA ZEDITH</small></div><div class="stat"><b data-n="100" data-s="%">0</b><small>Hecho a la medida de tu negocio</small></div><div class="stat"><b data-n="4">0</b><small>Áreas: software, seguridad, infraestructura y soporte</small></div></div></div></section>
+<div class="stats"><div class="stat"><b data-n="3">0</b><small>Demos en vivo que puedes probar</small></div><div class="stat"><b data-n="24" data-s="/7">0</b><small>Asistente de IA ZEDITH</small></div><div class="stat"><b data-n="100" data-s="%">0</b><small>Hecho a la medida de tu negocio</small></div><div class="stat"><b data-n="5">0</b><small>Áreas: software, IA, seguridad, infraestructura y soporte</small></div></div></div></section>
 <section id="plataforma"><div class="wrap plg"><div><span class="eyebrow">Plataforma ZEDYTH</span><h2 style="text-align:left">Control total en una sola plataforma.</h2><p class="sub" style="text-align:left;margin:0 0 26px">Reservas, pedidos, clientes y reportes en un solo panel. Pruébalo en vivo, sin registrarte.</p><div class="cta" style="display:flex;gap:12px;flex-wrap:wrap"><a class="btn w" href="#reservas">Probar reservas →</a><a class="btn" href="#pizzeria">Ver pizzería en vivo</a></div></div><img class="pimg" src="/static/img/zedyth/plataforma.jpg" alt="Panel de control ZEDYTH" loading="lazy"></div></section>
 <section id="proyectos-demo"><div class="wrap">
  <span class="eyebrow">Proyectos destacados</span><h2 style="text-align:left">Tecnología que genera resultados.</h2><p class="sub" style="text-align:left;margin-left:0">Prueba nuestras demos en vivo o visita una de nuestras tiendas.</p>
@@ -548,14 +607,19 @@ nav .links{max-height:calc(100svh - 76px);overflow:auto}
 
 <section id="precios"><div class="wrap">
  <h2>Precios claros</h2>
- <p class="sub">Un precio fijo para el punto de venta y proyectos personalizados para todo lo demás.</p>
+ <p class="sub">Un precio fijo para el punto de venta, desde $3,000 para comercio electrónico y cotización a la medida para lo complejo.</p>
  <div class="two">
-  <div class="card hl"><span class="tag">Punto de venta a la medida</span><div class="price">$1,500 <small>MXN · pago único · sin importar el giro</small></div>
-   <p>Un punto de venta hecho para tu negocio, entregado completo y sin dependencia de nosotros.</p>
-   <ul><li>Código fuente completo entregado a ti</li><li>Acceso total: el sistema es tuyo</li><li>Nosotros solo conservamos una copia de respaldo</li><li>Personalizado a tu forma de vender</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a></div>
-  <div class="card"><span class="tag">Aplicaciones, comercio electrónico y ciberseguridad</span><div class="price"><small>Desde</small> $10,000 <small>MXN</small></div>
-   <p>Cotización personalizada según lo que necesites. Cuidamos cada detalle para que quede a la perfección.</p>
-   <ul><li>Diseño y desarrollo a tu medida</li><li>Revisiones contigo hasta quedar conforme</li><li>Servicios de ciberseguridad según tu caso</li><li>Opción de membresía de mantenimiento</li></ul></div>
+  <div class="card hl"><span class="tag">Punto de venta en la nube</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
+   <p>Un punto de venta hecho para tu negocio que funciona por internet: lo abres desde tu teléfono, tablet o computadora con datos o Wi-Fi, sin instalar nada.</p>
+   <ul><li>Base de datos PostgreSQL propia, en la nube</li><li>Tu cuenta en Neon, abierta con tu correo: tus datos son tuyos</li><li>Funciona en cualquier dispositivo con internet</li><li>Código fuente completo entregado a ti</li><li>Con membresía, ZEDYTH administra la infraestructura y el mantenimiento</li><li>Personalizado a tu forma de vender</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a></div>
+  <div class="card"><span class="tag">Comercio electrónico y aplicaciones web</span><div class="price"><small>Desde</small> $3,000 <small>MXN</small></div>
+   <p>Aplicación web progresiva (PWA) a tu medida, con dominio, hosting y base de datos en la nube. Cotización personalizada según lo que necesites.</p>
+   <ul><li>Instalable en el teléfono y publicable en Google Play</li><li>Dominio propio, hosting y base de datos en la nube</li><li>Diseño y desarrollo a tu medida, con revisiones hasta quedar conforme</li><li>Opción de membresía de mantenimiento</li></ul>
+   <p class="pr-note">La publicación en Google Play depende de las políticas y de la cuenta de desarrollador de Google.</p></div>
+  <div class="card pr-wide"><span class="tag">Aplicaciones complejas, inteligencia artificial y ciberseguridad</span><div class="price" style="font-size:34px">Cotización a la medida</div>
+   <p>Es el trabajo al que nos dedicamos. Plataformas con IA, sistemas de alta complejidad, infraestructura y ciberseguridad según tu caso. Cada proyecto se cotiza después de entender qué necesitas.</p>
+   <ul><li>Arquitectura y desarrollo de sistemas complejos</li><li>Inteligencia artificial integrada a tu operación</li><li>Servicios de ciberseguridad según tu caso</li><li>Membresía de mantenimiento, infraestructura y soporte</li></ul>
+   <a class="btn w" style="margin-top:20px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto%20complejo" target="_blank" rel="noopener">Cotizar un proyecto complejo</a></div>
  </div>
  {% if planes %}<h2 style="margin-top:70px">Membresías</h2><p class="sub">Mantenimiento, mejoras y tranquilidad continua para tu proyecto.</p>
  <div class="grid">{% for p in planes %}<div class="card {{ 'hl' if p.destacado }}"><h3>{{ p.nombre }}</h3>
@@ -605,11 +669,11 @@ nav .links{max-height:calc(100svh - 76px);overflow:auto}
  <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a><a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
 </div></div></section>
 
-<footer><div class="wrap"><div class="fg"><span class="fw"><svg viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="zg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f4e6cb"/><stop offset="1" stop-color="#c9a96a"/></linearGradient></defs><polygon points="5,5 35,5 35,11 18,29 35,29 35,35 5,35 5,29 22,11 5,11" fill="url(#zg2)"/></svg>ZEDYTH</span><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
+<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/logo-zedyth-aguila.webp" alt="ZEDYTH Technologies" width="150" height="103" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
 <div class="fb"><span>© {{ año }} ZEDYTH Technologies. Grupo empresarial: ZEDYTH, Zmarth y Zelecte.</span><b>INNOVACIÓN · SEGURIDAD · CRECIMIENTO</b></div></div></footer>
 <div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}" data-ia="{{ url_for('zedith_chat') }}">
- <button class="fab" id="fab" type="button" aria-expanded="false">Habla con ZEDITH</button>
- <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><i>Z</i><span><b>ZEDITH</b><br><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
+ <button class="fab" id="fab" type="button" aria-expanded="false" aria-label="Habla con ZEDITH, asistente de IA"><img class="fab-z" src="/static/img/zedyth/logo-z.webp" alt="" width="40" height="40"><span class="l-lg">Habla con ZEDITH</span><span class="l-sm">ZEDITH</span></button>
+ <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><img class="zb-z" src="/static/img/zedyth/logo-z.webp" alt="" width="44" height="44"><span><img class="zb-w" src="/static/img/zedyth/logo-zedith.webp" alt="ZEDITH" width="91" height="24"><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
   <div class="msgs" id="msgs" aria-live="polite"></div><div class="qs" id="qs"></div>
   <form id="bf"><input id="bi" placeholder="Cuéntame de tu negocio" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
 </div>
@@ -644,7 +708,9 @@ const fab=$('#fab'),pnl=$('#pnl'),msgs=$('#msgs');let first=1;
 const A=(h,me)=>{const d=document.createElement('div');d.className='m'+(me?' me':'');me?d.textContent=h:d.innerHTML=h;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight};
 const wa=t=>'<a href="'+WA+'?text='+encodeURIComponent(t)+'" target="_blank" rel="noopener">Escríbenos por WhatsApp</a>';
 const KB=[
-[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta cuesta <b>$1,500 MXN</b>, pago único, con el código fuente completo para ti. Aplicaciones, comercio electrónico y ciberseguridad van <b>desde $10,000 MXN</b> según lo que necesites, y hay membresías de mantenimiento. '+wa('Hola, quiero una cotización')],
+[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta cuesta <b>$1,500 MXN</b>, pago único: funciona por internet desde teléfono o tablet y usa tu propia base de datos en la nube. Comercio electrónico y aplicaciones web (PWA) van <b>desde $3,000 MXN</b>. Las aplicaciones complejas, la IA y la ciberseguridad se cotizan a la medida, y hay membresías de mantenimiento. '+wa('Hola, quiero una cotización')],
+[/play store|google play|pwa|app movil|aplicacion movil/,'Hacemos aplicaciones web progresivas (PWA): se instalan en el teléfono y se pueden publicar en Google Play, con dominio, hosting y base de datos en la nube. La publicación depende de las políticas de Google.'],
+[/pagina web|sitio web|estatica|landing|sencill|simple/,'Nos enfocamos en proyectos de alta complejidad: aplicaciones, inteligencia artificial, ciberseguridad e infraestructura. No hacemos páginas estáticas ni sitios sencillos. Si tu proyecto es complejo, cuéntame. '+wa('Hola, tengo un proyecto complejo')],
 [/pizza|pizzeria|horno/,'Puedes probar una <b>pizzería en vivo</b>: pides como cliente y del otro lado ves la cocina con hornos, cola de pedidos, inventario y ventas. <a href="#pizzeria">Ir a la demo</a>. Se adapta a tu menú y a tu forma de trabajar.'],
 [/\bpos\b|punto de venta|demo|caja/,'Puedes probar el punto de venta ahora mismo: <a href="'+POS+'">abrir demo en vivo</a>. Se adapta a tu forma de vender.'],
 [/demo.*reserva|reserva.*demo|probar.*reserva|sistema de reserva|agenda en linea/,'Puedes probar el sistema de reservas en vivo con el nombre de tu negocio: <a href="#reservas">ir a la demo</a>. Reserva como cliente y mira el panel del dueño, la lista de espera y los puntos.'],
