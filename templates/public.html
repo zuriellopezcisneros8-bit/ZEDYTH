@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0e0d0c">
 <meta name="description" content="ZEDYTH Technologies: software a la medida, ciberseguridad e informática para cualquier tipo de negocio.">
 <title>ZEDYTH Technologies | Software, ciberseguridad e informática</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#050505;--tx:#fff;--mu:#9a9a9a;--gl:rgba(255,255,255,.04);--bd:rgba(255,255,255,.1);--ok:#4ade80;--st:#f5c542}
 *{box-sizing:border-box}html{scroll-behavior:smooth}
@@ -280,6 +280,68 @@ nav .links a{white-space:nowrap}
 #pzq,#pzrd{max-height:236px;overflow-y:auto;padding-right:2px}
 #pzrd{max-height:160px}
 @media(min-width:901px) and (min-height:700px){.pz .rz-grid>.card:first-child{position:sticky;top:92px}}
+
+/* ZEDYTH 2026 · NEGRO MATE + BEIGE */
+:root{--bg:#0b0a09;--s1:#12110f;--s2:#181613;--g:#e2cba5;--g2:#f1e2c6;--bd:rgba(226,203,165,.16);--tx:#fff;--mu:#ddd5c6}
+body{background:var(--bg);background-image:radial-gradient(1000px 420px at 50% -10%,rgba(226,203,165,.07),transparent 70%)}
+h1,h2,.card h3{font-family:'Playfair Display','Cormorant Garamond',Georgia,serif}
+h2{font-weight:400}
+section{padding:90px 0}
+.eyebrow{display:block;font:600 11px Inter,sans-serif;letter-spacing:.3em;text-transform:uppercase;color:var(--g);margin-bottom:20px}
+.btn{border-radius:8px}.btn.w{background:var(--g);border-color:var(--g);color:#16120b}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.012));border-radius:14px}
+nav{background:rgba(11,10,9,.88)}nav .wrap{height:76px}
+.hero{position:relative;text-align:left;min-height:660px;display:flex;align-items:center;padding:110px 0 60px;border-bottom:1px solid var(--bd);
+background:linear-gradient(90deg,#0b0a09 26%,rgba(11,10,9,.72) 55%,rgba(11,10,9,.3)),url(/static/img/zedyth/hero.jpg) center/cover,radial-gradient(800px 460px at 78% 28%,rgba(226,203,165,.2),transparent 62%),#0b0a09}
+.hero .wrap{width:100%}.hero h1{max-width:660px;color:var(--g2);font-weight:400;font-size:clamp(40px,6vw,72px);letter-spacing:-1px}
+.hero .sub{text-align:left;margin:0 0 30px;max-width:520px;font-size:17px}.hero .cta{justify-content:flex-start}
+.feats{display:flex;gap:30px;flex-wrap:wrap;margin-top:44px}.feats div{display:flex;gap:12px;align-items:center;font-size:13px;line-height:1.3}
+.ic{width:42px;height:42px;border:1px solid var(--bd);border-radius:10px;display:grid;place-items:center;flex:none}
+.ic svg{width:22px;height:22px;stroke:var(--g);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.hero .dash{margin-top:56px;background:rgba(18,17,15,.82);backdrop-filter:blur(8px)}
+.split{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,2.5fr);gap:40px;align-items:center}
+.split h2,.split .sub{text-align:left;margin-left:0}.split .sub{margin-bottom:26px}
+.sol{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+#servicios .card:nth-child(n){border-top:1px solid var(--bd)}
+.sol .card{display:flex;flex-direction:column;gap:12px;padding:24px;min-height:300px}.sol .card h3{font-size:21px;margin:8px 0 0}.sol .card p{font-size:14px}
+.sol .card ul{font-size:13px;margin:0}.sol .more{margin-top:auto;font-size:13px;color:var(--g)}
+.zsec{background:linear-gradient(180deg,transparent,rgba(226,203,165,.05),transparent);border-block:1px solid var(--bd)}
+.zgrid{display:grid;grid-template-columns:1fr 1.15fr .8fr;gap:40px;align-items:center}
+.zgrid h2{text-align:left}.zgrid p{color:var(--mu);margin:0 0 24px}
+.zvis{position:relative;min-height:300px;display:grid;place-items:center}
+.orb{width:210px;height:210px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#2a251d,#0d0c0a 70%);border:1px solid rgba(226,203,165,.5);box-shadow:0 0 0 14px rgba(226,203,165,.05),0 0 0 30px rgba(226,203,165,.03),0 0 80px rgba(226,203,165,.25)}
+.orb svg{width:84px;height:84px;stroke:var(--g2);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.bub{position:absolute;right:0;bottom:6px;width:min(250px,80%);padding:16px 18px;border:1px solid var(--bd);border-radius:14px;background:rgba(18,17,15,.92);backdrop-filter:blur(8px)}
+.bub small{color:var(--g);letter-spacing:.2em;font-size:10px}.bub p{margin:6px 0 0;color:#fff;font-size:15px}
+.zfe{list-style:none;margin:0;padding:0;display:grid;gap:18px}.zfe li{display:flex;gap:14px;align-items:center;font-size:14px}
+.pjg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.pj{position:relative;display:flex;flex-direction:column;justify-content:flex-end;min-height:330px;padding:22px;border:1px solid var(--bd);border-radius:14px;overflow:hidden;
+background:linear-gradient(180deg,rgba(11,10,9,.05) 25%,rgba(11,10,9,.95) 82%),var(--img,none),var(--fb);background-size:cover;background-position:center;transition:.25s}
+.pj:hover{transform:translateY(-3px);border-color:rgba(226,203,165,.55)}
+.pj h3{margin:8px 0 2px;font-size:21px}.pj small{color:var(--mu);font-size:13px}
+.pj .tg{align-self:flex-start;font-size:11px;letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--bd);border-radius:999px;padding:4px 11px;color:var(--g);background:rgba(11,10,9,.6)}
+.trust{margin-top:56px;padding-top:30px;border-top:1px solid var(--bd);text-align:center}
+.trust .row2{display:flex;gap:16px 46px;justify-content:center;flex-wrap:wrap;margin-top:20px;font:600 15px Inter,sans-serif;letter-spacing:.32em;color:var(--g)}
+footer{padding:46px 0 30px;text-align:left}.fg{display:flex;gap:20px 30px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.fg nav,.fl{display:flex;gap:22px;flex-wrap:wrap;font-size:13px}.fl a:hover{color:var(--g)}
+.fb{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:26px;padding-top:20px;border-top:1px solid var(--bd);font-size:12px}
+.fb b{letter-spacing:.22em;font-weight:500;color:var(--g)}
+.fw{font:500 22px 'Playfair Display',serif;letter-spacing:.24em;color:var(--g2)}
+/* ZEDITH · CHAT A PANTALLA COMPLETA */
+.fab{display:flex;gap:10px;align-items:center;padding:14px 22px;border-radius:12px;z-index:50}.fab:before{content:"";width:9px;height:9px;border-radius:50%;background:#16120b;box-shadow:0 0 0 3px rgba(22,18,11,.2)}
+.fab[aria-expanded=true]{display:none}
+.pnl{inset:0;right:0;bottom:0;width:100%;height:100%;border:0;border-radius:0;z-index:70;align-items:center;
+background:radial-gradient(900px 480px at 50% -12%,rgba(226,203,165,.14),transparent 70%),#0a0908}
+.pnl>*{width:min(880px,100%)}.pnl header{padding:18px 20px}.zb{display:flex;align-items:center;gap:12px}
+.zb i{width:40px;height:40px;border-radius:10px;border:1px solid rgba(226,203,165,.5);display:grid;place-items:center;font:500 20px 'Playfair Display',serif;font-style:normal;color:var(--g2)}
+.zb b{letter-spacing:.24em;color:var(--g2);font-weight:500}.zb em{font-style:normal;font-size:12px;color:var(--mu)}
+.zb u{text-decoration:none;font-size:10px;letter-spacing:.12em;border:1px solid var(--bd);border-radius:999px;padding:3px 9px;color:var(--g)}
+.pnl header button{width:38px;height:38px;border:1px solid var(--bd);border-radius:50%;font-size:15px}
+.msgs{padding:22px 20px}.m{font-size:16px;max-width:82%;line-height:1.55;border-radius:16px 16px 16px 4px}.m.me{border-radius:16px 16px 4px 16px}
+.qs{padding:0 20px 14px}.qs button{font-size:13px;padding:8px 14px}.qs button:hover{border-color:var(--g)}
+#bf{padding:12px 20px 24px;border-top:0}#bf input{padding:15px 20px;font-size:16px}
+body:has(#pnl:not([hidden])){overflow:hidden}
+@media(max-width:900px){.split,.zgrid{grid-template-columns:1fr}.hero{min-height:0;padding:80px 0 40px}.m{max-width:92%}}
 {% endraw %}
 </style>
 </head>
@@ -292,21 +354,23 @@ nav .links a{white-space:nowrap}
        <a href="#reservas" onclick="document.querySelector('.links').classList.remove('active')">Demo reservas</a>
        <a href="#pizzeria" onclick="document.querySelector('.links').classList.remove('active')">Demo pizzería</a>
        <a href="#sistemas" onclick="document.querySelector('.links').classList.remove('active')">Sistemas</a>
+       <a href="#zedith" onclick="document.querySelector('.links').classList.remove('active')">Zedith IA</a>
        <a href="#servicios" onclick="document.querySelector('.links').classList.remove('active')">Servicios</a>
        <a href="#precios" onclick="document.querySelector('.links').classList.remove('active')">Precios</a>
        <a href="#proyectos" onclick="document.querySelector('.links').classList.remove('active')">Proyectos</a>
        <a href="#garantia" onclick="document.querySelector('.links').classList.remove('active')">Garantía</a>
        <a href="#contacto" onclick="document.querySelector('.links').classList.remove('active')">Contacto</a>
-       <a class="btn" href="{{ url_for('login') }}">Acceso clientes</a>
+       <a class="btn w" href="{{ url_for('login') }}">Acceso clientes</a>
     </div>
 </div></nav>
 
 <header class="hero" id="inicio"><div class="wrap">
- <h1>Software, ciberseguridad e informática hechos a la medida de tu negocio</h1>
- <p class="sub">Consultorios, hoteles, comercio electrónico o cualquier otro giro: diseñamos, protegemos y mantenemos tu tecnología, y cada proyecto se afina contigo hasta que queda exactamente como lo imaginaste.</p>
- <div class="cta"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar mi proyecto</a><a class="btn" href="{{ url_for('demo_pos') }}">Probar punto de venta</a><a class="btn" href="#reservas">Probar reservas en vivo</a></div>
- <div class="chips"><span>Consultorios</span><span>Hoteles</span><span>Comercio electrónico</span><span>Restaurantes</span><span>Escuelas</span><span>Logística</span><span>Y cualquier otro negocio</span></div>
-<div class="dash" aria-hidden="true">
+ <span class="eyebrow">Tecnología · Seguridad · Software · Infraestructura</span>
+ <h1>La tecnología que impulsa tu empresa.</h1>
+ <p class="sub">En ZEDYTH Technologies desarrollamos soluciones digitales a la medida: software, ciberseguridad e infraestructura, para consultorios, hoteles, comercio, restaurantes o cualquier otro negocio.</p>
+ <div class="cta"><a class="btn w" href="#servicios">Explorar soluciones →</a><a class="btn" href="#proyectos-demo">Ver proyectos</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar mi proyecto</a></div>
+ <div class="feats"><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Soluciones<br>a la medida</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad<br>avanzada</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Soporte<br>24/7</div></div>
+ <div class="dash" aria-hidden="true">
  <div class="dk"><div><small>Reservas hoy</small><b>38</b><em>+12%</em></div><div><small>Ocupación</small><b>86%</b><em>+5%</em></div><div><small>Clientes que vuelven</small><b>64%</b><em>+9%</em></div><div><small>Ingresos del mes</small><b>$184,200</b><em>+18%</em></div></div>
  <div class="dg">
   <div class="dp"><small>Ocupación semanal</small><svg viewBox="0 0 200 118"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#e2cfa3"/><stop offset="1" stop-color="#c8a96a"/></linearGradient></defs><path d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="#2a2620" stroke-width="16" stroke-linecap="round"/><path class="gp" d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="url(#gg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="191 252"/><text x="100" y="92" text-anchor="middle" fill="#fff" font-size="30" font-weight="700">76%</text><text x="100" y="110" text-anchor="middle" fill="#a39a8b" font-size="10">de turnos llenos</text></svg></div>
@@ -413,14 +477,26 @@ nav .links a{white-space:nowrap}
  <p class="note">Casi todo lo que se hace en redes busca más clientes A. En ZEDYTH hacemos lo contrario: no traemos clientes, hacemos que vuelvan, con club de clientes, puntos y avisos con tu marca.</p>
 </div></section>
 
-<section id="servicios"><div class="wrap">
- <h2>Una sola empresa para toda tu tecnología</h2>
- <p class="sub">Somos una empresa de software, ciberseguridad e informática.</p>
- <div class="grid">
-  <div class="card"><h3>Software a la medida</h3><p>Aplicaciones web y móviles, sistemas internos y tiendas en línea, hechas para cómo trabaja tu negocio.</p><ul><li>Puntos de venta personalizados</li><li>Comercio electrónico</li><li>Sistemas de gestión y reservas</li></ul></div>
-  <div class="card"><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación, y te damos seguimiento de incidentes.</p><ul><li>Revisión y endurecimiento de sistemas</li><li>Respaldos y control de vencimientos</li><li>Monitoreo y atención de incidentes</li></ul></div>
-  <div class="card"><h3>Servicios informáticos</h3><p>Soporte y mantenimiento para que tu equipo y tus sistemas siempre estén funcionando.</p><ul><li>Soporte técnico y mantenimiento</li><li>Redes, equipos y configuraciones</li><li>Asesoría tecnológica</li></ul></div>
+<section id="servicios"><div class="wrap split">
+ <div><span class="eyebrow">Nuestras soluciones</span><h2>Todo lo que tu empresa necesita, en un solo lugar.</h2><p class="sub">Una sola empresa de software, ciberseguridad e informática: tecnología, seguridad y gestión integradas para que tu negocio opere con eficiencia.</p><a class="btn" href="#contacto">Conocer más →</a></div>
+ <div class="sol"><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span><h3>Desarrollo de software</h3><p>Aplicaciones web y móviles, sistemas internos y tiendas en línea a la medida.</p><ul><li>Puntos de venta</li><li>Comercio electrónico</li><li>Reservas y gestión</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación.</p><ul><li>Endurecimiento de sistemas</li><li>Respaldos y vencimientos</li><li>Atención de incidentes</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span><h3>Infraestructura</h3><p>Hosting, bases de datos, dominios y administración de servidores.</p><ul><li>Hosting y dominios</li><li>Bases de datos</li><li>Migración a la nube</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><h3>Gestión y soporte</h3><p>Monitoreo, mantenimiento y administración de tus sistemas.</p><ul><li>Soporte técnico</li><li>Redes y equipos</li><li>Asesoría tecnológica</li></ul><a class="more" href="#contacto">Ver servicios →</a></div></div>
+</div></section>
+
+<section id="zedith" class="zsec"><div class="wrap zgrid">
+ <div><span class="eyebrow">ZEDYTH IA</span><h2>ZEDITH, tu asistente inteligente.</h2><p>ZEDITH es la IA de ZEDYTH. Te ayuda a armar tu app o sistema, resolver dudas y dejar tu pedido listo, siempre disponible, siempre contigo.</p><button class="btn w" type="button" onclick="document.getElementById('fab').click()">Hablar con ZEDITH →</button></div>
+ <div class="zvis"><div class="orb"><svg viewBox="0 0 24 24"><path d="M6 6h12L7 18h12"/></svg></div><div class="bub"><small>ZEDITH</small><p>Hola. ¿En qué puedo ayudarte hoy?</p></div></div>
+ <ul class="zfe"><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>Gestión de sistemas</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Armado de tu app</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad en tiempo real</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span>Integración de servicios</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Asistencia 24/7</li></ul>
+</div></section>
+
+<section id="proyectos-demo"><div class="wrap">
+ <span class="eyebrow">Proyectos destacados</span><h2 style="text-align:left">Tecnología que genera resultados.</h2><p class="sub" style="text-align:left;margin-left:0">Prueba nuestras demos en vivo o visita una de nuestras tiendas.</p>
+ <div class="pjg">
+  <a class="pj" href="#reservas" style="--img:url(/static/img/zedyth/proyecto-plataforma.jpg);--fb:radial-gradient(circle at 70% 20%,#3a3226,#12110f 70%)"><span class="tg">Software</span><h3>Plataforma empresarial</h3><small>Sistema de reservas y gestión</small></a>
+  <a class="pj" href="https://zelecte.onrender.com" target="_blank" rel="noopener" style="--img:url(/static/img/zedyth/proyecto-tienda.jpg);--fb:radial-gradient(circle at 30% 25%,#41361f,#12110f 70%)"><span class="tg">Web &amp; App</span><h3>Tienda en línea</h3><small>Zelecte · supermercado en línea</small></a>
+  <a class="pj" href="{{ url_for('demo_pos') }}" style="--img:url(/static/img/zedyth/proyecto-pos.jpg);--fb:radial-gradient(circle at 60% 30%,#2c2f33,#12110f 70%)"><span class="tg">Comercio</span><h3>Punto de venta</h3><small>Demo en vivo, sin registro</small></a>
+  <a class="pj" href="#pizzeria" style="--img:url(/static/img/zedyth/proyecto-pizzeria.jpg);--fb:radial-gradient(circle at 40% 20%,#43291d,#12110f 70%)"><span class="tg">Restaurantes</span><h3>Pizzería en vivo</h3><small>Pedidos, cocina y entregas</small></a>
  </div>
+ <div class="trust"><small class="tag">Empresas que forman parte del ecosistema ZEDYTH</small><div class="row2"><span>ZMARTH</span><span>ZELECTE</span><span>ZEDYTHNET</span><span>ZEDITH</span></div></div>
 </div></section>
 
 <section id="precios"><div class="wrap">
@@ -482,10 +558,11 @@ nav .links a{white-space:nowrap}
  <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a><a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
 </div></div></section>
 
-<footer><div class="wrap">© {{ año }} ZEDYTH Technologies · Software, ciberseguridad e informática · Grupo empresarial: ZEDYTH, Zmarth y Zelecte · <a href="{{ url_for('login') }}">Acceso clientes</a></div></footer>
+<footer><div class="wrap"><div class="fg"><span class="fw">ZEDYTH</span><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
+<div class="fb"><span>© {{ año }} ZEDYTH Technologies. Grupo empresarial: ZEDYTH, Zmarth y Zelecte.</span><b>INNOVACIÓN · SEGURIDAD · CRECIMIENTO</b></div></div></footer>
 <div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}" data-ia="{{ url_for('zedith_chat') }}">
- <button class="fab" id="fab" type="button" aria-expanded="false">Habla con Zedith</button>
- <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><b>Zedith · asistente ZEDYTH</b><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
+ <button class="fab" id="fab" type="button" aria-expanded="false">Habla con ZEDITH</button>
+ <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><i>Z</i><span><b>ZEDITH</b><br><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
   <div class="msgs" id="msgs" aria-live="polite"></div><div class="qs" id="qs"></div>
   <form id="bf"><input id="bi" placeholder="Cuéntame de tu negocio" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
 </div>
