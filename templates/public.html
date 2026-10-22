@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#d4c4b2">
+<meta name="theme-color" content="#0e0d0c">
 <meta name="description" content="ZEDYTH Technologies: aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos proyectos sencillos.">
 <link rel="icon" type="image/png" href="/static/img/zedyth/favicon.png">
 <link rel="apple-touch-icon" href="/static/img/zedyth/apple-touch-icon.png">
@@ -431,28 +431,27 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 }
 {% endraw %}
 
-/* ZEDYTH v4: hero futurista, nav beige, panel IA */
+/* ZEDYTH v5 */
 .hero-bg{display:none}
-.himg{position:absolute;top:0;right:0;bottom:0;width:68%;z-index:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 34%);mask-image:linear-gradient(90deg,transparent,#000 34%)}
-.himg:before{content:"";position:absolute;inset:-4%;background:url(/static/img/zedyth/hero-futurista.jpg) center/cover;animation:kb 24s ease-in-out infinite alternate}
-.himg:after{content:"";position:absolute;top:0;bottom:0;left:-40%;width:35%;background:linear-gradient(100deg,transparent,rgba(226,203,165,.14),transparent);transform:skewX(-18deg);animation:hsw 9s ease-in-out infinite}
-@keyframes hsw{0%{left:-40%}60%,100%{left:130%}}
-nav,nav.sc{background:#d4c4b2!important;border-bottom:1px solid rgba(20,17,11,.18);box-shadow:none!important}
-nav .links a{color:#1a150d}nav .links a:hover{color:#000}
-nav img,nav .lg-nav{mix-blend-mode:normal;border-radius:0;height:auto;width:min(255px,60vw)}
-nav .btn.w{background:#14110b;border-color:#14110b;color:#e2cba5}
-.menu-toggle{color:#1a150d!important;border-color:rgba(20,17,11,.4)!important}
-nav .links{background:#d4c4b2!important;border-bottom:1px solid rgba(20,17,11,.2)}
-.pnl header{background:#d4c4b2!important;border-bottom:1px solid rgba(20,17,11,.18)}
-.zb em,.zb u{color:#14110b!important}.zb u{border-color:rgba(20,17,11,.5)}
-.pnl header button{color:#14110b;border-color:rgba(20,17,11,.4)}
-@media(max-width:900px){.hero{display:block;min-height:0;padding:0 0 110px}.himg{position:relative;width:100%;height:auto;aspect-ratio:594/320;-webkit-mask-image:linear-gradient(180deg,#000 72%,transparent);mask-image:linear-gradient(180deg,#000 72%,transparent)}.hero-in{margin-top:-4px}}
-@media(prefers-reduced-motion:reduce){.himg:before,.himg:after{animation:none}}
+.himg{position:absolute;inset:0;z-index:0;overflow:hidden}
+.himg:before{content:"";position:absolute;inset:-3%;background:url(/static/img/zedyth/hero-banner.jpg) 62% center/cover;animation:kb 26s ease-in-out infinite alternate}
+.himg:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0b0a09 3%,rgba(11,10,9,.84) 32%,rgba(11,10,9,.22) 70%,rgba(11,10,9,.4))}
+nav{background:rgba(8,7,6,.96)}
+nav .brand{display:flex;align-items:center;gap:14px}
+nav .lg-nav-e{display:block;width:44px;height:auto;flex:none}
+nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-blend-mode:normal}
+.lg-ft{width:190px;height:auto;border-radius:0}
+.lg-zedith{width:min(330px,82%);height:auto;border-radius:0}
+.zb .zb-z{width:48px;height:auto;border-radius:0;flex:none}
+.zb .zb-w{width:140px;height:auto;border-radius:0;margin-bottom:7px}
+.fab .fab-z{width:36px;height:auto;border-radius:0;object-fit:contain;flex:none}
+@media(max-width:900px){.hero{display:block;min-height:0;padding:0 0 110px}.himg{position:relative;aspect-ratio:1672/940;-webkit-mask-image:linear-gradient(180deg,#000 74%,transparent);mask-image:linear-gradient(180deg,#000 74%,transparent)}.himg:before{inset:0;background-position:center}.himg:after{background:linear-gradient(180deg,transparent 55%,rgba(11,10,9,.6))}.hero-in{margin-top:6px}}
+@media(prefers-reduced-motion:reduce){.himg:before{animation:none}}
 </style>
 </head>
 <body>
 <nav><div class="wrap">
- <a href="#inicio" class="brand" aria-label="ZEDYTH Technologies"><img class="lg-nav" src="/static/img/zedyth/logo-zedyth-negro.webp" alt="ZEDYTH Technologies" width="255" height="26"></a>
+ <a href="#inicio" class="brand" aria-label="ZEDYTH Technologies"><img class="lg-nav-e" src="/static/img/zedyth/zedyth-aguila.webp" alt="" width="44" height="24"><img class="lg-nav" src="/static/img/zedyth/zedyth-wordmark.webp" alt="ZEDYTH Technologies" width="210" height="16"></a>
     <!-- EL NUEVO BOTÓN DE MENÚ HAMBURGUESA -->
     <div class="menu-toggle" onclick="document.querySelector('.links').classList.toggle('active')">☰</div>
     <div class="links">
@@ -606,7 +605,7 @@ nav .links{background:#d4c4b2!important;border-bottom:1px solid rgba(20,17,11,.2
  <div class="sol"><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span><h3>Aplicaciones y software</h3><p>Apps web progresivas, sistemas y tiendas en línea de alta complejidad, publicables en Google Play.</p><ul><li>Puntos de venta en la nube</li><li>Comercio electrónico</li><li>Reservas y gestión</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><h3>Inteligencia artificial</h3><p>Asistentes y automatización integrados a tu operación, como nuestra propia IA ZEDITH.</p><ul><li>Asistentes conversacionales</li><li>Automatización de procesos</li><li>Análisis y pronósticos</li></ul><a class="more" href="#zedith">Conocer ZEDITH →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación.</p><ul><li>Endurecimiento de sistemas</li><li>Respaldos y vencimientos</li><li>Atención de incidentes</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span><h3>Infraestructura</h3><p>Hosting, bases de datos PostgreSQL en la nube, dominios y administración de servidores.</p><ul><li>Hosting y dominios</li><li>Bases de datos</li><li>Migración a la nube</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><h3>Gestión y soporte</h3><p>Monitoreo, mantenimiento y administración de tus sistemas.</p><ul><li>Soporte técnico</li><li>Redes y equipos</li><li>Asesoría tecnológica</li></ul><a class="more" href="#contacto">Ver servicios →</a></div></div>
 </div></section>
 
-<section id="zedith" class="zsec"><div class="wrap zgrid"><div><span class="eyebrow">ZEDYTH IA</span><img class="lg-zedith" src="/static/img/zedyth/logo-zedith.webp" alt="ZEDITH" width="300" height="79" loading="lazy"><h2>Tu asistente inteligente.</h2><p>ZEDITH es la IA de ZEDYTH. Te ayuda a armar tu app o sistema, resolver dudas y dejar tu pedido listo, siempre disponible, siempre contigo.</p><button class="btn w" type="button" onclick="document.getElementById('fab').click()">Hablar con ZEDITH →</button></div>
+<section id="zedith" class="zsec"><div class="wrap zgrid"><div><span class="eyebrow">ZEDYTH IA</span><img class="lg-zedith" src="/static/img/zedyth/logo-zedith-blanco.webp" alt="ZEDITH" width="330" height="31" loading="lazy"><h2>Tu asistente inteligente.</h2><p>ZEDITH es la IA de ZEDYTH. Te ayuda a armar tu app o sistema, resolver dudas y dejar tu pedido listo, siempre disponible, siempre contigo.</p><button class="btn w" type="button" onclick="document.getElementById('fab').click()">Hablar con ZEDITH →</button></div>
  <div class="zvis"><img class="zimg" src="/static/img/zedyth/zedith.jpg" alt="ZEDITH, asistente de IA de ZEDYTH" loading="lazy"></div></div><div class="wrap"><div style="height:30px"></div><ul class="zfe zrow"><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>Gestión de sistemas</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Armado de tu app</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad en tiempo real</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span>Integración de servicios</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Asistencia 24/7</li></ul></div></section>
 
 <section class="why" id="confianza"><div class="wrap whyg"><div><span class="eyebrow">Por qué elegir ZEDYTH</span><h2>Tecnología que inspira confianza.</h2><p>No solo desarrollamos software: protegemos lo que más importa, tu información, tus operaciones y tu futuro digital.</p></div>
@@ -687,11 +686,11 @@ nav .links{background:#d4c4b2!important;border-bottom:1px solid rgba(20,17,11,.2
  <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a><a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
 </div></div></section>
 
-<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/aguila-completo.webp" alt="ZEDYTH Technologies" width="170" height="110" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
+<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/zedyth-aguila-completo.webp" alt="ZEDYTH Technologies" width="190" height="114" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
 <div class="fb"><span>© {{ año }} ZEDYTH Technologies. Grupo empresarial: ZEDYTH, Zmarth y Zelecte.</span><b>INNOVACIÓN · SEGURIDAD · CRECIMIENTO</b></div></div></footer>
 <div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}" data-ia="{{ url_for('zedith_chat') }}">
- <button class="fab" id="fab" type="button" aria-expanded="false" aria-label="Habla con ZEDITH, asistente de IA"><img class="fab-z" src="/static/img/zedyth/logo-z.webp" alt="" width="40" height="40"><span class="l-lg">Habla con ZEDITH</span><span class="l-sm">ZEDITH</span></button>
- <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><img class="zb-z" src="/static/img/zedyth/logo-z.webp" alt="" width="44" height="44"><span><img class="zb-w" src="/static/img/zedyth/logo-zedith.webp" alt="ZEDITH" width="91" height="24"><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
+ <button class="fab" id="fab" type="button" aria-expanded="false" aria-label="Habla con ZEDITH, asistente de IA"><img class="fab-z" src="/static/img/zedyth/zedyth-aguila-oscuro.webp" alt="" width="36" height="20"><span class="l-lg">Habla con ZEDITH</span><span class="l-sm">ZEDITH</span></button>
+ <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><img class="zb-z" src="/static/img/zedyth/zedyth-aguila.webp" alt="" width="48" height="26"><span><img class="zb-w" src="/static/img/zedyth/logo-zedith-blanco.webp" alt="ZEDITH" width="140" height="13"><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
   <div class="msgs" id="msgs" aria-live="polite"></div><div class="qs" id="qs"></div>
   <form id="bf"><input id="bi" placeholder="Cuéntame de tu negocio" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
 </div>

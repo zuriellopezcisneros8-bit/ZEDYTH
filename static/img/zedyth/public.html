@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0d0c">
+<meta name="description" content="ZEDYTH Technologies: aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos proyectos sencillos.">
+<link rel="icon" type="image/png" href="/static/img/zedyth/favicon.png">
+<link rel="apple-touch-icon" href="/static/img/zedyth/apple-touch-icon.png">
+<title>ZEDYTH Technologies | Aplicaciones complejas, IA y ciberseguridad</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050505;--tx:#fff;--mu:#9a9a9a;--gl:rgba(255,255,255,.04);--bd:rgba(255,255,255,.1);--ok:#4ade80;--st:#f5c542}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg) radial-gradient(circle at 50% 0,rgba(60,60,60,.35),transparent 55%) no-repeat;color:var(--tx);line-height:1.6;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+nav{position:sticky;top:0;z-index:20;background:rgba(5,5,5,.8);backdrop-filter:blur(14px);border-bottom:1px solid var(--bd)}
+nav .wrap{display:flex;align-items:center;gap:24px;height:72px}
+nav img{height:42px;width:auto;display:block}
+nav .links{display:flex;gap:22px;margin-left:auto;font-size:14px;color:var(--mu)}
+nav .links a:hover{color:#fff}
+.btn{display:inline-block;padding:12px 22px;border-radius:999px;font-weight:600;font-size:14px;border:1px solid var(--bd);transition:.2s;cursor:pointer;font-family:inherit;color:#fff;background:transparent}
+.btn.w{background:#fff;color:#000;border-color:#fff}.btn:hover{transform:translateY(-1px);opacity:.9}
+section{padding:80px 0;scroll-margin-top:72px}
+h1{text-wrap:balance;font-size:clamp(32px,5.4vw,56px);line-height:1.08;margin:0 0 20px;letter-spacing:-1.5px}
+h2{font-size:clamp(26px,4vw,40px);margin:0 0 12px;letter-spacing:-.8px;text-align:center}
+.sub{color:var(--mu);text-align:center;max-width:680px;margin:0 auto 44px}
+.hero{text-align:center;padding:100px 0 70px}.hero .sub{font-size:18px}
+.hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:36px}
+.chips span{border:1px solid var(--bd);border-radius:999px;padding:6px 14px;font-size:13px;color:var(--mu)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}
+.card{background:var(--gl);border:1px solid var(--bd);border-radius:18px;padding:28px;backdrop-filter:blur(10px)}
+.card h3{margin:0 0 8px;font-size:20px}.card p{color:var(--mu);margin:0;font-size:15px}
+.card ul{list-style:none;padding:0;margin:16px 0 0;font-size:14px;color:#ccc}
+.card li{padding:5px 0 5px 22px;position:relative}.card li:before{content:"✓";position:absolute;left:0;color:var(--ok)}
+.price{font-size:40px;font-weight:700;margin:10px 0}.price small{font-size:14px;color:var(--mu);font-weight:400}
+.card.hl{border-color:rgba(255,255,255,.4);box-shadow:0 0 40px rgba(255,255,255,.06)}
+.tag{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--mu)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.no li:before{content:"✕";color:#f87171}
+.note{text-align:center;color:var(--mu);font-size:14px;max-width:760px;margin:26px auto 0}
+.stars{color:var(--st);letter-spacing:2px}.rev{border-top:1px solid var(--bd);margin-top:14px;padding-top:12px;font-size:14px}
+.rev b{font-weight:600}.rev p{margin:2px 0 8px;color:#bbb}
+details{margin-top:14px}summary{cursor:pointer;font-size:14px;font-weight:600}
+form.rf{display:grid;gap:10px;margin-top:12px}
+.rf input[type=text],.rf textarea{width:100%;padding:11px 14px;background:rgba(0,0,0,.5);border:1px solid var(--bd);border-radius:10px;color:#fff;font:inherit;font-size:14px}
+.rf textarea{min-height:80px;resize:vertical}.hp{position:absolute;left:-9999px}
+.rate{display:inline-flex;flex-direction:row-reverse;justify-self:start}
+.rate input{position:absolute;opacity:0;width:1px;height:1px}
+.rate label{font-size:28px;color:#444;cursor:pointer;padding:0 2px}
+.rate input:checked~label,.rate label:hover,.rate label:hover~label{color:var(--st)}
+.ok{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.4);color:var(--ok);padding:12px 18px;border-radius:12px;text-align:center;margin-bottom:24px}
+footer{border-top:1px solid var(--bd);padding:36px 0;text-align:center;color:var(--mu);font-size:13px}
+
+/* NUEVA SECCIÓN DE MENÚ MÓVIL RESPONSIVO */
+.menu-toggle { display: none; cursor: pointer; font-size: 24px; color: var(--mu); margin-left: auto; }
+@media(max-width:720px) {
+    .menu-toggle { display: block; }
+    nav .links {
+        display: none; 
+        position: absolute; 
+        top: 72px; 
+        left: 0; 
+        width: 100%; 
+        background: rgba(5,5,5,0.95); 
+        flex-direction: column; 
+        padding: 20px; 
+        border-bottom: 1px solid var(--bd);
+    }
+    nav .links.active { display: flex; }
+    nav .btn { margin-left: 0; margin-top: 15px; }
+    section { padding: 56px 0; }
+    .hero { padding: 64px 0 48px; }
+}
+{% raw %}
+h1,h2,.price{font-family:'Bricolage Grotesque',Inter,sans-serif}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:22px}
+.tabs button{font:inherit;font-size:14px;font-weight:600;color:#fff;background:transparent;border:1px solid var(--bd);border-radius:999px;padding:10px 18px;cursor:pointer}
+.tabs button[aria-selected=true]{background:#fff;color:#000;border-color:#fff}
+.cmp{--x:50%;position:relative;border:1px solid var(--bd);border-radius:22px;overflow:hidden;min-height:400px;background:#0d0d0d}
+.pane{position:absolute;inset:0;padding:38px;display:flex;align-items:center}
+.pane .in{width:44%}
+.pane.on{background:#f2f2f2;color:#050505;clip-path:inset(0 0 0 var(--x))}
+.pane.on .in{margin-left:auto}
+.pane h3{font-family:'Bricolage Grotesque',Inter,sans-serif;font-size:30px;margin:4px 0 0;letter-spacing:-.5px}
+.pane.off{filter:grayscale(1);color:#bbb}.pane small{font-size:13px;opacity:.7}
+.cmp ul{list-style:none;padding:0;margin:16px 0 0}.cmp li{padding:7px 0 7px 26px;position:relative;font-size:15px}
+.cmp li:before{content:"✕";position:absolute;left:0;color:#f87171}.pane.on li:before{content:"✓";color:#15803d;font-weight:700}
+.cmp:after{content:"";position:absolute;top:0;bottom:0;left:var(--x);width:2px;background:#fff;pointer-events:none}
+.knob{position:absolute;top:50%;left:var(--x);transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:#fff;color:#000;display:grid;place-items:center;z-index:2;pointer-events:none;font-weight:700;box-shadow:0 0 0 8px rgba(255,255,255,.15)}
+#rng{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;z-index:3;margin:0}
+.cmp:focus-within .knob{outline:2px solid #fff;outline-offset:4px}
+.pitch{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:20px}.pitch p{margin:0;font-size:18px;max-width:640px}
+.bars{margin-top:6px}.row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin-bottom:16px;font-size:14px}
+.row i{grid-column:1/-1;height:10px;border-radius:9px;background:rgba(255,255,255,.08);position:relative;overflow:hidden}
+.row i:after{content:"";position:absolute;inset:0;width:0;background:#777;border-radius:9px;transition:width 1.2s cubic-bezier(.2,.8,.2,1);transition-delay:calc(var(--i)*.18s)}
+.bars.in .row i:after{width:var(--w)}.row.top i:after{background:var(--ok)}.row.top,.row.top b{color:var(--ok)}
+.wc{border-radius:20px;padding:22px;background:linear-gradient(145deg,#222,#090909);border:1px solid rgba(255,255,255,.2);margin:6px 0 16px}
+.wc header{display:flex;justify-content:space-between;font-weight:600}
+.sts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0 8px}
+.sts i{aspect-ratio:1;border-radius:50%;border:2px dashed rgba(255,255,255,.25);display:grid;place-items:center;font-style:normal;color:#000;transition:.25s}
+.sts i.f{background:var(--ok);border:2px solid var(--ok)}
+.wal p{color:var(--mu);font-size:14px;margin:0 0 14px;min-height:42px}
+.calc label{display:grid;gap:6px;font-size:14px;color:var(--mu);margin-bottom:14px}
+.calc input{width:100%;padding:11px 14px;background:rgba(0,0,0,.5);border:1px solid var(--bd);border-radius:10px;color:#fff;font:inherit}
+.res .bar{height:14px;border-radius:9px;background:rgba(255,255,255,.08);margin:6px 0 16px;overflow:hidden}.res .bar i{display:block;height:100%;background:#777;transition:width .5s}
+.res .bar.b i{background:var(--ok)}.res div b{float:right}
+.big{font-family:'Bricolage Grotesque',Inter,sans-serif;font-size:56px;font-weight:800;color:var(--ok);line-height:1}
+.fab{position:fixed;right:18px;bottom:18px;z-index:30;border:0;border-radius:999px;padding:14px 20px;font:600 14px Inter,sans-serif;background:#fff;color:#000;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.pnl{position:fixed;right:18px;bottom:78px;z-index:30;width:min(370px,calc(100vw - 36px));height:min(520px,70vh);display:flex;flex-direction:column;background:#101010;border:1px solid var(--bd);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.pnl[hidden]{display:none}.pnl header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--bd)}
+.pnl header button{background:none;border:0;color:#fff;font-size:16px;cursor:pointer}
+.msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.m{background:var(--gl);border:1px solid var(--bd);padding:10px 13px;border-radius:14px 14px 14px 4px;font-size:14px;max-width:90%}
+.m.me{align-self:flex-end;background:#fff;color:#000;border-radius:14px 14px 4px 14px}.m a{text-decoration:underline}
+.qs{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px}.qs button{font:inherit;font-size:12px;color:#ddd;background:transparent;border:1px solid var(--bd);border-radius:999px;padding:5px 11px;cursor:pointer}
+#bf{display:flex;gap:8px;padding:10px;border-top:1px solid var(--bd)}#bf input{flex:1;min-width:0;padding:10px 12px;background:#000;border:1px solid var(--bd);border-radius:999px;color:#fff;font:inherit;font-size:14px}
+:is(button,a,input):focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media(max-width:720px){.cmp{min-height:0}.pane{position:static;clip-path:none!important;padding:26px}.pane .in,.pane.on .in{width:auto;margin:0}.knob,#rng,.cmp:after{display:none}}
+@media(prefers-reduced-motion:reduce){.row i:after,.res .bar i{transition:none}}
+
+/* TEMA AZUL / MORADO */
+:root{--bg:#060a14;--s1:#0b1222;--s2:#101a33;--tx:#e8eefc;--mu:#a39a8b;--gl:#0d1528;--bd:rgba(110,140,255,.16);--ok:#e2cfa3;--st:#fbbf24;--b:#3b82f6;--p:#7c3aed;--c:#c8a96a}
+body{background:var(--bg);background-image:radial-gradient(800px 420px at 10% -4%,rgba(124,58,237,.3),transparent 60%),radial-gradient(700px 400px at 92% 0,rgba(34,211,238,.16),transparent 60%);background-repeat:no-repeat;color:var(--tx)}
+nav{background:rgba(6,10,20,.85)}nav .links a:hover{color:var(--c)}
+.btn{color:var(--tx)}.btn:hover{border-color:var(--c)}
+.btn.w{background:linear-gradient(135deg,var(--p),var(--b));border-color:transparent;color:#fff;box-shadow:0 6px 24px rgba(91,80,255,.35)}
+.card{background:linear-gradient(180deg,var(--s2),var(--s1));border-color:var(--bd)}
+.card.hl{border-color:rgba(124,92,255,.55);box-shadow:0 0 50px rgba(124,58,237,.18)}
+#precios .two>.card.hl{background:linear-gradient(160deg,#5b21b6,#25104f 75%)}
+#precios .two>.card.hl p,#precios .two>.card.hl li{color:#ddd6fe}
+.tag{color:var(--c)}.chips span{border-color:rgba(124,92,255,.35);background:rgba(124,92,255,.08);color:#c4b5fd}
+#servicios .card:nth-child(1){border-top:3px solid var(--b)}#servicios .card:nth-child(2){border-top:3px solid var(--p)}#servicios .card:nth-child(3){border-top:3px solid var(--c)}
+.tabs button{color:var(--tx)}.tabs button[aria-selected=true]{background:linear-gradient(135deg,var(--p),var(--b));color:#fff;border-color:transparent}
+.cmp{background:#0a1020}.pane.off{color:#9aa7c4}.pane.on{background:linear-gradient(135deg,#1e1b4b,#312e81 55%,#1d4ed8);color:#fff}
+.pane.on li:before{color:var(--c)}.pane small{opacity:.75}
+.row i:after{background:linear-gradient(90deg,var(--b),var(--p))}.row.top i:after{background:linear-gradient(90deg,var(--ok),var(--c))}
+.res .bar i{background:linear-gradient(90deg,#475569,#94a3b8)}.res .bar.b i{background:linear-gradient(90deg,var(--ok),var(--c))}
+.big{background:linear-gradient(90deg,var(--ok),var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+.fab,.m.me{background:linear-gradient(135deg,var(--p),var(--b));color:#fff}.pnl{background:var(--s1)}
+footer{background:rgba(255,255,255,.02)}
+.rf[hidden]{display:none}
+@media(max-width:1000px){nav .links{gap:14px;font-size:13px}}
+.dash{max-width:920px;margin:48px auto 0;text-align:left;border:1px solid var(--bd);border-radius:20px;padding:16px;background:linear-gradient(180deg,#0e1730,#08101f);box-shadow:0 30px 80px rgba(60,40,200,.28)}
+.dk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px}
+.dk div,.dp{border:1px solid var(--bd);border-radius:12px;padding:12px 14px;background:rgba(255,255,255,.02)}
+.dk small,.dp small{color:var(--mu);font-size:12px;display:block}.dk b{font-size:26px;font-family:'Bricolage Grotesque',Inter,sans-serif}.dk em{font-style:normal;font-size:12px;color:var(--ok);margin-left:6px}
+.dg{display:grid;grid-template-columns:1fr 1.6fr;gap:12px}.dp svg{width:100%;height:auto;display:block;margin-top:6px}
+.dash>small{display:block;color:var(--mu);font-size:11px;margin-top:10px;text-align:right}
+.gp{animation:gd 1.6s .2s cubic-bezier(.2,.8,.2,1) backwards}@keyframes gd{from{stroke-dasharray:0 252}}
+.ln{stroke-dasharray:1;stroke-dashoffset:1;animation:dr 1.8s .4s forwards}@keyframes dr{to{stroke-dashoffset:0}}
+.rz-cfg{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:22px}
+.rz-cfg input{padding:12px 16px;background:var(--s2);border:1px solid var(--bd);border-radius:12px;color:#fff;font:inherit;min-width:min(280px,100%)}.rz-cfg .tabs{margin:0}
+.rz-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:start}
+.rz-head{display:flex;gap:12px;align-items:center;margin-bottom:16px}.rz-head small{display:block;color:var(--mu);font-size:13px}
+.logo{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-family:'Bricolage Grotesque',Inter,sans-serif;background:linear-gradient(135deg,var(--p),var(--b))}
+.days{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px}
+.days button{flex:none;font:inherit;font-size:13px;color:var(--tx);background:transparent;border:1px solid var(--bd);border-radius:10px;padding:8px 14px;cursor:pointer}
+.days button.on{background:rgba(59,130,246,.2);border-color:var(--b)}
+.rrow{margin-bottom:14px}.rrow>b{font-size:14px}.sl{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin-top:6px}
+.sl button{padding:9px 0;border-radius:9px;border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.08);color:#a7f3d0;font:inherit;font-size:13px;cursor:pointer}
+.sl button.busy{border-color:var(--bd);background:rgba(255,255,255,.03);color:#64748b;text-decoration:line-through}
+.sl button.mine{background:linear-gradient(135deg,var(--p),var(--b));border-color:transparent;color:#fff;font-weight:600}
+.leg{font-size:12px;color:var(--mu);margin:0 0 12px}
+.kp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.kp div{border:1px solid var(--bd);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.03)}
+.kp b{display:block;font-size:24px;font-family:'Bricolage Grotesque',Inter,sans-serif}.kp small{color:var(--mu);font-size:12px}
+.zr{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-size:14px}.zr li{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--bd);border-radius:10px;padding:9px 12px}
+.zr small{display:block;color:var(--mu)}.zr li.empty{color:var(--mu);display:block}.zr li.w{border-color:rgba(251,191,36,.45)}
+.zr button{font:inherit;font-size:12px;color:var(--tx);background:transparent;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer}
+.rz-msg{margin-top:16px;padding:12px 16px;border-radius:12px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.35);color:#bfdbfe;min-height:46px}
+@media(max-width:900px){.rz-grid,.dg{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.gp{animation:none}.ln{animation:none;stroke-dashoffset:0}}
+
+/* TEMA LUXURY MODERN */
+:root{--bg:#0e0d0c;--s1:#151412;--s2:#1b1916;--tx:#f3ede2;--mu:#a39a8b;--gl:#151412;--bd:rgba(214,190,150,.15);--ok:#9bb59a;--st:#d9b56a;--g:#c8a96a;--g2:#e2cfa3;--iv:#ece0cb;--p:#c8a96a;--b:#a88b52;--c:#e2cfa3}
+body{background:var(--bg);background-image:radial-gradient(900px 380px at 50% -8%,rgba(200,169,106,.09),transparent 70%);background-repeat:no-repeat;color:var(--tx)}
+h1,h2,.price,.pane h3,.big,.kp b,.dk b,.logo,.card h3{font-family:'Cormorant Garamond',Georgia,serif;font-variant-numeric:lining-nums}
+h1{font-size:clamp(40px,6vw,70px);font-weight:600;letter-spacing:-.5px;line-height:1.02}
+h2{font-size:clamp(32px,4.6vw,48px);font-weight:600;letter-spacing:-.3px;line-height:1.1}
+.card h3{font-size:25px;font-weight:700}.price{font-weight:600}
+nav{background:rgba(14,13,12,.9)}nav img{mix-blend-mode:lighten}nav .links a:hover{color:var(--g2)}
+.btn{color:var(--tx);border-color:rgba(214,190,150,.3)}.btn:hover{border-color:var(--g)}
+.btn.w{background:var(--g);border-color:var(--g);color:#14110b;box-shadow:none}.btn.w:hover{background:var(--g2)}
+.card{background:var(--s1);border-color:var(--bd);backdrop-filter:none}
+.card.hl{background:var(--s2);border-color:rgba(200,169,106,.5);box-shadow:none}
+#precios .two>.card.hl{background:linear-gradient(160deg,#2b2417,#17140f)}
+#precios .two>.card.hl p,#precios .two>.card.hl li{color:var(--mu)}
+#servicios .card:nth-child(n){border-top:2px solid var(--g)}
+.tag{color:var(--g)}.chips span{border-color:var(--bd);background:transparent;color:var(--mu)}
+.card li:before,.stars{color:var(--g)}.no li:before{color:#c98a82}
+.tabs button{color:var(--tx);border-color:var(--bd)}.tabs button[aria-selected=true]{background:var(--g);color:#14110b;border-color:var(--g)}
+.cmp{background:#12110f}.pane.off{color:#9a9183}.pane.on{background:var(--iv);color:#17130c}.pane.on li:before{color:#7a6230}
+.cmp:after{background:var(--g)}.knob{background:var(--g);color:#14110b;box-shadow:0 0 0 6px rgba(200,169,106,.16)}
+.row i{background:rgba(255,255,255,.07)}.row i:after{background:#6e675b}.row.top i:after{background:var(--g)}.row.top,.row.top b{color:var(--g2)}
+.wc{background:linear-gradient(145deg,#26221b,#14120f);border-color:rgba(200,169,106,.35)}
+.sts i.f{background:var(--g);border-color:var(--g);color:#14110b}
+.calc input,.rz-cfg input{background:var(--s2);border-color:var(--bd);color:var(--tx)}
+.res .bar{background:rgba(255,255,255,.07)}.res .bar i{background:#6e675b}.res .bar.b i{background:var(--g)}
+.big{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:var(--g2);font-size:66px}
+.fab,.m.me{background:var(--g);color:#14110b}.pnl{background:var(--s1)}.m{background:var(--s2)}#bf input{background:var(--bg)}
+.dash{background:linear-gradient(180deg,#181613,#100f0d);box-shadow:0 30px 70px rgba(0,0,0,.5)}
+.logo{background:var(--g);color:#14110b}
+.days button.on{background:rgba(200,169,106,.16);border-color:var(--g)}
+.sl button{border-color:rgba(155,181,154,.45);background:rgba(155,181,154,.08);color:#cfe0cd}
+.sl button.busy{border-color:var(--bd);background:rgba(255,255,255,.03);color:#6f685c}
+.sl button.mine{background:var(--g);border-color:var(--g);color:#14110b}
+.zr li.w{border-color:rgba(214,168,91,.5)}
+.rz-msg{background:rgba(200,169,106,.08);border-color:rgba(200,169,106,.35);color:var(--g2)}
+.feat{display:grid;grid-template-columns:1.1fr 1fr;gap:32px;align-items:center;padding:34px}.feat ul{margin:0}.feat h3{font-size:36px;margin:8px 0 0}
+@media(max-width:900px){.feat{grid-template-columns:1fr;gap:18px;padding:26px}}
+/* TEXTO MÁS BLANCO: más contraste sobre fondo oscuro */
+:root{--tx:#fff;--mu:#ebe6db}
+nav .links{color:#fff;gap:15px}
+@media(max-width:1100px){nav .links{gap:11px;font-size:13px}}
+@media(max-width:1040px){
+.menu-toggle{display:block}
+nav .links{display:none;position:absolute;top:72px;left:0;width:100%;background:rgba(14,13,12,.97);flex-direction:column;align-items:flex-start;gap:14px;font-size:14px;padding:20px;border-bottom:1px solid var(--bd)}
+nav .links.active{display:flex}
+nav .btn{margin-left:0;margin-top:6px}
+}
+.card ul{color:#fff}
+.rev p{color:#f1ede4}
+.qs button{color:#fff}
+.chips span{color:#f4efe5}
+.pane.off{color:#f1ede4}.pane.off small{opacity:.9;color:#fff}
+.pane.on small{opacity:1;color:#3a2f1c}
+.sl button{color:#eaf4e8}
+.sl button.busy{color:#cfc8ba}
+.dp svg text:last-of-type{fill:#ebe6db}
+.rz-msg{color:#fff}
+.logo{color:#fff}
+.leg{color:#ebe6db}
+
+/* DEMO PIZZERÍA EN VIVO */
+.pz [hidden]{display:none!important}
+.pz-row{display:grid;grid-template-columns:1fr auto auto;gap:4px 16px;align-items:center;padding:13px 0;border-top:1px solid var(--bd)}
+.pz-row:first-child{border-top:0}
+.pz-i b{display:block;font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;font-weight:700;line-height:1.1}
+.pz-i small{display:block;color:var(--mu);font-size:13px;margin-top:2px}
+.pz-row .pr{color:var(--g2);font-weight:600;font-variant-numeric:tabular-nums}
+.pz-step{display:flex;align-items:center;gap:10px}
+.pz-step button{width:34px;height:34px;padding:0;border-radius:50%;border:1px solid var(--bd);background:transparent;color:#fff;font:600 18px/1 Inter,sans-serif;cursor:pointer;display:grid;place-items:center}
+.pz-step button:hover:not(:disabled){border-color:var(--g)}
+.pz-step button:disabled{opacity:.35;cursor:not-allowed}
+.pz-step .q{min-width:18px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums}
+.pz-tag{font-size:12px;font-weight:600;color:#f3c27a;border:1px solid rgba(224,161,74,.5);border-radius:999px;padding:5px 12px}
+.pz-sum{display:flex;justify-content:space-between;align-items:baseline;gap:6px 14px;flex-wrap:wrap;margin-top:6px}
+.pz-sum b{font-family:'Cormorant Garamond',Georgia,serif;font-size:32px;font-weight:600;line-height:1;font-variant-numeric:lining-nums}
+.pz-sum small{color:var(--mu);font-size:13px}
+.pz-h{display:flex;gap:8px;align-items:center;margin:20px 0 9px;font:600 14px Inter,sans-serif;color:#fff}
+.pz-h span{color:var(--g);font-variant-numeric:tabular-nums}
+.pz-ov{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pz-oven{border:1px solid var(--bd);border-radius:12px;padding:10px 10px 12px;background:rgba(255,255,255,.02);text-align:center;transition:border-color .3s}
+.pz-oven.on{border-color:rgba(200,169,106,.6)}
+.pz-oven svg{width:100%;max-width:170px;height:auto;display:block;margin:0 auto}
+.pz-oven path{fill:none;stroke-width:16;stroke-linecap:round}
+.pz-oven .t{stroke:rgba(255,255,255,.14)}
+.pz-oven .f{stroke:var(--g);transition:stroke-dasharray 1s linear}
+.pz-oven:not(.on) .f{opacity:0}
+.pz-oven text{fill:#fff;font:600 40px 'Cormorant Garamond',Georgia,serif;font-variant-numeric:lining-nums}
+.pz-oven b{display:block;font-size:14px}
+.pz-oven small{display:block;color:var(--mu);font-size:12px;line-height:1.35;min-height:2.7em}
+.zr li.rd{border-color:rgba(155,181,154,.55)}
+.pz-st{display:grid;gap:9px}
+.pz-s{display:grid;grid-template-columns:84px 1fr 52px;gap:10px;align-items:center;font-size:13px}
+.pz-bar{height:8px;border-radius:8px;background:rgba(255,255,255,.12);overflow:hidden}
+.pz-bar span{display:block;height:100%;width:100%;background:var(--g);border-radius:8px;transition:width .5s}
+.pz-s .v{text-align:right;font-variant-numeric:tabular-nums}
+.pz-s.low .pz-bar span{background:#e0a14a}
+.pz-s.low .v{color:#f3c27a;font-weight:600}
+.pz-mini{justify-self:start;margin-top:4px;font:inherit;font-size:12px;color:#fff;background:transparent;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer}
+.pz-mini:hover{border-color:var(--g)}
+.pz-ctl{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:24px}
+.pz-ctl .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.pz .rf .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+@media(max-width:520px){.pz-row{grid-template-columns:1fr auto}.pz-step,.pz-tag{grid-column:1/-1;justify-self:start}}
+@media(prefers-reduced-motion:reduce){.pz-oven .f,.pz-bar span{transition:none}}
+nav .links a{white-space:nowrap}
+.zr li:before{content:none}
+#pzq,#pzrd{max-height:236px;overflow-y:auto;padding-right:2px}
+#pzrd{max-height:160px}
+@media(min-width:901px) and (min-height:700px){.pz .rz-grid>.card:first-child{position:sticky;top:92px}}
+
+/* ZEDYTH 2026 · NEGRO MATE + BEIGE */
+:root{--bg:#0b0a09;--s1:#12110f;--s2:#181613;--g:#e2cba5;--g2:#f1e2c6;--bd:rgba(226,203,165,.16);--tx:#fff;--mu:#ddd5c6}
+body{background:var(--bg);background-image:radial-gradient(1000px 420px at 50% -10%,rgba(226,203,165,.07),transparent 70%)}
+h1,h2,.card h3{font-family:'Playfair Display','Cormorant Garamond',Georgia,serif}
+h2{font-weight:400}
+section{padding:90px 0}
+.eyebrow{display:block;font:600 11px Inter,sans-serif;letter-spacing:.3em;text-transform:uppercase;color:var(--g);margin-bottom:20px}
+.btn{border-radius:8px}.btn.w{background:var(--g);border-color:var(--g);color:#16120b}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.012));border-radius:14px}
+nav{background:rgba(11,10,9,.88)}nav .wrap{height:76px}
+.hero{position:relative;text-align:left;min-height:660px;display:flex;align-items:center;padding:110px 0 60px;border-bottom:1px solid var(--bd);
+background:linear-gradient(90deg,#0b0a09 26%,rgba(11,10,9,.72) 55%,rgba(11,10,9,.3)),url(/static/img/zedyth/hero.jpg) center/cover,radial-gradient(800px 460px at 78% 28%,rgba(226,203,165,.2),transparent 62%),#0b0a09}
+.hero .wrap{width:100%}.hero h1{max-width:660px;color:var(--g2);font-weight:400;font-size:clamp(40px,6vw,72px);letter-spacing:-1px}
+.hero .sub{text-align:left;margin:0 0 30px;max-width:520px;font-size:17px}.hero .cta{justify-content:flex-start}
+.feats{display:flex;gap:30px;flex-wrap:wrap;margin-top:44px}.feats div{display:flex;gap:12px;align-items:center;font-size:13px;line-height:1.3}
+.ic{width:42px;height:42px;border:1px solid var(--bd);border-radius:10px;display:grid;place-items:center;flex:none}
+.ic svg{width:22px;height:22px;stroke:var(--g);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.hero .dash{margin-top:56px;background:rgba(18,17,15,.82);backdrop-filter:blur(8px)}
+.split{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,2.5fr);gap:40px;align-items:center}
+.split h2,.split .sub{text-align:left;margin-left:0}.split .sub{margin-bottom:26px}
+.sol{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+#servicios .card:nth-child(n){border-top:1px solid var(--bd)}
+.sol .card{display:flex;flex-direction:column;gap:12px;padding:24px;min-height:300px}.sol .card h3{font-size:21px;margin:8px 0 0}.sol .card p{font-size:14px}
+.sol .card ul{font-size:13px;margin:0}.sol .more{margin-top:auto;font-size:13px;color:var(--g)}
+.zsec{background:linear-gradient(180deg,transparent,rgba(226,203,165,.05),transparent);border-block:1px solid var(--bd)}
+.zgrid{display:grid;grid-template-columns:1fr 1.15fr .8fr;gap:40px;align-items:center}
+.zgrid h2{text-align:left}.zgrid p{color:var(--mu);margin:0 0 24px}
+.zvis{position:relative;min-height:300px;display:grid;place-items:center}
+.orb{width:210px;height:210px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#2a251d,#0d0c0a 70%);border:1px solid rgba(226,203,165,.5);box-shadow:0 0 0 14px rgba(226,203,165,.05),0 0 0 30px rgba(226,203,165,.03),0 0 80px rgba(226,203,165,.25)}
+.orb svg{width:84px;height:84px;stroke:var(--g2);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.bub{position:absolute;right:0;bottom:6px;width:min(250px,80%);padding:16px 18px;border:1px solid var(--bd);border-radius:14px;background:rgba(18,17,15,.92);backdrop-filter:blur(8px)}
+.bub small{color:var(--g);letter-spacing:.2em;font-size:10px}.bub p{margin:6px 0 0;color:#fff;font-size:15px}
+.zfe{list-style:none;margin:0;padding:0;display:grid;gap:18px}.zfe li{display:flex;gap:14px;align-items:center;font-size:14px}
+.pjg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.pj{position:relative;display:flex;flex-direction:column;justify-content:flex-end;min-height:330px;padding:22px;border:1px solid var(--bd);border-radius:14px;overflow:hidden;
+background:linear-gradient(180deg,rgba(11,10,9,.05) 25%,rgba(11,10,9,.95) 82%),var(--img,none),var(--fb);background-size:cover;background-position:center;transition:.25s}
+.pj:hover{transform:translateY(-3px);border-color:rgba(226,203,165,.55)}
+.pj h3{margin:8px 0 2px;font-size:21px}.pj small{color:var(--mu);font-size:13px}
+.pj .tg{align-self:flex-start;font-size:11px;letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--bd);border-radius:999px;padding:4px 11px;color:var(--g);background:rgba(11,10,9,.6)}
+.trust{margin-top:56px;padding-top:30px;border-top:1px solid var(--bd);text-align:center}
+.trust .row2{display:flex;gap:16px 46px;justify-content:center;flex-wrap:wrap;margin-top:20px;font:600 15px Inter,sans-serif;letter-spacing:.32em;color:var(--g)}
+footer{padding:46px 0 30px;text-align:left}.fg{display:flex;gap:20px 30px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.fg nav,.fl{display:flex;gap:22px;flex-wrap:wrap;font-size:13px}.fl a:hover{color:var(--g)}
+.fb{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:26px;padding-top:20px;border-top:1px solid var(--bd);font-size:12px}
+.fb b{letter-spacing:.22em;font-weight:500;color:var(--g)}
+.fw{font:500 22px 'Playfair Display',serif;letter-spacing:.24em;color:var(--g2)}
+/* ZEDITH · CHAT A PANTALLA COMPLETA */
+.fab{display:flex;gap:10px;align-items:center;padding:14px 22px;border-radius:12px;z-index:50}.fab:before{content:"";width:9px;height:9px;border-radius:50%;background:#16120b;box-shadow:0 0 0 3px rgba(22,18,11,.2)}
+.fab[aria-expanded=true]{display:none}
+.pnl{inset:0;right:0;bottom:0;width:100%;height:100%;border:0;border-radius:0;z-index:70;align-items:center;
+background:radial-gradient(900px 480px at 50% -12%,rgba(226,203,165,.14),transparent 70%),#0a0908}
+.pnl>*{width:min(880px,100%)}.pnl header{padding:18px 20px}.zb{display:flex;align-items:center;gap:12px}
+.zb i{width:40px;height:40px;border-radius:10px;border:1px solid rgba(226,203,165,.5);display:grid;place-items:center;font:500 20px 'Playfair Display',serif;font-style:normal;color:var(--g2)}
+.zb b{letter-spacing:.24em;color:var(--g2);font-weight:500}.zb em{font-style:normal;font-size:12px;color:var(--mu)}
+.zb u{text-decoration:none;font-size:10px;letter-spacing:.12em;border:1px solid var(--bd);border-radius:999px;padding:3px 9px;color:var(--g)}
+.pnl header button{width:38px;height:38px;border:1px solid var(--bd);border-radius:50%;font-size:15px}
+.msgs{padding:22px 20px}.m{font-size:16px;max-width:82%;line-height:1.55;border-radius:16px 16px 16px 4px}.m.me{border-radius:16px 16px 4px 16px}
+.qs{padding:0 20px 14px}.qs button{font-size:13px;padding:8px 14px}.qs button:hover{border-color:var(--g)}
+#bf{padding:12px 20px 24px;border-top:0}#bf input{padding:15px 20px;font-size:16px}
+body:has(#pnl:not([hidden])){overflow:hidden}
+@media(max-width:900px){.split,.zgrid{grid-template-columns:1fr}.hero{min-height:0;padding:80px 0 40px}.m{max-width:92%}}
+
+/* ===== ZEDYTH 2026 v3: IMÁGENES, ANIMACIÓN Y RESPONSIVO ===== */
+img{max-width:100%;height:auto}
+.hero{min-height:min(92vh,820px);overflow:hidden;background:#0b0a09;padding:120px 0 150px}
+.hero-bg{position:absolute;top:0;right:0;bottom:0;width:72%;background-size:cover;background-position:center;-webkit-mask-image:linear-gradient(90deg,transparent,#000 38%);mask-image:linear-gradient(90deg,transparent,#000 38%);animation:kb 24s ease-in-out infinite alternate;will-change:transform}
+.hero:after{content:"";position:absolute;inset:auto 0 0;height:180px;background:linear-gradient(transparent,#0b0a09);pointer-events:none}
+.hero-in{position:relative;z-index:2}.hero-in>*{animation:up .9s cubic-bezier(.2,.7,.2,1) backwards}
+.hero-in>*:nth-child(2){animation-delay:.12s}.hero-in>*:nth-child(3){animation-delay:.24s}.hero-in>*:nth-child(4){animation-delay:.36s}.hero-in>*:nth-child(5){animation-delay:.48s}
+.hero h1{text-shadow:0 4px 40px rgba(0,0,0,.6)}
+@keyframes kb{from{transform:scale(1.03)}to{transform:scale(1.14) translateX(-1.5%)}}@keyframes up{from{opacity:0;transform:translateY(26px)}}
+.dashw{position:relative;z-index:3;margin-top:-90px;margin-bottom:10px}.dashw .dash{margin-top:0}
+.marq{overflow:hidden;border-block:1px solid var(--bd);padding:18px 0;margin-top:50px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
+.marq div{display:flex;gap:56px;width:max-content;animation:mq 38s linear infinite}.marq span{font:500 22px 'Playfair Display',serif;color:var(--g);white-space:nowrap;opacity:.85}.marq span:after{content:"✦";margin-left:56px;font-size:12px;vertical-align:middle}
+@keyframes mq{to{transform:translateX(-50%)}}
+nav{transition:background .3s,box-shadow .3s}nav.sc{background:rgba(11,10,9,.96);box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.btn{position:relative;overflow:hidden}.btn.w:after{content:"";position:absolute;top:0;left:-70%;width:50%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-20deg);transition:left .6s}.btn.w:hover:after{left:130%}
+.card,.pj{position:relative}.card:before,.pj:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;background:radial-gradient(260px circle at var(--mx,-9px) var(--my,-9px),rgba(226,203,165,.16),transparent 60%)}.card:hover:before,.pj:hover:after{opacity:1}
+.card{transition:transform .35s,border-color .35s}.sol .card:hover{transform:translateY(-6px);border-color:rgba(226,203,165,.5)}
+.pj{min-height:340px;background:linear-gradient(180deg,rgba(11,10,9,0) 30%,rgba(11,10,9,.96) 86%),var(--img) center/cover}.pj:hover{box-shadow:0 20px 50px rgba(0,0,0,.55)}
+.js .rv{opacity:0;transform:translateY(32px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1);transition-delay:var(--d,0s)}.js .rv.show{opacity:1;transform:none}
+.zgrid{grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:48px}.zvis{min-height:0}
+.zimg,.pimg{width:100%;border-radius:18px;border:1px solid var(--bd);box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 60px rgba(226,203,165,.08);display:block}.zimg{animation:fl 7s ease-in-out infinite}
+@keyframes fl{50%{transform:translateY(-10px)}}
+.zrow{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.zrow li{padding:14px;border:1px solid var(--bd);border-radius:12px;background:rgba(255,255,255,.02)}
+.why{position:relative;background:linear-gradient(90deg,#0b0a09 30%,rgba(11,10,9,.8)),var(--img,none) center/cover;border-block:1px solid var(--bd);background-image:linear-gradient(90deg,rgba(11,10,9,.97) 38%,rgba(11,10,9,.6)),url(/static/img/zedyth/confianza.jpg)}
+.whyg{display:grid;grid-template-columns:1fr 1.5fr;gap:50px;align-items:center}.whyg h2{text-align:left}.whyg p{color:var(--mu)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.stat{border-left:1px solid var(--bd);padding-left:18px}.stat b{display:block;font:400 clamp(34px,4.4vw,52px)/1.1 'Playfair Display',serif;color:var(--g2)}.stat small{color:var(--mu);font-size:13px;line-height:1.4;display:block}
+.plg{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.5fr);gap:48px;align-items:center}
+nav .links{max-height:calc(100svh - 76px);overflow:auto}
+@media(max-width:1040px){nav .links{top:76px}.menu-toggle{width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--bd);border-radius:10px;color:var(--g2)}}
+@media(max-width:900px){
+.hero{min-height:0;padding:96px 0 120px}.hero-bg{width:100%;opacity:.55;-webkit-mask-image:linear-gradient(180deg,#000 40%,transparent);mask-image:linear-gradient(180deg,#000 40%,transparent)}
+.hero:before{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(11,10,9,.35),rgba(11,10,9,.85) 75%)}
+.dashw{margin-top:-60px}.zgrid,.whyg,.plg{grid-template-columns:1fr;gap:30px}.stats{grid-template-columns:1fr 1fr}.zgrid h2,.plg h2{text-align:left}
+.split,.zgrid{gap:28px}.marq span{font-size:18px}}
+@media(max-width:560px){
+.wrap{padding:0 16px}section{padding:60px 0}.hero h1{font-size:clamp(34px,10.5vw,44px)}.hero .sub{font-size:16px}
+.hero .cta .btn{flex:1 1 100%;text-align:center}.feats{gap:14px;margin-top:30px}.feats div{flex:1 1 40%}
+.dk{grid-template-columns:1fr 1fr}.dk b{font-size:22px}.dg{grid-template-columns:1fr}
+.pjg{grid-template-columns:1fr 1fr;gap:12px}.pj{min-height:250px;padding:14px}.pj h3{font-size:17px}.pj small{font-size:12px}
+.sol{grid-template-columns:1fr}.sol .card{min-height:0}.stat b{font-size:34px}.rz-grid,.two,.grid{grid-template-columns:minmax(0,1fr)}.rz-grid>*{min-width:0}
+.fg,.fb{flex-direction:column;align-items:flex-start}.fab{right:12px;bottom:12px;padding:12px 18px}
+.m{max-width:94%}.pnl header{padding:14px}.msgs{padding:16px 14px}.qs{padding:0 14px 10px}#bf{padding:10px 14px 18px}}
+@media(prefers-reduced-motion:reduce){.hero-bg,.zimg,.marq div,.hero-in>*{animation:none}.js .rv{opacity:1;transform:none;transition:none}}
+.brand{display:flex;align-items:center;gap:12px;flex:none}.brand svg{width:40px;height:40px}.brand b{display:block;font:500 24px/1 'Playfair Display',serif;letter-spacing:.26em;color:var(--g2)}.brand small{display:block;font:500 8px/1 Inter,sans-serif;letter-spacing:.5em;color:var(--g);margin-top:5px}
+.fw{display:flex;align-items:center;gap:10px}.fw svg{width:30px;height:30px}
+.btn{white-space:nowrap}nav .links .btn{flex:none}
+@media(max-width:1040px){nav .links{background:#0b0a09!important}}
+
+/* ===== ZEDYTH v4 · MÓVIL PRIMERO + LOGOS REALES ===== */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+.brand{gap:0}
+.lg-nav{display:block;height:38px;width:auto;border-radius:8px}
+.lg-ft{display:block;width:150px;height:auto;border-radius:12px}
+.lg-zedith{display:block;width:min(300px,78%);height:auto;border-radius:10px;margin:2px 0 22px}
+.zb .zb-z{width:44px;height:44px;border-radius:10px;display:block;flex:none}
+.zb .zb-w{display:block;height:24px;width:auto;border-radius:5px;margin-bottom:5px}
+.zb em{display:block}
+.fab{gap:10px;padding:7px 20px 7px 7px;border-radius:999px;right:max(14px,env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom))}
+.fab:before{content:none}
+.fab .fab-z{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;display:block}
+.fab .l-sm{display:none}
+#enfoque .card li{padding-block:7px}
+#enfoque .card p{margin-top:16px}
+.pr-wide{grid-column:1/-1}
+.price{line-height:1.15}
+.pr-note{color:var(--mu);font-size:12px;margin:14px 0 0}
+@supports(height:100dvh){.pnl{height:100dvh}}
+#bf{padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+#bf input{font-size:16px}
+@media(max-width:900px){
+ .hero-bg{animation:none;will-change:auto;transform:none}
+ .zimg{animation:none}
+}
+@media(max-width:560px){
+ .lg-nav{height:32px}
+ .fab{padding:6px 18px 6px 6px}
+ .fab .l-lg{display:none}.fab .l-sm{display:inline;letter-spacing:.16em}
+ .btn{white-space:normal;text-align:center;min-height:46px;display:inline-flex;align-items:center;justify-content:center}
+ nav .links .btn{width:100%}
+ .lg-zedith{width:min(260px,80%)}
+ footer{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+ .lg-ft{width:130px}
+ .marq span{font-size:17px}
+}
+{% endraw %}
+
+/* ZEDYTH v5 */
+.hero-bg{display:none}
+.himg{position:absolute;inset:0;z-index:0;overflow:hidden}
+.himg:before{content:"";position:absolute;inset:-3%;background:url(/static/img/zedyth/hero-banner.jpg) 62% center/cover;animation:kb 26s ease-in-out infinite alternate}
+.himg:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0b0a09 3%,rgba(11,10,9,.84) 32%,rgba(11,10,9,.22) 70%,rgba(11,10,9,.4))}
+nav{background:rgba(8,7,6,.96)}
+nav .brand{display:flex;align-items:center;gap:14px}
+nav .lg-nav-e{display:block;width:44px;height:auto;flex:none}
+nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-blend-mode:normal}
+.lg-ft{width:190px;height:auto;border-radius:0}
+.lg-zedith{width:min(330px,82%);height:auto;border-radius:0}
+.zb .zb-z{width:48px;height:auto;border-radius:0;flex:none}
+.zb .zb-w{width:140px;height:auto;border-radius:0;margin-bottom:7px}
+.fab .fab-z{width:36px;height:auto;border-radius:0;object-fit:contain;flex:none}
+@media(max-width:900px){.hero{display:block;min-height:0;padding:0 0 110px}.himg{position:relative;aspect-ratio:1672/940;-webkit-mask-image:linear-gradient(180deg,#000 74%,transparent);mask-image:linear-gradient(180deg,#000 74%,transparent)}.himg:before{inset:0;background-position:center}.himg:after{background:linear-gradient(180deg,transparent 55%,rgba(11,10,9,.6))}.hero-in{margin-top:6px}}
+@media(prefers-reduced-motion:reduce){.himg:before{animation:none}}
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+ <a href="#inicio" class="brand" aria-label="ZEDYTH Technologies"><img class="lg-nav-e" src="/static/img/zedyth/zedyth-aguila.webp" alt="" width="44" height="24"><img class="lg-nav" src="/static/img/zedyth/zedyth-wordmark.webp" alt="ZEDYTH Technologies" width="210" height="16"></a>
+    <!-- EL NUEVO BOTÓN DE MENÚ HAMBURGUESA -->
+    <div class="menu-toggle" onclick="document.querySelector('.links').classList.toggle('active')">☰</div>
+    <div class="links">
+       <a href="#reservas" onclick="document.querySelector('.links').classList.remove('active')">Demo reservas</a>
+       <a href="#pizzeria" onclick="document.querySelector('.links').classList.remove('active')">Demo pizzería</a>
+       <a href="#zedith" onclick="document.querySelector('.links').classList.remove('active')">Zedith IA</a>
+       <a href="#servicios" onclick="document.querySelector('.links').classList.remove('active')">Servicios</a>
+       <a href="#precios" onclick="document.querySelector('.links').classList.remove('active')">Precios</a>
+       <a href="#proyectos" onclick="document.querySelector('.links').classList.remove('active')">Proyectos</a>
+       <a href="#contacto" onclick="document.querySelector('.links').classList.remove('active')">Contacto</a>
+       <a class="btn w" href="{{ url_for('login') }}">Acceso clientes</a>
+    </div>
+</div></nav>
+
+<header class="hero" id="inicio"><div class="himg" aria-hidden="true"></div><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><span class="eyebrow">Inteligencia artificial · Aplicaciones complejas · Ciberseguridad</span>
+ <h1>Tecnología compleja, resuelta a fondo.</h1>
+ <p class="sub">ZEDYTH Technologies diseña aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos páginas estáticas ni proyectos sencillos: nuestra capacidad está enfocada en lo más difícil.</p>
+ <div class="cta"><a class="btn w" href="#servicios">Explorar soluciones →</a><a class="btn" href="#proyectos-demo">Ver proyectos</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar un proyecto</a></div>
+ <div class="feats"><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Ingeniería<br>a la medida</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad<br>avanzada</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Soporte<br>24/7</div></div>
+ </div></header>
+<div class="wrap dashw"><div class="dash" aria-hidden="true">
+ <div class="dk"><div><small>Reservas hoy</small><b>38</b><em>+12%</em></div><div><small>Ocupación</small><b>86%</b><em>+5%</em></div><div><small>Clientes que vuelven</small><b>64%</b><em>+9%</em></div><div><small>Ingresos del mes</small><b>$184,200</b><em>+18%</em></div></div>
+ <div class="dg">
+  <div class="dp"><small>Ocupación semanal</small><svg viewBox="0 0 200 118"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#e2cfa3"/><stop offset="1" stop-color="#c8a96a"/></linearGradient></defs><path d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="#2a2620" stroke-width="16" stroke-linecap="round"/><path class="gp" d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="url(#gg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="191 252"/><text x="100" y="92" text-anchor="middle" fill="#fff" font-size="30" font-weight="700">76%</text><text x="100" y="110" text-anchor="middle" fill="#a39a8b" font-size="10">de turnos llenos</text></svg></div>
+  <div class="dp"><small>Reservas por día: reales y pronosticadas</small><svg viewBox="0 0 320 130"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8a96a" stop-opacity=".35"/><stop offset="1" stop-color="#c8a96a" stop-opacity="0"/></linearGradient></defs><path d="M0 30H320M0 65H320M0 100H320" stroke="#2a2620" fill="none"/><path d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20V130H0Z" fill="url(#cg)"/><path class="ln" pathLength="1" d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20" fill="none" stroke="#c8a96a" stroke-width="2.5"/><path d="M0 108L45 95 90 98 135 70 180 74 225 56 270 62 320 44" fill="none" stroke="#8c8374" stroke-width="2" stroke-dasharray="5 5"/></svg></div>
+ </div><small>Datos de ejemplo</small></div></div>
+<div class="marq" aria-hidden="true"><div><span>Inteligencia artificial</span><span>Aplicaciones complejas</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>PWA y Google Play</span><span>Comercio electrónico</span><span>Sistemas a la medida</span><span>Inteligencia artificial</span><span>Aplicaciones complejas</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>PWA y Google Play</span><span>Comercio electrónico</span><span>Sistemas a la medida</span></div></div>
+
+
+<section id="enfoque"><div class="wrap">
+ <span class="eyebrow">Nuestro enfoque</span>
+ <h2 style="text-align:left">Nos dedicamos a lo difícil.</h2>
+ <p class="sub" style="text-align:left;margin-left:0">Nuestra capacidad está reservada para proyectos de alta complejidad. Por eso no tomamos trabajos sencillos: cada proyecto recibe la ingeniería y el criterio que un sistema serio exige.</p>
+ <div class="two">
+  <div class="card hl"><h3>Lo que sí construimos</h3><ul>
+   <li>Aplicaciones complejas con base de datos en la nube y lógica de negocio a la medida</li>
+   <li>Inteligencia artificial integrada a tu operación: asistentes, automatización y análisis</li>
+   <li>Apps web progresivas (PWA), instalables y publicables en Google Play</li>
+   <li>Comercio electrónico, puntos de venta y plataformas de gestión en tiempo real</li>
+   <li>Ciberseguridad e infraestructura: dominios, hosting, respaldos y monitoreo</li></ul></div>
+  <div class="card"><h3>Lo que no hacemos</h3><ul class="no">
+   <li>Páginas web estáticas o sitios de presentación</li>
+   <li>Plantillas sin personalizar</li>
+   <li>Proyectos sencillos que no exigen ingeniería real</li></ul>
+   <p>Si tu proyecto es complejo, hablemos.</p>
+   <a class="btn w" style="margin-top:18px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20tengo%20un%20proyecto%20complejo" target="_blank" rel="noopener">Contarnos mi proyecto</a></div>
+ </div>
+</div></section>
+
+<section id="sistemas"><div class="wrap">
+ <h2>Misma cuadra, mismos precios. ¿Por qué uno siempre está lleno?</h2>
+ <p class="sub">Porque tiene un sistema. Elige tu giro y desliza para ver la diferencia.</p>
+ <div class="tabs" role="tablist" id="tabs"></div>
+ <div class="cmp" id="cmp">
+  <div class="pane off"><div class="in"><small>El que sigue sin sistema</small><h3 id="offT"></h3><ul id="offL"></ul></div></div>
+  <div class="pane on"><div class="in"><small>El que tiene sistema</small><h3 id="onT"></h3><ul id="onL"></ul></div></div>
+  <div class="knob" aria-hidden="true">⇄</div>
+  <input type="range" min="8" max="92" value="50" id="rng" aria-label="Comparar sin sistema y con sistema">
+ </div>
+ <div class="pitch"><p id="pitch"></p><a class="btn w" id="ctaSys" target="_blank" rel="noopener" href="#">Lo quiero para mi negocio</a></div>
+</div></section>
+
+<section id="reservas"><div class="wrap">
+ <h2>Prueba un sistema de reservas en vivo</h2>
+ <p class="sub">Escribe el nombre de tu negocio, elige un giro y reserva como lo haría tu cliente. Del otro lado ves el panel del dueño.</p>
+ <div class="rz-cfg"><input id="zn" value="Club Aurora" maxlength="30" aria-label="Nombre de tu negocio" placeholder="Nombre de tu negocio"><div class="tabs" id="zg" role="tablist"></div></div>
+ <div class="rz-grid">
+  <div class="card">
+   <div class="rz-head"><span class="logo" id="zl">CA</span><div><b id="zt">Club Aurora</b><small>Reserva en línea, sin crear cuenta</small></div></div>
+   <div class="days" id="zd"></div>
+   <p class="leg">Verde: libre · Tachado: ocupado · Dorado: tu reserva</p>
+   <div id="zs"></div>
+   <form class="rf" id="zf" hidden><b id="zft"></b><input type="text" id="zcn" placeholder="Tu nombre" maxlength="40" required><input type="text" inputmode="tel" placeholder="Tu WhatsApp (opcional)" maxlength="20"><div style="display:flex;gap:8px"><button class="btn w" id="zfb" type="submit">Confirmar reserva</button><button class="btn" id="zfx" type="button">Cancelar</button></div></form>
+  </div>
+  <div class="card hl"><span class="tag">Panel del dueño, en vivo</span>
+   <div class="kp"><div><b id="kb">0</b><small>Reservas tuyas</small></div><div><b id="ko">0%</b><small>Ocupación del día</small></div><div><b id="kw">0</b><small>En lista de espera</small></div><div><b id="kp">0</b><small>Puntos ganados</small></div></div>
+   <ul class="zr" id="zr"></ul></div>
+ </div>
+ <p class="rz-msg" id="zm" role="status"></p>
+ <div style="text-align:center;margin-top:20px"><a class="btn w" id="zcta" target="_blank" rel="noopener" href="#">Quiero este sistema para mi negocio</a></div>
+</div></section>
+
+<section id="pizzeria"><div class="wrap pz">
+ <h2>Maneja una pizzería en vivo</h2>
+ <p class="sub">Escribe el nombre de tu pizzería, haz un pedido como lo haría tu cliente y mira la cocina del otro lado: hornos, cola de pedidos, inventario y ventas.</p>
+ <div class="rz-cfg"><input id="pzn" value="Pizzería Aurora" maxlength="30" aria-label="Nombre de tu pizzería" placeholder="Nombre de tu pizzería"></div>
+ <div class="rz-grid">
+  <div class="card">
+   <div class="rz-head"><span class="logo" id="pzl">PA</span><div><b id="pznm">Pizzería Aurora</b><small>Pide en línea, sin crear cuenta</small></div></div>
+   <div class="tabs" id="pzmode" role="tablist"></div>
+   <div id="pzmenu"></div>
+   <form class="rf" id="pzf">
+    <input type="text" id="pzc" placeholder="Tu nombre" maxlength="40" required aria-label="Tu nombre">
+    <div class="pz-sum"><b id="pzt">$0</b><small id="pze"></small></div>
+    <button class="btn w" id="pzb" type="submit" disabled>Confirmar pedido</button>
+   </form>
+  </div>
+  <div class="card hl"><span class="tag">Cocina y panel del dueño, en vivo</span>
+   <div class="kp"><div><b id="pk1">0</b><small>Pedidos hoy</small></div><div><b id="pk2">$0</b><small>Ventas</small></div><div><b id="pk3">—</b><small>Tiempo promedio</small></div><div><b id="pk4">0/2</b><small>Hornos en uso</small></div></div>
+   <h4 class="pz-h">Hornos</h4>
+   <div class="pz-ov" id="pzov"></div>
+   <h4 class="pz-h">En cola <span id="pzqn">0</span></h4>
+   <ul class="zr" id="pzq"></ul>
+   <h4 class="pz-h">Listos para entregar <span id="pzrn">0</span></h4>
+   <ul class="zr" id="pzrd"></ul>
+   <h4 class="pz-h">Inventario</h4>
+   <div class="pz-st" id="pzst"></div>
+  </div>
+ </div>
+ <div class="pz-ctl"><button class="btn w" id="pzrush" type="button">Simular hora pico</button><button class="btn" id="pzpause" type="button">Pausar cocina</button><button class="btn" id="pzreset" type="button">Reiniciar demo</button></div>
+ <p class="leg" style="text-align:center;margin:14px 0 0">Tiempo acelerado: 1 segundo equivale a 1 minuto de cocina.</p>
+ <p class="rz-msg" id="pzmsg" role="status"></p>
+ <div style="text-align:center;margin-top:20px"><a class="btn w" id="pzcta" target="_blank" rel="noopener" href="#">Quiero este sistema para mi pizzería</a></div>
+</div></section>
+
+<section id="lealtad"><div class="wrap">
+ <h2>¿En qué porcentaje de restaurantes estás?</h2>
+ <p class="sub">Con tu logo, tus colores, tus sellos y tu premio. Tu cliente escanea el QR del local y guarda la tarjeta en Apple Wallet o Google Wallet, sin descargar ninguna app.</p>
+ <div class="two">
+  <div class="card"><div class="bars" id="bars">
+   <div class="row" style="--w:80%;--i:0"><span>Tiene página web</span><b>80%</b><i></i></div>
+   <div class="row" style="--w:71%;--i:1"><span>Tiene tarjeta de sellos</span><b>71%</b><i></i></div>
+   <div class="row" style="--w:50%;--i:2"><span>Tiene lealtad en el celular del cliente</span><b>50%</b><i></i></div>
+   <div class="row" style="--w:20%;--i:3"><span>Tiene proximidad para atraer clientes</span><b>20%</b><i></i></div>
+   <div class="row top" style="--w:1%;--i:4"><span>Wallet + proximidad + sellos + análisis de datos</span><b>1%</b><i></i></div>
+  </div><p class="note" style="margin:6px 0 0">Desde tu panel ves quién vuelve, con qué frecuencia y quién está cerca de su premio. Con avisos automáticos les recuerdas que les falta un sello.</p></div>
+  <div class="card hl wal"><span class="tag">Pruébala: así la ve tu cliente</span>
+   <div class="wc"><header><span>Tu logo aquí</span><span>Café Aurora</span></header><div class="sts" id="sts"></div><small style="color:var(--mu)">8 sellos = café gratis</small></div>
+   <p id="stT"></p><button class="btn w" id="stB" type="button">Registrar visita</button></div>
+ </div>
+</div></section>
+
+<section id="clientes"><div class="wrap">
+ <h2>Dos clientes. ¿Cuál vale más para tu negocio?</h2>
+ <p class="sub">El A vino una vez. El B vuelve cada semana. Cambia los números por los de tu negocio.</p>
+ <div class="two">
+  <div class="card calc">
+   <label>Cliente A gastó una sola vez ($)<input type="number" id="ca" value="50000" min="0"></label>
+   <label>Cliente B gasta por visita ($)<input type="number" id="cb" value="12000" min="0"></label>
+   <label>Visitas de B por mes<input type="number" id="cv" value="4" min="0"></label>
+   <label>Meses<input type="number" id="cm" value="12" min="0"></label></div>
+  <div class="card hl res"><div>Cliente A<b id="ra"></b></div><div class="bar"><i id="ba"></i></div>
+   <div>Cliente B<b id="rb"></b></div><div class="bar b"><i id="bb"></i></div>
+   <div class="big" id="rx"></div><p style="color:var(--mu);margin:6px 0 0">veces lo que dejó el cliente A.</p></div>
+ </div>
+ <p class="note">Casi todo lo que se hace en redes busca más clientes A. En ZEDYTH hacemos lo contrario: no traemos clientes, hacemos que vuelvan, con club de clientes, puntos y avisos con tu marca.</p>
+</div></section>
+
+<section id="servicios"><div class="wrap split">
+ <div><span class="eyebrow">Nuestras soluciones</span><h2>Resolvemos lo difícil, de punta a punta.</h2><p class="sub">Una sola empresa de software, inteligencia artificial, ciberseguridad e infraestructura. Tomamos proyectos de alta complejidad y los entregamos completos.</p><a class="btn" href="#contacto">Conocer más →</a></div>
+ <div class="sol"><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span><h3>Aplicaciones y software</h3><p>Apps web progresivas, sistemas y tiendas en línea de alta complejidad, publicables en Google Play.</p><ul><li>Puntos de venta en la nube</li><li>Comercio electrónico</li><li>Reservas y gestión</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><h3>Inteligencia artificial</h3><p>Asistentes y automatización integrados a tu operación, como nuestra propia IA ZEDITH.</p><ul><li>Asistentes conversacionales</li><li>Automatización de procesos</li><li>Análisis y pronósticos</li></ul><a class="more" href="#zedith">Conocer ZEDITH →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación.</p><ul><li>Endurecimiento de sistemas</li><li>Respaldos y vencimientos</li><li>Atención de incidentes</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span><h3>Infraestructura</h3><p>Hosting, bases de datos PostgreSQL en la nube, dominios y administración de servidores.</p><ul><li>Hosting y dominios</li><li>Bases de datos</li><li>Migración a la nube</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><h3>Gestión y soporte</h3><p>Monitoreo, mantenimiento y administración de tus sistemas.</p><ul><li>Soporte técnico</li><li>Redes y equipos</li><li>Asesoría tecnológica</li></ul><a class="more" href="#contacto">Ver servicios →</a></div></div>
+</div></section>
+
+<section id="zedith" class="zsec"><div class="wrap zgrid"><div><span class="eyebrow">ZEDYTH IA</span><img class="lg-zedith" src="/static/img/zedyth/logo-zedith-blanco.webp" alt="ZEDITH" width="330" height="31" loading="lazy"><h2>Tu asistente inteligente.</h2><p>ZEDITH es la IA de ZEDYTH. Te ayuda a armar tu app o sistema, resolver dudas y dejar tu pedido listo, siempre disponible, siempre contigo.</p><button class="btn w" type="button" onclick="document.getElementById('fab').click()">Hablar con ZEDITH →</button></div>
+ <div class="zvis"><img class="zimg" src="/static/img/zedyth/zedith.jpg" alt="ZEDITH, asistente de IA de ZEDYTH" loading="lazy"></div></div><div class="wrap"><div style="height:30px"></div><ul class="zfe zrow"><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>Gestión de sistemas</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Armado de tu app</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad en tiempo real</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span>Integración de servicios</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Asistencia 24/7</li></ul></div></section>
+
+<section class="why" id="confianza"><div class="wrap whyg"><div><span class="eyebrow">Por qué elegir ZEDYTH</span><h2>Tecnología que inspira confianza.</h2><p>No solo desarrollamos software: protegemos lo que más importa, tu información, tus operaciones y tu futuro digital.</p></div>
+<div class="stats"><div class="stat"><b data-n="3">0</b><small>Demos en vivo que puedes probar</small></div><div class="stat"><b data-n="24" data-s="/7">0</b><small>Asistente de IA ZEDITH</small></div><div class="stat"><b data-n="100" data-s="%">0</b><small>Hecho a la medida de tu negocio</small></div><div class="stat"><b data-n="5">0</b><small>Áreas: software, IA, seguridad, infraestructura y soporte</small></div></div></div></section>
+<section id="plataforma"><div class="wrap plg"><div><span class="eyebrow">Plataforma ZEDYTH</span><h2 style="text-align:left">Control total en una sola plataforma.</h2><p class="sub" style="text-align:left;margin:0 0 26px">Reservas, pedidos, clientes y reportes en un solo panel. Pruébalo en vivo, sin registrarte.</p><div class="cta" style="display:flex;gap:12px;flex-wrap:wrap"><a class="btn w" href="#reservas">Probar reservas →</a><a class="btn" href="#pizzeria">Ver pizzería en vivo</a></div></div><img class="pimg" src="/static/img/zedyth/plataforma.jpg" alt="Panel de control ZEDYTH" loading="lazy"></div></section>
+<section id="proyectos-demo"><div class="wrap">
+ <span class="eyebrow">Proyectos destacados</span><h2 style="text-align:left">Tecnología que genera resultados.</h2><p class="sub" style="text-align:left;margin-left:0">Prueba nuestras demos en vivo o visita una de nuestras tiendas.</p>
+ <div class="pjg">
+  <a class="pj" href="#reservas" style="--img:url(/static/img/zedyth/proyecto-plataforma.jpg)"><span class="tg">Software</span><h3>Plataforma empresarial</h3><small>Reservas y gestión integral</small></a>
+  <a class="pj" href="https://zelecte.onrender.com" target="_blank" rel="noopener" style="--img:url(/static/img/zedyth/proyecto-tienda.jpg)"><span class="tg">Web &amp; App</span><h3>Tienda en línea</h3><small>Zelecte · E-commerce</small></a>
+  <a class="pj" href="#servicios" style="--img:url(/static/img/zedyth/proyecto-seguridad.jpg)"><span class="tg">Ciberseguridad</span><h3>Infraestructura segura</h3><small>Protección de datos y redes</small></a>
+  <a class="pj" href="{{ url_for('demo_pos') }}" style="--img:url(/static/img/zedyth/proyecto-app.jpg)"><span class="tg">Desarrollo</span><h3>Punto de venta móvil</h3><small>Demo en vivo</small></a>
+ </div>
+ <div class="trust"><small class="tag">Empresas que forman parte del ecosistema ZEDYTH</small><div class="row2"><span>ZMARTH</span><span>ZELECTE</span><span>ZEDYTHNET</span><span>ZEDITH</span></div></div>
+</div></section>
+
+<section id="precios"><div class="wrap">
+ <h2>Precios claros</h2>
+ <p class="sub">Un precio fijo para el punto de venta, desde $3,000 para comercio electrónico y cotización a la medida para lo complejo.</p>
+ <div class="two">
+  <div class="card hl"><span class="tag">Punto de venta en la nube</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
+   <p>Un punto de venta hecho para tu negocio que funciona por internet: lo abres desde tu teléfono, tablet o computadora con datos o Wi-Fi, sin instalar nada.</p>
+   <ul><li>Base de datos PostgreSQL propia, en la nube</li><li>Tu cuenta en Neon, abierta con tu correo: tus datos son tuyos</li><li>Funciona en cualquier dispositivo con internet</li><li>Código fuente completo entregado a ti</li><li>Con membresía, ZEDYTH administra la infraestructura y el mantenimiento</li><li>Personalizado a tu forma de vender</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a></div>
+  <div class="card"><span class="tag">Comercio electrónico y aplicaciones web</span><div class="price"><small>Desde</small> $3,000 <small>MXN</small></div>
+   <p>Aplicación web progresiva (PWA) a tu medida, con dominio, hosting y base de datos en la nube. Cotización personalizada según lo que necesites.</p>
+   <ul><li>Instalable en el teléfono y publicable en Google Play</li><li>Dominio propio, hosting y base de datos en la nube</li><li>Diseño y desarrollo a tu medida, con revisiones hasta quedar conforme</li><li>Opción de membresía de mantenimiento</li></ul>
+   <p class="pr-note">La publicación en Google Play depende de las políticas y de la cuenta de desarrollador de Google.</p></div>
+  <div class="card pr-wide"><span class="tag">Aplicaciones complejas, inteligencia artificial y ciberseguridad</span><div class="price" style="font-size:34px">Cotización a la medida</div>
+   <p>Es el trabajo al que nos dedicamos. Plataformas con IA, sistemas de alta complejidad, infraestructura y ciberseguridad según tu caso. Cada proyecto se cotiza después de entender qué necesitas.</p>
+   <ul><li>Arquitectura y desarrollo de sistemas complejos</li><li>Inteligencia artificial integrada a tu operación</li><li>Servicios de ciberseguridad según tu caso</li><li>Membresía de mantenimiento, infraestructura y soporte</li></ul>
+   <a class="btn w" style="margin-top:20px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto%20complejo" target="_blank" rel="noopener">Cotizar un proyecto complejo</a></div>
+ </div>
+ {% if planes %}<h2 style="margin-top:70px">Membresías</h2><p class="sub">Mantenimiento, mejoras y tranquilidad continua para tu proyecto.</p>
+ <div class="grid">{% for p in planes %}<div class="card {{ 'hl' if p.destacado }}"><h3>{{ p.nombre }}</h3>
+  <div class="price" style="font-size:30px">{% if p.precio and not p.a_medida %}${{ "{:,.0f}".format(p.precio) }} <small>MXN</small>{% else %}A tu medida{% endif %}</div>
+  <p>{{ p.descripcion or '' }}</p>{% if p.incluye %}<ul>{% for i in p.incluye.split('|') if i.strip() %}<li>{{ i.strip() }}</li>{% endfor %}</ul>{% endif %}
+  <a class="btn w" style="margin-top:20px" href="#contacto">Me interesa</a></div>{% endfor %}</div>{% endif %}
+</div></section>
+
+<section id="proyectos"><div class="wrap">
+ <h2>Proyectos y opiniones</h2><p class="sub">Lo que hemos construido y lo que opinan quienes lo usan. Tú también puedes calificar.</p>
+ {% if gracias %}<div class="ok">¡Gracias! Tu reseña se publicará en cuanto la revisemos.</div>{% endif %}
+ <div class="card hl feat" style="margin-bottom:18px">
+ <div><span class="tag">Zmarth · Grupo empresarial ZEDYTH · Comercio electrónico</span>
+  <h3>Zelecte México</h3>
+  <p style="font-size:16px;margin-top:10px">Supermercado premium en línea, una aplicación de Zmarth, empresa de nuestro grupo. Desde la despensa y los frescos hasta electrónica, hogar y moda, con entrega a domicilio o retiro en tienda.</p>
+  <div class="chips" style="justify-content:flex-start;margin:18px 0 22px"><span>Fresh</span><span>Gourmet</span><span>Living</span><span>Tech</span><span>Style</span><span>Select</span></div>
+  <a class="btn w" href="https://zelecte.onrender.com" target="_blank" rel="noopener">Visitar Zelecte</a></div>
+ <ul><li>Catálogo por departamentos, con productos por pieza, por peso o por monto</li><li>Inventario por sucursal, con aviso «Avísame» cuando un producto se agota</li><li>Retiro en tienda, domicilio con salidas programadas y entrega por dron en fase beta</li><li>Pago en efectivo, SPEI, vales o tarjeta en terminal, con códigos de descuento</li><li>Cada pedido genera un código QR en el perfil del cliente para recibirlo</li><li>Reseñas, favoritos y ZEDITH, un asistente de compras en beta</li></ul>
+</div>
+ {% if vitrina %}<div class="grid">{% for v in vitrina %}{% set p = v.p %}<div class="card"><span class="tag">{{ p.categoria }}</span><h3>{{ p.nombre }}</h3><p>{{ p.descripcion }}</p>
+  {% if p.tecnologias %}<p style="margin-top:8px;font-size:13px">{{ p.tecnologias }}</p>{% endif %}
+  <div style="margin-top:12px">{% if v.prom %}<span class="stars">{{ '★' * v.prom|round|int }}{{ '☆' * (5 - v.prom|round|int) }}</span> <b>{{ v.prom }}</b> <span style="color:var(--mu);font-size:13px">({{ v.n }})</span>{% else %}<span style="color:var(--mu);font-size:13px">Aún sin calificaciones</span>{% endif %}</div>
+  {% for r in v.recientes %}<div class="rev"><span class="stars">{{ '★' * r.calificacion }}</span> <b>{{ r.nombre }}</b><p>{{ r.comentario }}</p></div>{% endfor %}
+  <details><summary>Calificar este proyecto</summary>
+   <form class="rf" method="POST" action="{{ url_for('resena_enviar', pid=p.id) }}">
+    <input type="text" name="nombre" placeholder="Tu nombre" maxlength="80" required>
+    <div class="rate">{% for n in [5,4,3,2,1] %}<input type="radio" name="calificacion" id="s{{ n }}-{{ p.id }}" value="{{ n }}" required><label for="s{{ n }}-{{ p.id }}" title="{{ n }} estrellas">★</label>{% endfor %}</div>
+    <textarea name="comentario" placeholder="Tu comentario" maxlength="600" required></textarea>
+    <input class="hp" type="text" name="web" tabindex="-1" autocomplete="off">
+    <button class="btn w" type="submit">Enviar reseña</button>
+   </form></details></div>{% endfor %}</div>
+ {% endif %}
+</div></section>
+
+<section id="garantia"><div class="wrap">
+ <h2>Responsabilidad clara, sin letras chiquitas</h2>
+ <p class="sub">En membresías, aplicaciones de comercio y servicios de ciberseguridad firmamos un contrato de responsabilidad.</p>
+ <div class="two">
+  <div class="card"><h3>Lo que sí cubrimos</h3><ul><li>Mantenimiento de la aplicación</li><li>Correcto funcionamiento del código y de la app</li><li>Corrección de fallas en lo que desarrollamos</li><li>Acompañamiento para resolver cualquier incidente</li></ul></div>
+  <div class="card"><h3>Lo que depende de terceros</h3><ul class="no"><li>Daños en bases de datos de servidores externos</li><li>Fallas de hospedaje (por ejemplo Render)</li><li>Problemas con dominios o registradores</li><li>Cualquier servicio fuera de control</li></ul></div>
+ </div>
+ <p class="note">En esos casos no tenemos control directo, pero siempre haremos todo lo posible por ayudarte a manejarlo correctamente y resolver el inconveniente.</p>
+</div></section>
+
+<section id="contacto"><div class="wrap"><div class="card hl" style="text-align:center;padding:50px 24px">
+ <h2>Platiquemos de tu proyecto</h2><p class="sub" style="margin-bottom:26px">Cuéntanos qué necesita tu negocio y te respondemos con una propuesta.</p>
+ <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a><a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
+</div></div></section>
+
+<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/zedyth-aguila-completo.webp" alt="ZEDYTH Technologies" width="190" height="114" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
+<div class="fb"><span>© {{ año }} ZEDYTH Technologies. Grupo empresarial: ZEDYTH, Zmarth y Zelecte.</span><b>INNOVACIÓN · SEGURIDAD · CRECIMIENTO</b></div></div></footer>
+<div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}" data-ia="{{ url_for('zedith_chat') }}">
+ <button class="fab" id="fab" type="button" aria-expanded="false" aria-label="Habla con ZEDITH, asistente de IA"><img class="fab-z" src="/static/img/zedyth/zedyth-aguila-oscuro.webp" alt="" width="36" height="20"><span class="l-lg">Habla con ZEDITH</span><span class="l-sm">ZEDITH</span></button>
+ <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><img class="zb-z" src="/static/img/zedyth/zedyth-aguila.webp" alt="" width="48" height="26"><span><img class="zb-w" src="/static/img/zedyth/logo-zedith-blanco.webp" alt="ZEDITH" width="140" height="13"><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
+  <div class="msgs" id="msgs" aria-live="polite"></div><div class="qs" id="qs"></div>
+  <form id="bf"><input id="bi" placeholder="Cuéntame de tu negocio" autocomplete="off" aria-label="Tu duda"><button class="btn w" type="submit">Enviar</button></form></div>
+</div>
+{% raw %}<script>
+(function(){
+const $=s=>document.querySelector(s),bot=$('#bot'),WA=bot.dataset.wa,POS=bot.dataset.pos,mo=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const D={
+ pad:{t:'Club de pádel',n:'Canchera',off:['Anotan los turnos en un cuaderno','Contestan WhatsApp a las 11 de la noche','Se pisan dos turnos y nadie sabe de quién era','Una cancelación es una cancha vacía'],on:['Los jugadores reservan solos desde el link del club, a cualquier hora y sin crear cuenta','La agenda no deja que se pisen dos turnos, nunca más','Si alguien cancela, la lista de espera se entera al toque','Cada partido suma puntos que se cambian por premios del club'],p:'Ese sistema se llama Canchera. ¿Cuál de los dos clubes quieres ser?'},
+ caf:{t:'Café',n:'Coffeezey',off:['No sabe qué pide cada cliente','Nadie se entera de quién dejó de venir','Las reseñas dependen de la suerte','Los sellos de cartón se pierden en la cartera'],on:['Los clientes escanean un QR en la mesa y suman sellos para su premio','Recuerda lo que pide cada cliente','Los invita a recomendarte en Google y en Instagram','Te avisa cuando alguien deja de venir, para que vuelva'],p:'Ese sistema se llama Coffeezey: la memoria de tu café.'},
+ res:{t:'Restaurante',n:'Restaurantzey',off:['Ni aparece en Google','La mesa 7 llama al mesero tres veces','Nadie sabe qué es apto celíaco','Se compra a ojo: o sobra o falta, y la caja se cierra a mano'],on:['Página propia con carta, fotos y reservas en dos toques, y una IA que responde dudas hasta de madrugada','Tótem en cada mesa: piden, llaman al mesero o piden la cuenta con un toque','Alérgenos, punto de cocción y reseñas en cada plato','Comandas, stock, caja y facturación juntos, con pronóstico de ventas'],p:'Ese sistema se llama Restaurantzey. En la demo lo ves con tu carta y en tus mesas.'},
+ loc:{t:'Cualquier local',n:'ZEDYTH',off:['El cliente paga y se va: ¿volverá? No lo sabes','Sin razón para regresar','Su tarjeta de sellos quedó en otra cartera'],on:['Tarjetas digitales con tu marca en la wallet del celular','Sellos y recompensas que acercan al cliente a su premio','Aviso al celular: «te falta un sello»','Club de clientes con puntos'],p:'No traemos clientes: hacemos que vuelvan.'}};
+const tabs=$('#tabs'),cmp=$('#cmp'),rng=$('#rng');
+const setX=v=>{cmp.style.setProperty('--x',v+'%');rng.value=v};
+function show(k){const d=D[k];tabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.k===k));
+ $('#offT').textContent='Sin sistema';$('#onT').textContent=d.n;
+ $('#offL').innerHTML=d.off.map(x=>'<li>'+x+'</li>').join('');$('#onL').innerHTML=d.on.map(x=>'<li>'+x+'</li>').join('');
+ $('#pitch').textContent=d.p;$('#ctaSys').href=WA+'?text='+encodeURIComponent('Hola, me interesa '+d.n+' para mi negocio ('+d.t+')');}
+Object.keys(D).forEach(k=>{const b=document.createElement('button');b.type='button';b.setAttribute('role','tab');b.dataset.k=k;b.textContent=D[k].t;b.onclick=()=>show(k);tabs.appendChild(b)});
+show('pad');rng.addEventListener('input',()=>setX(rng.value));
+if(!mo)setX(92);
+new IntersectionObserver((e,o)=>{if(!e[0].isIntersecting)return;o.disconnect();if(mo)return;const t0=performance.now(),f=t=>{const k=Math.min((t-t0)/1500,1);setX(92-42*(1-Math.pow(1-k,3)));if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)},{threshold:.5}).observe(cmp);
+new IntersectionObserver((e,o)=>{if(e[0].isIntersecting){$('#bars').classList.add('in');o.disconnect()}},{threshold:.4}).observe($('#bars'));
+let n=5;const N=8,sts=$('#sts'),stT=$('#stT'),stB=$('#stB');
+function wal(){sts.innerHTML='';for(let i=0;i<N;i++){const e=document.createElement('i');if(i<n){e.className='f';e.textContent='✓'}sts.appendChild(e)}
+ stT.textContent=n>=N?'¡Premio listo! Tu cliente lo canjea en su próxima visita.':(n===N-1?'Aviso automático al celular: «Te falta 1 sello para tu café gratis».':'Faltan '+(N-n)+' sellos para su premio.');stB.textContent=n>=N?'Reiniciar tarjeta':'Registrar visita'}
+stB.onclick=()=>{n=n>=N?0:n+1;wal()};wal();
+const nf=x=>'$'+Math.round(x).toLocaleString('es-MX');
+function calc(){const a=+$('#ca').value||0,b=+$('#cb').value||0,v=+$('#cv').value||0,m=+$('#cm').value||0,t=b*v*m,mx=Math.max(a,t,1);
+ $('#ra').textContent=nf(a);$('#rb').textContent=nf(t);$('#ba').style.width=a/mx*100+'%';$('#bb').style.width=t/mx*100+'%';$('#rx').textContent=a?(t/a).toFixed(1).replace(/\.0$/,'')+'×':'—'}
+['ca','cb','cv','cm'].forEach(i=>$('#'+i).addEventListener('input',calc));calc();
+const fab=$('#fab'),pnl=$('#pnl'),msgs=$('#msgs');let first=1;
+const A=(h,me)=>{const d=document.createElement('div');d.className='m'+(me?' me':'');me?d.textContent=h:d.innerHTML=h;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight};
+const wa=t=>'<a href="'+WA+'?text='+encodeURIComponent(t)+'" target="_blank" rel="noopener">Escríbenos por WhatsApp</a>';
+const KB=[
+[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta cuesta <b>$1,500 MXN</b>, pago único: funciona por internet desde teléfono o tablet y usa tu propia base de datos en la nube. Comercio electrónico y aplicaciones web (PWA) van <b>desde $3,000 MXN</b>. Las aplicaciones complejas, la IA y la ciberseguridad se cotizan a la medida, y hay membresías de mantenimiento. '+wa('Hola, quiero una cotización')],
+[/play store|google play|pwa|app movil|aplicacion movil/,'Hacemos aplicaciones web progresivas (PWA): se instalan en el teléfono y se pueden publicar en Google Play, con dominio, hosting y base de datos en la nube. La publicación depende de las políticas de Google.'],
+[/pagina web|sitio web|estatica|landing|sencill|simple/,'Nos enfocamos en proyectos de alta complejidad: aplicaciones, inteligencia artificial, ciberseguridad e infraestructura. No hacemos páginas estáticas ni sitios sencillos. Si tu proyecto es complejo, cuéntame. '+wa('Hola, tengo un proyecto complejo')],
+[/pizza|pizzeria|horno/,'Puedes probar una <b>pizzería en vivo</b>: pides como cliente y del otro lado ves la cocina con hornos, cola de pedidos, inventario y ventas. <a href="#pizzeria">Ir a la demo</a>. Se adapta a tu menú y a tu forma de trabajar.'],
+[/\bpos\b|punto de venta|demo|caja/,'Puedes probar el punto de venta ahora mismo: <a href="'+POS+'">abrir demo en vivo</a>. Se adapta a tu forma de vender.'],
+[/demo.*reserva|reserva.*demo|probar.*reserva|sistema de reserva|agenda en linea/,'Puedes probar el sistema de reservas en vivo con el nombre de tu negocio: <a href="#reservas">ir a la demo</a>. Reserva como cliente y mira el panel del dueño, la lista de espera y los puntos.'],
+[/cancha|padel|club deportivo|reserva.*cancha/,'<b>Canchera</b> es el sistema para clubes de pádel: reservas solas desde el link del club sin crear cuenta, agenda sin turnos pisados, lista de espera cuando alguien cancela y puntos canjeables por premios.'],
+[/cafe|cafeteria|coffeezey/,'<b>Coffeezey</b> es la memoria de tu café: sellos con QR en la mesa, recuerda lo que pide cada cliente, pide reseñas en Google e Instagram y te avisa cuando alguien deja de venir.'],
+[/restaurante|mesa|comanda|mesero|restaurantzey|comida/,'<b>Restaurantzey</b> incluye tótem en cada mesa, carta con alérgenos y punto de cocción, comandas, stock, caja y facturación, pronóstico de ventas y club de clientes. Se hace a medida y se capacita a tu equipo.'],
+[/wallet|sello|lealtad|tarjeta|puntos|fidel|premio/,'Tu cliente escanea un QR y guarda la tarjeta en Apple Wallet o Google Wallet, sin descargar apps. Con tu logo y tus colores. Tu equipo la escanea en cada visita y desde el panel ves quién vuelve y quién está cerca de su premio.'],
+[/zelecte|zmarth|grupo|supermercado|tienda|ecommerce|comercio electronico|vender en linea/,'<b>Zelecte México</b> es un supermercado premium en línea de Zmarth, empresa de nuestro grupo: departamentos de frescos, gourmet, hogar, tecnología y moda, entrega a domicilio o retiro en tienda, y un asistente de compras. Míralo funcionando: <a href="https://zelecte.onrender.com" target="_blank" rel="noopener">abrir Zelecte</a>.'],
+[/ciber|seguridad|hack|respaldo|incidente/,'En ciberseguridad revisamos y endurecemos tus sistemas, controlamos respaldos y vencimientos, y damos monitoreo y atención de incidentes.'],
+[/garant|contrato|render|responsab/,'En membresías, apps de comercio y ciberseguridad firmamos un contrato de responsabilidad. Cubrimos el funcionamiento de lo que desarrollamos; hospedaje, dominios y servidores externos dependen de terceros, pero te ayudamos a resolverlos.'],
+[/volver|retenc|regres|cliente/,'Hacemos que los clientes que ya vinieron vuelvan: club de clientes, puntos, sellos digitales y avisos con tu marca. Mira la calculadora «Cliente A o B» en esta página.'],
+[/contacto|whatsapp|hablar|humano|telefono|llamar|correo|email/,'Con gusto te atienden personas. '+wa('Hola, quiero platicar de mi proyecto')],
+[/hola|buenas|hey|que tal/,'¡Hola! ¿Qué giro es tu negocio? Puedo contarte de precios, el punto de venta, Canchera, Coffeezey o Restaurantzey.']];
+const DEF='No tengo eso a la mano, pero una persona te responde rápido. '+wa('Hola, tengo una duda');
+function askKB(q){const z=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');const r=KB.find(k=>k[0].test(z));setTimeout(()=>A(r?r[1]:DEF),350)}
+const IA=bot.dataset.ia,hist=[];let busy=false;
+const esc=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmt=t=>esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+async function ask(q){
+ if(busy)return;busy=true;A(q,1);hist.push({role:'user',text:q});
+ const ty=document.createElement('div');ty.className='m';ty.textContent='Zedith está escribiendo…';msgs.appendChild(ty);msgs.scrollTop=msgs.scrollHeight;
+ try{
+  const r=await fetch(IA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensajes:hist.slice(-12)})});
+  if(!r.ok)throw new Error(r.status);
+  const d=await r.json();ty.remove();hist.push({role:'model',text:d.reply});
+  A(fmt(d.reply)+(d.wa&&d.wa.startsWith('https://wa.me/')?'<br><br><a href="'+d.wa+'" target="_blank" rel="noopener">Enviar mi pedido por WhatsApp</a>':''));
+ }catch(e){ty.remove();hist.pop();askKB(q)}
+ busy=false}
+['Quiero armar mi app','Precios','Probar el POS','Pizzería en vivo','Tarjeta en wallet','Hablar con alguien'].forEach(t=>{const b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=()=>ask(t);$('#qs').appendChild(b)});
+const tog=o=>{pnl.hidden=!o;fab.setAttribute('aria-expanded',o);if(o&&first){first=0;A('Hola, soy Zedith, el asistente de IA de ZEDYTH. Cuéntame qué negocio tienes y te ayudo a armar tu app o sistema y a dejar tu pedido listo.')}if(o)$('#bi').focus()};
+fab.onclick=()=>tog(pnl.hidden);$('#bx').onclick=()=>tog(false);
+$('#bf').onsubmit=e=>{e.preventDefault();const v=$('#bi').value.trim();if(v){ask(v);$('#bi').value=''}};
+})();
+</script>{% endraw %}
+{% raw %}<script>
+(function(){
+const $=s=>document.querySelector(s),WA=$('#bot').dataset.wa;
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const G={c:{t:'Club deportivo',r:['Cancha 1','Cancha 2','Cancha 3']},m:{t:'Restaurante',r:['Mesa para 2','Mesa para 4','Mesa para 8']},s:{t:'Consultorio o servicios',r:['Dra. Soto','Dr. Ramos','Dra. Vega']}};
+const H=[9,10,11,12,13,14,15,16,17,18,19,20];
+let g='c',d=0,bk={},wl={},fr={},sel=null;
+const days=[0,1,2,3,4].map(i=>{if(!i)return'Hoy';const x=new Date();x.setDate(x.getDate()+i);return x.toLocaleDateString('es-MX',{weekday:'short',day:'numeric'})});
+const K=(a,r,h)=>a+'|'+r+'|'+h,busy=(a,r,h)=>(a*7+r*13+h*5)%7<2&&!fr[K(a,r,h)];
+const msg=t=>{$('#zm').textContent=t};
+function brand(){const n=$('#zn').value.trim()||'Tu negocio',h=[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+ $('#zt').textContent=n;$('#zl').textContent=n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+ $('#zl').style.background='hsl('+h+' 30% 40%)';
+ $('#zcta').href=WA+'?text='+encodeURIComponent('Hola, quiero un sistema de reservas para '+n)}
+const zg=$('#zg');
+Object.keys(G).forEach(k=>{const b=el('button','',G[k].t);b.type='button';b.setAttribute('role','tab');b.dataset.k=k;
+ b.onclick=()=>{g=k;bk={};wl={};fr={};sel=null;$('#zf').hidden=true;draw();msg('Giro: '+G[k].t+'. Elige un turno libre.')};zg.appendChild(b)});
+function pick(r,h){const k=K(d,r,h);if(bk[k]){msg('Esta es tu reserva. Puedes cancelarla desde el panel del dueño.');return}
+ const t=busy(d,r,h);sel={r,h,t};$('#zf').hidden=false;
+ $('#zft').textContent=(t?'Lista de espera · ':'Reservar · ')+G[g].r[r]+' · '+days[d]+' '+h+':00';
+ $('#zfb').textContent=t?'Avisarme si se libera':'Confirmar reserva';
+ msg(t?'Ese turno ya está ocupado: la agenda no deja que se pisen dos reservas. Entra a la lista de espera.':'Turno libre. Deja tu nombre y confirma, sin crear cuenta.');
+ $('#zcn').focus({preventScroll:true})}
+function draw(){
+ zg.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.k===g));
+ const D=$('#zd');D.innerHTML='';days.forEach((t,i)=>{const b=el('button',i===d?'on':'',t);b.type='button';b.onclick=()=>{d=i;$('#zf').hidden=true;draw()};D.appendChild(b)});
+ const S=$('#zs');S.innerHTML='';
+ G[g].r.forEach((rn,r)=>{const w=el('div','rrow'),sl=el('div','sl');w.appendChild(el('b','',rn));
+  H.forEach(h=>{const m=bk[K(d,r,h)],t=m||busy(d,r,h),b=el('button',m?'mine':t?'busy':'',h+':00');b.type='button';
+   b.setAttribute('aria-label',rn+' a las '+h+':00, '+(m?'tu reserva':t?'ocupado':'libre'));b.onclick=()=>pick(r,h);sl.appendChild(b)});
+  w.appendChild(sl);S.appendChild(w)});
+ own()}
+function own(){const L=$('#zr');L.innerHTML='';const a=Object.entries(bk),w=Object.entries(wl);
+ if(!a.length&&!w.length)L.appendChild(el('li','empty','Aún no hay movimientos. Elige un turno a la izquierda.'));
+ a.forEach(([k,b])=>{const li=el('li'),s=el('span','',days[b.d]+' · '+b.h+':00 · '+G[g].r[b.r]),x=el('button','','Cancelar');s.appendChild(el('small','',b.n));x.type='button';x.onclick=()=>cancel(k);li.append(s,x);L.appendChild(li)});
+ w.forEach(([k,b])=>{const li=el('li','w'),s=el('span','','En espera · '+days[b.d]+' · '+b.h+':00 · '+G[g].r[b.r]),x=el('button','','Simular cancelación');s.appendChild(el('small','',b.n));x.type='button';x.onclick=()=>free(k);li.append(s,x);L.appendChild(li)});
+ let tk=0;G[g].r.forEach((_,r)=>H.forEach(h=>{if(bk[K(d,r,h)]||busy(d,r,h))tk++}));
+ $('#kb').textContent=a.length;$('#ko').textContent=Math.round(tk/(H.length*3)*100)+'%';$('#kw').textContent=w.length;$('#kp').textContent=a.length*10}
+function cancel(k){const b=bk[k];delete bk[k];msg('Reserva cancelada: el turno de las '+b.h+':00 vuelve a quedar libre al instante.');draw()}
+function free(k){const w=wl[k];delete wl[k];fr[k]=1;bk[k]=w;msg('El otro cliente canceló. Lista de espera avisada: '+w.n+' recibe el aviso al toque y toma el turno de las '+w.h+':00.');draw()}
+$('#zf').onsubmit=e=>{e.preventDefault();if(!sel)return;const n=$('#zcn').value.trim();if(!n)return;const k=K(d,sel.r,sel.h),o={d,r:sel.r,h:sel.h,n};
+ if(sel.t){wl[k]=o;msg('Listo, '+n+': estás en la lista de espera. Prueba «Simular cancelación» en el panel del dueño.')}
+ else{bk[k]=o;msg('Reserva confirmada para '+n+'. Recibe confirmación por WhatsApp y suma 10 puntos para premios.')}
+ $('#zf').hidden=true;$('#zf').reset();sel=null;draw()};
+$('#zfx').onclick=()=>{$('#zf').hidden=true;sel=null};
+$('#zn').oninput=brand;brand();draw();msg('Elige un turno libre para empezar.');
+})();
+</script>{% endraw %}
+{% raw %}<script>
+(function(){
+const $=s=>document.querySelector(s),WA=$('#bot').dataset.wa;
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const mx=n=>'$'+n.toLocaleString('es-MX');
+const OV=2,ENV=35,ARC=251;
+const ING={masa:['Masa',24],queso:['Queso',30],pep:['Pepperoni',14],jam:['Jamón',12],ver:['Verduras',16]};
+const MENU=[
+ {id:'mar',n:'Margarita',d:'Tomate, mozzarella y albahaca',p:140,r:{masa:1,queso:1}},
+ {id:'pep',n:'Pepperoni',d:'Doble pepperoni y mozzarella',p:165,r:{masa:1,queso:1,pep:2}},
+ {id:'haw',n:'Hawaiana',d:'Jamón, piña y mozzarella',p:170,r:{masa:1,queso:1,jam:2}},
+ {id:'cua',n:'Cuatro quesos',d:'Mozzarella, parmesano, gouda y queso azul',p:185,r:{masa:1,queso:2}},
+ {id:'mex',n:'Mexicana',d:'Pepperoni, jalapeño y cebolla',p:180,r:{masa:1,queso:1,pep:1,ver:1}},
+ {id:'veg',n:'Vegetariana',d:'Pimiento, champiñón y aceituna',p:160,r:{masa:1,queso:1,ver:2}}];
+const NAMES=['Ana','Luis','Marisol','Diego','Paola','Hugo','Valeria','Iván'];
+const byId=id=>MENU.find(m=>m.id===id);
+let S,cart,mode='rec',run=true,vis=false,seeded=false,rt=[],rushing=false,QR={};
+
+function fresh(){S={stock:{},orders:[],n:100,count:0,sales:0,rn:0,rw:0,warn:{}};Object.keys(ING).forEach(k=>S.stock[k]=ING[k][1]);cart={}}
+const msg=t=>{$('#pzmsg').textContent=t};
+const used=()=>{const u={};MENU.forEach(m=>{const q=cart[m.id]||0;if(q)Object.keys(m.r).forEach(k=>u[k]=(u[k]||0)+m.r[k]*q)});return u};
+const can=m=>{const u=used();return Object.keys(m.r).every(k=>S.stock[k]-(u[k]||0)>=m.r[k])};
+const cartQ=()=>MENU.reduce((a,m)=>a+(cart[m.id]||0),0);
+const cartTotal=()=>MENU.reduce((a,m)=>a+(cart[m.id]||0)*m.p,0)+(mode==='dom'&&cartQ()?ENV:0);
+const durOf=q=>6+2*q;
+const ovN=()=>S.orders.filter(o=>o.st==='oven').length;
+const desc=o=>o.items.map(i=>i.q+' × '+byId(i.id).n).join(', ')+' · '+(o.m==='dom'?'Domicilio':'Recoger');
+function trim(){let ch=false;MENU.forEach(m=>{while((cart[m.id]||0)>0&&Object.keys(used()).some(k=>used()[k]>S.stock[k])){cart[m.id]--;if(!cart[m.id])delete cart[m.id];ch=true}});return ch}
+function slotsNow(){const sl=Array(OV).fill(0);S.orders.filter(o=>o.st==='oven').forEach(o=>{sl[o.ov]=o.dur-o.prog});return sl}
+function eta(dur){const sl=slotsNow();S.orders.filter(o=>o.st==='new').forEach(o=>{sl.sort((a,b)=>a-b);sl[0]+=o.dur});sl.sort((a,b)=>a-b);return Math.ceil(sl[0]+dur)}
+function queueStart(){const sl=slotsNow(),r={};S.orders.filter(o=>o.st==='new').forEach(o=>{sl.sort((a,b)=>a-b);r[o.id]=Math.ceil(sl[0]);sl[0]+=o.dur});return r}
+function promote(){const taken=S.orders.filter(o=>o.st==='oven').map(o=>o.ov);
+ for(const o of S.orders){if(o.st!=='new')continue;let f=-1;for(let i=0;i<OV;i++)if(!taken.includes(i)){f=i;break}
+  if(f<0)break;o.st='oven';o.ov=f;o.prog=0;taken.push(f)}}
+function add(name,items,m){
+ const q=items.reduce((a,i)=>a+i.q,0),total=items.reduce((a,i)=>a+i.q*byId(i.id).p,0)+(m==='dom'?ENV:0);
+ items.forEach(i=>{const mm=byId(i.id);Object.keys(mm.r).forEach(k=>S.stock[k]-=mm.r[k]*i.q)});
+ const o={id:'P-'+(++S.n),name,items,q,total,m,st:'new',prog:0,dur:durOf(q),wait:0,age:0,ov:-1};
+ S.orders.push(o);S.count++;S.sales+=total;promote();return o}
+function lowCheck(){const n=Object.keys(ING).filter(k=>S.stock[k]/ING[k][1]<=.25&&!S.warn[k]);n.forEach(k=>S.warn[k]=1);return n.map(k=>ING[k][0])}
+
+/* ---------- Menú del cliente ---------- */
+const R=[];
+function buildMenu(){const box=$('#pzmenu');box.innerHTML='';
+ MENU.forEach(m=>{
+  const row=el('div','pz-row'),i=el('div','pz-i'),st=el('div','pz-step'),mi=el('button','','−'),pl=el('button','','+'),q=el('span','q','0'),tag=el('span','pz-tag','Agotado');
+  i.append(el('b','',m.n),el('small','',m.d));
+  mi.type='button';pl.type='button';
+  mi.setAttribute('aria-label','Quitar una '+m.n);pl.setAttribute('aria-label','Agregar una '+m.n);
+  mi.onclick=()=>{if(cart[m.id]){cart[m.id]--;if(!cart[m.id])delete cart[m.id];updMenu();updCart()}};
+  pl.onclick=()=>{if(can(m)){cart[m.id]=(cart[m.id]||0)+1;updMenu();updCart()}};
+  st.append(mi,q,pl);tag.hidden=true;
+  row.append(i,el('span','pr',mx(m.p)),st,tag);box.appendChild(row);R.push({m,q,mi,pl,st,tag})})}
+function updMenu(){R.forEach(r=>{const q=cart[r.m.id]||0,c=can(r.m);r.q.textContent=q;r.mi.disabled=!q;r.pl.disabled=!c;r.st.hidden=!c&&!q;r.tag.hidden=!(!c&&!q)})}
+function updCart(){const q=cartQ(),dom=mode==='dom';
+ $('#pzt').textContent=q?mx(cartTotal()):'$0';
+ $('#pze').textContent=q?(dom?'Llegaría':'Estaría listo')+' en ~'+(eta(durOf(q))+(dom?10:0))+' min'+(dom?' · incluye envío '+mx(ENV):''):'Elige tus pizzas para ver el total y el tiempo estimado';
+ $('#pzb').disabled=!q}
+const modes={rec:'Recoger en tienda',dom:'A domicilio'},tm=$('#pzmode');
+function tabs(){tm.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.k===mode))}
+Object.keys(modes).forEach(k=>{const b=el('button','',modes[k]);b.type='button';b.setAttribute('role','tab');b.dataset.k=k;b.onclick=()=>{mode=k;tabs();updCart()};tm.appendChild(b)});
+
+/* ---------- Hornos ---------- */
+const GA='M20 105A80 80 0 0 1 180 105',G=[];
+function buildOvens(){const box=$('#pzov');box.innerHTML='';
+ for(let i=0;i<OV;i++){const d=el('div','pz-oven');
+  d.innerHTML='<svg viewBox="0 0 200 118" aria-hidden="true"><path class="t" d="'+GA+'"/><path class="f" d="'+GA+'" stroke-dasharray="0 252"/><text x="100" y="98" text-anchor="middle">—</text></svg>';
+  const b=el('b'),s=el('small');d.append(b,s);box.appendChild(d);G.push({d,f:d.querySelector('.f'),t:d.querySelector('text'),b,s})}}
+function updOvens(){for(let i=0;i<OV;i++){const o=S.orders.find(x=>x.st==='oven'&&x.ov===i),g=G[i];
+ if(o){g.f.setAttribute('stroke-dasharray',(o.prog/o.dur*ARC).toFixed(1)+' 252');g.t.textContent=o.dur-o.prog;
+  g.b.textContent='Horno '+(i+1)+' · '+o.id;g.s.textContent=o.name+' · '+o.q+(o.q>1?' pizzas':' pizza')+' · restan '+(o.dur-o.prog)+' min';g.d.classList.add('on')}
+ else{g.f.setAttribute('stroke-dasharray','0 252');g.t.textContent='—';g.b.textContent='Horno '+(i+1);g.s.textContent='Libre';g.d.classList.remove('on')}}}
+
+/* ---------- Inventario ---------- */
+const RF={};
+function buildStock(){const box=$('#pzst');box.innerHTML='';
+ Object.keys(ING).forEach(k=>{const row=el('div','pz-s'),bar=el('div','pz-bar'),fl=el('span'),v=el('span','v');bar.appendChild(fl);row.append(el('span','',ING[k][0]),bar,v);box.appendChild(row);RF[k]={row,fl,v}});
+ const b=el('button','pz-mini','Reabastecer inventario');b.type='button';
+ b.onclick=()=>{Object.keys(ING).forEach(k=>S.stock[k]=ING[k][1]);S.warn={};msg('Inventario repuesto. En el sistema real registras cada compra y el stock baja solo con cada pizza que sale.');updStock();updMenu();updCart()};
+ box.appendChild(b)}
+function updStock(){Object.keys(ING).forEach(k=>{const v=S.stock[k],m=ING[k][1],p=v/m;RF[k].fl.style.width=(p*100)+'%';RF[k].v.textContent=v+'/'+m;RF[k].row.classList.toggle('low',p<=.25);if(p>.25)delete S.warn[k]})}
+
+/* ---------- Panel del dueño ---------- */
+function kpis(){$('#pk1').textContent=S.count;$('#pk2').textContent=mx(S.sales);$('#pk3').textContent=S.rn?Math.round(S.rw/S.rn)+' min':'—';$('#pk4').textContent=ovN()+'/'+OV}
+function drawLists(){
+ const q=S.orders.filter(o=>o.st==='new'),r=S.orders.filter(o=>o.st==='ready'),qs=queueStart();
+ $('#pzqn').textContent=q.length;$('#pzrn').textContent=r.length;
+ const Q=$('#pzq'),D=$('#pzrd');Q.innerHTML='';D.innerHTML='';QR={};
+ if(!q.length)Q.appendChild(el('li','empty','Sin pedidos esperando: los hornos están al día.'));
+ q.forEach(o=>{const li=el('li'),s=el('span','',o.id+' · '+o.name),sm=el('small'),x=el('button','','Cancelar');
+  sm.textContent=desc(o)+' · hornea en ~'+qs[o.id]+' min';QR[o.id]={sm,base:desc(o)};
+  x.type='button';x.onclick=()=>cancelO(o);s.appendChild(sm);li.append(s,x);Q.appendChild(li)});
+ if(!r.length)D.appendChild(el('li','empty','Aquí aparecen los pedidos que salen del horno.'));
+ r.forEach(o=>{const li=el('li','rd'),s=el('span','',o.id+' · '+o.name),x=el('button','','Entregar');
+  s.appendChild(el('small','',desc(o)+' · '+(o.m==='dom'?'sale con el repartidor':'listo para recoger')));
+  x.type='button';x.onclick=()=>deliver(o);li.append(s,x);D.appendChild(li)})}
+function drawAll(){kpis();updOvens();drawLists();updStock();updCart()}
+function upd(){kpis();updOvens();const qs=queueStart();Object.keys(QR).forEach(id=>{if(qs[id]!=null)QR[id].sm.textContent=QR[id].base+' · hornea en ~'+qs[id]+' min'});updCart()}
+function cancelO(o){o.items.forEach(i=>{const m=byId(i.id);Object.keys(m.r).forEach(k=>S.stock[k]=Math.min(ING[k][1],S.stock[k]+m.r[k]*i.q))});
+ S.orders=S.orders.filter(x=>x!==o);S.count--;S.sales-=o.total;promote();
+ msg('Pedido '+o.id+' cancelado: los ingredientes vuelven al inventario y la venta se descuenta al instante.');drawAll();updMenu()}
+function deliver(o){S.orders=S.orders.filter(x=>x!==o);
+ msg(o.name+' recibe su pedido '+o.id+'. Entregado y registrado: suma '+o.q*10+' puntos para su próxima pizza.');drawAll()}
+
+/* ---------- Reloj de la cocina (1 s = 1 min) ---------- */
+function tick(){
+ if(!vis||!run)return;
+ let ch=false;
+ S.orders.forEach(o=>{
+  if(o.st==='oven'){o.wait++;o.prog++;if(o.prog>=o.dur){o.st='ready';o.age=0;S.rn++;S.rw+=o.wait;ch=true}}
+  else if(o.st==='new')o.wait++;
+  else if(o.st==='ready'){o.age++;if(o.age>=10){o.st='gone';ch=true}}});
+ S.orders=S.orders.filter(o=>o.st!=='gone');
+ const b=ovN();promote();if(ovN()!==b)ch=true;
+ ch?drawAll():upd()}
+setInterval(tick,1000);
+
+/* ---------- Pedido del cliente ---------- */
+$('#pzf').onsubmit=e=>{e.preventDefault();
+ const n=$('#pzc').value.trim(),q=cartQ();if(!n||!q)return;
+ if(trim()){msg('Mientras elegías se terminó un ingrediente: ajustamos tu pedido a lo que sí se puede preparar.');updMenu();updCart();return}
+ const items=MENU.filter(m=>cart[m.id]).map(m=>({id:m.id,q:cart[m.id]})),o=add(n,items,mode);
+ cart={};$('#pzf').reset();
+ const low=lowCheck();
+ msg('Pedido '+o.id+' confirmado para '+n+'. '+(o.st==='oven'?'Entra directo al horno '+(o.ov+1)+'. ':'Los hornos están ocupados: queda en cola y tu cliente ya sabe cuánto tarda. ')+'Recibe aviso por WhatsApp cuando salga y suma '+o.q*10+' puntos.'+(low.length?' Stock bajo de '+low.join(', ')+': el sistema te avisa antes de que se acabe.':''));
+ drawAll();updMenu()};
+
+/* ---------- Hora pico ---------- */
+function pickRush(){const tmp=Object.assign({},S.stock),n=1+((Math.random()*3)|0),map={};
+ for(let t=0;t<n;t++){const m=MENU[(Math.random()*MENU.length)|0];
+  if(Object.keys(m.r).every(k=>tmp[k]>=m.r[k])){Object.keys(m.r).forEach(k=>tmp[k]-=m.r[k]);map[m.id]=(map[m.id]||0)+1}}
+ return Object.keys(map).map(id=>({id,q:map[id]}))}
+function rushGo(){
+ if(rushing)return;rushing=true;$('#pzrush').disabled=true;
+ msg('Hora pico: llegan 6 pedidos en pocos minutos. Mira cómo se llenan los hornos y la cola.');
+ let n=0,out=false;
+ (function nxt(){
+  if(n>=6){rushing=false;$('#pzrush').disabled=false;const w=S.orders.filter(o=>o.st==='new').length;
+   msg('Hora pico atendida: '+(w?w+(w>1?' pedidos esperan':' pedido espera')+' en cola':'sin cola')+', hornos al '+Math.round(ovN()/OV*100)+'%'+(out?' y parte del menú ya marca agotado':'')+'. El siguiente cliente ya ve ~'+eta(durOf(1))+' min antes de pedir.');return}
+  n++;const items=pickRush();
+  if(items.length)add(NAMES[(Math.random()*NAMES.length)|0],items,Math.random()<.4?'dom':'rec');else out=true;
+  lowCheck();if(trim())msg('Se agotó un ingrediente mientras elegías: ajustamos tu carrito a lo que sí se puede preparar.');
+  drawAll();updMenu();rt.push(setTimeout(nxt,900))})()}
+$('#pzrush').onclick=rushGo;
+$('#pzpause').onclick=()=>{run=!run;$('#pzpause').textContent=run?'Pausar cocina':'Reanudar cocina';msg(run?'Cocina en marcha.':'Cocina en pausa. Reanuda para ver cómo avanzan los pedidos.')};
+$('#pzreset').onclick=()=>{rt.forEach(clearTimeout);rt=[];rushing=false;$('#pzrush').disabled=false;run=true;$('#pzpause').textContent='Pausar cocina';
+ fresh();drawAll();updMenu();msg('Demo reiniciada. Elige tus pizzas y confirma un pedido, o lanza una hora pico.')};
+
+/* ---------- Marca y arranque ---------- */
+function brand(){const n=$('#pzn').value.trim()||'Tu pizzería',h=[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+ $('#pznm').textContent=n;$('#pzl').textContent=n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+ $('#pzl').style.background='hsl('+h+' 30% 40%)';
+ $('#pzcta').href=WA+'?text='+encodeURIComponent('Hola, quiero un sistema para mi pizzería: '+n)}
+function seed(){seeded=true;const a=add('Mariana',[{id:'pep',q:2}],'rec');a.prog=3;add('Luis',[{id:'mex',q:1}],'dom');add('Paola',[{id:'mar',q:1},{id:'cua',q:1}],'rec');
+ drawAll();updMenu();msg('La cocina ya está trabajando. Elige tus pizzas y haz un pedido, o lanza una hora pico.')}
+$('#pzn').oninput=brand;
+fresh();buildMenu();buildOvens();buildStock();tabs();drawAll();updMenu();brand();
+msg('Elige tus pizzas y confirma un pedido. Del otro lado ves la cocina.');
+new IntersectionObserver(es=>{vis=es[0].isIntersecting;if(vis&&!seeded)seed()},{threshold:.15}).observe($('#pizzeria'));
+})();
+</script>{% endraw %}
+<script>
+(()=>{const d=document,r=d.documentElement,rm=matchMedia('(prefers-reduced-motion:reduce)').matches;r.classList.add('js');
+const nav=d.querySelector('nav'),hb=d.querySelector('.hero-bg');
+const sc=()=>{nav.classList.toggle('sc',scrollY>20);if(hb&&!rm&&innerWidth>900&&scrollY<900)hb.style.marginTop=scrollY*.1+'px'};addEventListener('scroll',sc,{passive:true});sc();
+const cnt=el=>{const n=+el.dataset.n,s=el.dataset.s||'';if(rm){el.textContent=n+s;return}let t0;const f=t=>{t0=t0||t;const p=Math.min((t-t0)/1500,1);el.textContent=Math.round(n*(1-Math.pow(1-p,3)))+s;if(p<1)requestAnimationFrame(f)};requestAnimationFrame(f)};
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)return;e.target.classList.add('show');e.target.querySelectorAll('[data-n]').forEach(cnt);io.unobserve(e.target)}),{threshold:.12});
+d.querySelectorAll('section>.wrap>h2,section>.wrap>.sub,section>.wrap>.eyebrow,#servicios .split>*,.sol .card,.pj,.stat,.whyg>div:first-child,.zgrid>*,.zrow li,.plg>*,.trust,#contacto .card').forEach((e,i)=>{e.classList.add('rv');e.style.setProperty('--d',(i%4)*.09+'s');io.observe(e)});
+d.addEventListener('pointermove',e=>{const t=e.target.closest&&e.target.closest('.card,.pj');if(t){const b=t.getBoundingClientRect();t.style.setProperty('--mx',e.clientX-b.left+'px');t.style.setProperty('--my',e.clientY-b.top+'px')}},{passive:true});
+d.querySelectorAll('.links a').forEach(a=>a.addEventListener('click',()=>d.querySelector('.links').classList.remove('active')));
+})();
+</script>
+</body>
+</html>
