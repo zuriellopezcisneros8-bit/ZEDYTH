@@ -52,6 +52,10 @@ class Plan(db.Model):
     descripcion = db.Column(db.String(120))
     incluye = db.Column(db.Text, default="")           # elementos separados por |
     destacado = db.Column(db.Boolean, default=False)
+    categoria = db.Column(db.String(20), default="tamano")   # tamano | ciber
+    bd_incluida = db.Column(db.String(60))                    # ej. "5 GB"
+    activo = db.Column(db.Boolean, default=True)              # False = plan retirado (se conserva por clientes ya suscritos)
+    orden = db.Column(db.Integer, default=0)
 
 
 class Cliente(db.Model):
@@ -255,6 +259,8 @@ def migrar_sqlite():
         return
     nuevas = {
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
+        "plan": [("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"),
+                 ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
@@ -267,22 +273,49 @@ def migrar_sqlite():
     db.session.commit()
 
 
+# (nombre, precio mensual MXN, a_medida, descripción, incluye separado por |, destacado, categoría, BD incluida, orden)
+# Los precios son una propuesta inicial: ajústalos aquí y se actualizan solos al reiniciar la app.
 PLANES_INICIALES = [
-    ("ZEDYTH Essential", 900, False, "Solo Infraestructura", "Dominio y Hosting|Base de datos y almacenamiento", False),
-    ("ZEDYTH Care", 1800, False, "Solo Mantenimiento", "Actualización de dependencias|Monitoreo", False),
-    ("ZEDYTH CyberShield", 1500, False, "Ciberseguridad pura", "Respaldos|Bóveda de credenciales|Auditoría de seguridad", False),
-    ("ZEDYTH Core", 2500, False, "Infra + Mantenimiento", "Dominio y Hosting|Base de datos y almacenamiento|Actualización de dependencias|Monitoreo", True),
-    ("ZEDYTH Business", 3800, False, "Infra + Mantenimiento + Ciberseguridad", "Todo lo de Core|Respaldos, bóveda y auditoría de seguridad", False),
-    ("ZEDYTH Evolution", 5500, False, "Cobertura total + bolsa de horas", "Todo lo de Business|Bolsa de 4 horas al mes para cambios estéticos menores", False),
-    ("ZEDYTH All-Inclusive Premium", 9000, True, "Soporte VIP y Desarrollo", "Soporte VIP|Infraestructura y seguridad totales|Desarrollo activo de nuevas funciones", False),
+    ("ZEDYTH Negocio Chico", 1200, False, "Un negocio o una sola sucursal",
+     "Dominio y hosting|Base de datos PostgreSQL en la nube|Respaldos automáticos|Ciberseguridad básica|Mantenimiento y monitoreo|Soporte por WhatsApp en horario hábil",
+     False, "tamano", "1 GB", 1),
+    ("ZEDYTH Negocio Mediano", 2500, False, "Operación diaria con varios usuarios",
+     "Todo lo del plan Chico|Base de datos más amplia|Actualización de dependencias|Monitoreo continuo|Soporte prioritario",
+     True, "tamano", "5 GB", 2),
+    ("ZEDYTH Negocio Grande", 4800, False, "Alto volumen y varias sucursales",
+     "Todo lo del plan Mediano|Base de datos de alto volumen|Respaldos con mayor frecuencia|Bolsa de 4 horas al mes para cambios menores|Soporte con respuesta rápida",
+     False, "tamano", "20 GB", 3),
+    ("ZEDYTH Corporativo y Cadenas", 9000, True, "Súper grandes y cadenas con muchas sucursales",
+     "Infraestructura dedicada|Base de datos a la medida|Contrato de servicio (SLA)|Soporte VIP|Desarrollo activo de nuevas funciones",
+     False, "tamano", "A la medida", 4),
+    ("ZEDYTH CyberShield Avanzada", 4500, True, "Solo ciberseguridad avanzada, sin hosting ni dominio",
+     "Pruebas de penetración (pentesting)|Hacking ético sobre tu aplicación|Reporte de vulnerabilidades y plan de corrección|Auditoría de seguridad y bóveda de credenciales|Se contrata por separado",
+     False, "ciber", None, 5),
 ]
+
+# Almacenamiento adicional: se suma a lo que ya incluye el plan. (almacenamiento, extra mensual MXN)
+NIVELES_BD = [("+5 GB", 400), ("+20 GB", 1000), ("+50 GB", 2000)]
+
+
+def planes_visibles(categoria=None):
+    q = Plan.query.filter(Plan.activo.isnot(False))
+    if categoria:
+        q = q.filter(Plan.categoria == categoria)
+    return q.order_by(Plan.orden, Plan.id).all()
 
 
 def sembrar_planes():
-    for n, p, am, d, inc, dest in PLANES_INICIALES:
+    nombres = set()
+    for n, p, am, d, inc, dest, cat, bd, orden in PLANES_INICIALES:
+        nombres.add(n)
         plan = Plan.query.filter_by(nombre=n).first() or Plan(nombre=n)
         plan.precio, plan.a_medida, plan.descripcion, plan.incluye, plan.destacado = p, am, d, inc, dest
+        plan.categoria, plan.bd_incluida, plan.orden, plan.activo = cat, bd, orden, True
         db.session.add(plan)
+    # Los planes anteriores (Essential, Care, Core...) se retiran de la web pero NO se borran:
+    # los clientes que ya los tienen conservan su suscripción.
+    for viejo in Plan.query.filter(Plan.nombre.notin_(nombres)).all():
+        viejo.activo = False
     db.session.commit()
 
 def sembrar_usuario_admin():
@@ -371,7 +404,7 @@ def index():
         "proyectos_desarrollo": Proyecto.query.filter_by(estado="Desarrollo").count(),
         "ingresos_mensuales": dinero(ingresos),
     }
-    planes = Plan.query.order_by(Plan.id).all()
+    planes = planes_visibles()
     return render_template('admin_index.html', stats=stats, clientes=clientes, planes=planes)
 
 
@@ -397,7 +430,7 @@ def nuevo_cliente():
 @app.route('/membresias')
 def membresias():
     planes = []
-    for p in Plan.query.order_by(Plan.id).all():
+    for p in planes_visibles():
         if p.destacado:
             color, btn = "var(--accent-purple)", "var(--accent-purple)"
         elif p.a_medida:
@@ -470,7 +503,10 @@ def cliente_form(cid=None):
         registrar("crear" if nuevo else "editar", "Cliente", cliente.id, cliente.nombre_comercial)
         db.session.commit()
         return redirect(url_for('cliente_detalle', cid=cliente.id))
-    return render_template('cliente_form.html', cliente=cliente, planes=Plan.query.order_by(Plan.id).all())
+    # solo planes vigentes, más el que el cliente ya tenga (aunque sea un plan retirado)
+    planes = [p for p in Plan.query.order_by(Plan.orden, Plan.id).all()
+              if p.activo is not False or (cliente and p.nombre == cliente.membresia_actual)]
+    return render_template('cliente_form.html', cliente=cliente, planes=planes)
 
 
 @app.route('/clientes/<int:cid>')
@@ -850,7 +886,8 @@ def inicio():
         ok = sorted((r for r in p.resenas if r.aprobada), key=lambda r: r.id, reverse=True)
         prom = round(sum(r.calificacion for r in ok) / len(ok), 1) if ok else None
         vitrina.append({"p": p, "prom": prom, "n": len(ok), "recientes": ok[:3]})
-    return render_template('public.html', planes=Plan.query.order_by(Plan.id).all(), vitrina=vitrina,
+    return render_template('public.html', planes=planes_visibles('tamano'), plan_ciber=planes_visibles('ciber'),
+                           niveles_bd=NIVELES_BD, vitrina=vitrina,
                            contacto=CONTACTO, gracias=request.args.get('gracias'), año=date.today().year)
 
 
@@ -945,7 +982,8 @@ def hechos_zedith():
     """Datos reales del negocio que Zedith puede citar como prueba social. Nada inventado."""
     prom = db.session.query(db.func.avg(Resena.calificacion)).filter(Resena.aprobada.is_(True)).scalar()
     return {
-        "planes": [(p.nombre, p.precio, p.a_medida, p.descripcion) for p in Plan.query.order_by(Plan.id).all()],
+        "planes": [(p.nombre, p.precio, p.a_medida, p.descripcion) for p in planes_visibles()],
+        "niveles_bd": NIVELES_BD,
         "resenas": Resena.query.filter_by(aprobada=True).count(),
         "promedio": round(prom, 1) if prom else None,
         "proyectos": ProyectoPublico.query.filter_by(visible=True).count(),

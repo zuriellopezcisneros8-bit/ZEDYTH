@@ -624,25 +624,54 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
 
 <section id="precios"><div class="wrap">
  <h2>Precios claros</h2>
- <p class="sub">Un precio fijo para el punto de venta, desde $3,000 para comercio electrónico y cotización a la medida para lo complejo.</p>
+ <p class="sub">Primero eliges de quién es el código. Después, si quieres que nos encarguemos de todo, eliges tu plan de membresía.</p>
  <div class="two">
-  <div class="card hl"><span class="tag">Punto de venta en la nube</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
+  <div class="card hl"><span class="tag">Opción A · SaaS dedicado (marca blanca)</span><div class="price" style="font-size:30px">Setup accesible + membresía</div><p class="pr-note" style="margin:0 0 14px">Cotizamos el setup según lo que haya que personalizar</p>
+   <p>Usas nuestra plataforma, personalizada con tu marca. Pagas un setup inicial por adaptarla y una membresía continua, más económica que desarrollar desde cero.</p>
+   <ul><li>Personalizada con tu logo, tus colores y tu marca</li><li>Nosotros administramos hosting, dominio y base de datos</li><li>La membresía es obligatoria mientras uses la aplicación</li><li>El código es propiedad intelectual de ZEDYTH</li><li>Está prohibido copiar, revender o comercializar el software; cualquier uso fuera de nuestras políticas no está permitido</li></ul></div>
+  <div class="card"><span class="tag">Opción B · Desarrollo a medida exclusivo</span><div class="price" style="font-size:30px">Precio completo por la propiedad</div><p class="pr-note" style="margin:0 0 14px">El software es tuyo</p>
+   <p>Pagas el desarrollo completo y la propiedad intelectual del software pasa a ser tuya. La membresía ya no es una licencia: es un contrato de mantenimiento y hosting (SLA).</p>
+   <ul><li>El código es tuyo, sin restricciones de reventa por nuestra parte</li><li>Sin membresía, tú eres responsable de tus bases de datos, dominios y servidores</li><li>Con membresía, ZEDYTH administra hosting, dominio, bases de datos y mantenimiento</li><li>Si dejas de pagar la membresía, nosotros dejamos de pagar esos servicios: te entregamos el código fuente en un repositorio y los accesos, y tú asumes su gestión</li><li>El plazo de transición queda por escrito en tu contrato</li></ul></div>
+ </div>
+
+ <h2 style="margin-top:70px">Punto de venta</h2>
+ <p class="sub">Se entrega directamente a ti, con su base de datos y su dominio. Si quieres que lo mantengamos nosotros, contratas una membresía.</p>
+ <div class="two">
+  <div class="card hl"><span class="tag">Punto de venta en la nube · interconectado</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
    <p>Un punto de venta hecho para tu negocio que funciona por internet: lo abres desde tu teléfono, tablet o computadora con datos o Wi-Fi, sin instalar nada.</p>
-   <ul><li>Base de datos PostgreSQL propia, en la nube</li><li>Tu cuenta en Neon, abierta con tu correo: tus datos son tuyos</li><li>Funciona en cualquier dispositivo con internet</li><li>Código fuente completo entregado a ti</li><li>Con membresía, ZEDYTH administra la infraestructura y el mantenimiento</li><li>Personalizado a tu forma de vender</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a></div>
+   <ul><li>Base de datos PostgreSQL propia, en la nube</li><li>Tu cuenta en Neon, abierta con tu correo: tus datos son tuyos</li><li>Funciona en cualquier dispositivo con internet</li><li>Código fuente completo entregado a ti</li><li>Se entrega con su base de datos y su dominio</li><li>Con membresía, ZEDYTH administra la infraestructura y el mantenimiento</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a></div>
+  <div class="card"><span class="tag">Punto de venta local · sin conexión</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
+   <p>Funciona de forma local, en tu propio equipo, sin depender de internet. No está interconectado con otros dispositivos ni sucursales.</p>
+   <ul><li>Sistema local: tus ventas se guardan en tu equipo</li><li>No necesita conexión a internet para vender</li><li>Ideal para un solo mostrador o una sola caja</li><li>Se entrega directamente a ti</li><li>Mantenimiento opcional con membresía</li></ul></div>
+ </div>
+
+ <h2 style="margin-top:70px">Comercio electrónico y aplicaciones</h2>
+ <p class="sub">Disponibles en cualquiera de los dos modelos: SaaS dedicado o desarrollo a medida.</p>
+ <div class="two">
   <div class="card"><span class="tag">Comercio electrónico y aplicaciones web</span><div class="price"><small>Desde</small> $3,000 <small>MXN</small></div>
    <p>Aplicación web progresiva (PWA) a tu medida, con dominio, hosting y base de datos en la nube. Cotización personalizada según lo que necesites.</p>
    <ul><li>Instalable en el teléfono y publicable en Google Play</li><li>Dominio propio, hosting y base de datos en la nube</li><li>Diseño y desarrollo a tu medida, con revisiones hasta quedar conforme</li><li>Opción de membresía de mantenimiento</li></ul>
    <p class="pr-note">La publicación en Google Play depende de las políticas y de la cuenta de desarrollador de Google.</p></div>
-  <div class="card pr-wide"><span class="tag">Aplicaciones complejas, inteligencia artificial y ciberseguridad</span><div class="price" style="font-size:34px">Cotización a la medida</div>
+  <div class="card"><span class="tag">Aplicaciones complejas, inteligencia artificial y ciberseguridad</span><div class="price" style="font-size:34px">Cotización a la medida</div>
    <p>Es el trabajo al que nos dedicamos. Plataformas con IA, sistemas de alta complejidad, infraestructura y ciberseguridad según tu caso. Cada proyecto se cotiza después de entender qué necesitas.</p>
    <ul><li>Arquitectura y desarrollo de sistemas complejos</li><li>Inteligencia artificial integrada a tu operación</li><li>Servicios de ciberseguridad según tu caso</li><li>Membresía de mantenimiento, infraestructura y soporte</li></ul>
    <a class="btn w" style="margin-top:20px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto%20complejo" target="_blank" rel="noopener">Cotizar un proyecto complejo</a></div>
  </div>
- {% if planes %}<h2 style="margin-top:70px">Membresías</h2><p class="sub">Mantenimiento, mejoras y tranquilidad continua para tu proyecto.</p>
+
+ {% if planes %}<h2 style="margin-top:70px">Membresías por tamaño de negocio</h2><p class="sub">Todas incluyen dominio, hosting, base de datos y ciberseguridad básica. Elige según el tamaño de tu negocio y cambia de nivel cuando crezcas.</p>
  <div class="grid">{% for p in planes %}<div class="card {{ 'hl' if p.destacado }}"><h3>{{ p.nombre }}</h3>
-  <div class="price" style="font-size:30px">{% if p.precio and not p.a_medida %}${{ "{:,.0f}".format(p.precio) }} <small>MXN</small>{% else %}A tu medida{% endif %}</div>
+  <div class="price" style="font-size:30px">{% if p.precio and p.a_medida %}<small>Desde</small> ${{ "{:,.0f}".format(p.precio) }} <small>MXN / mes</small>{% elif p.precio %}${{ "{:,.0f}".format(p.precio) }} <small>MXN / mes</small>{% else %}A tu medida{% endif %}</div>
+  <p>{{ p.descripcion or '' }}</p>{% if p.bd_incluida %}<p class="pr-note" style="margin:0 0 10px">Base de datos incluida: <b>{{ p.bd_incluida }}</b></p>{% endif %}{% if p.incluye %}<ul>{% for i in p.incluye.split('|') if i.strip() %}<li>{{ i.strip() }}</li>{% endfor %}</ul>{% endif %}
+  <a class="btn w" style="margin-top:20px" href="#contacto">Me interesa</a></div>{% endfor %}</div>
+ {% if niveles_bd %}<div class="card" style="margin-top:18px"><h3>¿Tu negocio creció? Amplía tu base de datos</h3>
+  <p>Cada plan trae una base de datos incluida. Si necesitas más espacio, subes de nivel sin cambiar de plan y sin cambiar de plataforma. El almacenamiento adicional se suma a tu mensualidad.</p>
+  <ul>{% for n, extra in niveles_bd %}<li><b>{{ n }}</b> de almacenamiento · ${{ "{:,.0f}".format(extra) }} MXN al mes</li>{% endfor %}</ul></div>{% endif %}{% endif %}
+
+ {% if plan_ciber %}<h2 style="margin-top:70px">Ciberseguridad avanzada</h2><p class="sub">Un plan independiente, enfocado al 100% en seguridad: no incluye hosting, dominio ni base de datos. Los demás planes ya traen ciberseguridad básica; este es para quien necesita pruebas de seguridad serias.</p>
+ <div class="two">{% for p in plan_ciber %}<div class="card hl pr-wide"><span class="tag">Se contrata aparte</span><h3>{{ p.nombre }}</h3>
+  <div class="price" style="font-size:30px">{% if p.precio and p.a_medida %}<small>Desde</small> ${{ "{:,.0f}".format(p.precio) }} <small>MXN / mes</small>{% elif p.precio %}${{ "{:,.0f}".format(p.precio) }} <small>MXN / mes</small>{% else %}A tu medida{% endif %}</div>
   <p>{{ p.descripcion or '' }}</p>{% if p.incluye %}<ul>{% for i in p.incluye.split('|') if i.strip() %}<li>{{ i.strip() }}</li>{% endfor %}</ul>{% endif %}
-  <a class="btn w" style="margin-top:20px" href="#contacto">Me interesa</a></div>{% endfor %}</div>{% endif %}
+  <a class="btn w" style="margin-top:20px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20ciberseguridad%20avanzada" target="_blank" rel="noopener">Cotizar ciberseguridad avanzada</a></div>{% endfor %}</div>{% endif %}
 </div></section>
 
 <section id="proyectos"><div class="wrap">
@@ -725,7 +754,8 @@ const fab=$('#fab'),pnl=$('#pnl'),msgs=$('#msgs');let first=1;
 const A=(h,me)=>{const d=document.createElement('div');d.className='m'+(me?' me':'');me?d.textContent=h:d.innerHTML=h;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight};
 const wa=t=>'<a href="'+WA+'?text='+encodeURIComponent(t)+'" target="_blank" rel="noopener">Escríbenos por WhatsApp</a>';
 const KB=[
-[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta cuesta <b>$1,500 MXN</b>, pago único: funciona por internet desde teléfono o tablet y usa tu propia base de datos en la nube. Comercio electrónico y aplicaciones web (PWA) van <b>desde $3,000 MXN</b>. Las aplicaciones complejas, la IA y la ciberseguridad se cotizan a la medida, y hay membresías de mantenimiento. '+wa('Hola, quiero una cotización')],
+[/membres|mensualidad|saas|licencia|codigo fuente|propiedad|marca blanca|\bplan(es)?\b/,'Hay dos formas de trabajar. <b>SaaS dedicado:</b> usas nuestra plataforma con tu marca, pagas un setup accesible y una membresía; el código es de ZEDYTH y está prohibido comercializarlo. <b>A medida:</b> pagas el desarrollo completo y el código es tuyo; con membresía administramos hosting, dominio y bases de datos, y si la dejas te entregamos el código y los accesos. Las membresías van por tamaño (chico, mediano, grande y cadenas) y hay un plan aparte de ciberseguridad avanzada. <a href="#precios">Ver precios</a>'],
+[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta cuesta <b>$1,500 MXN</b>, pago único, en dos versiones: en la nube (interconectado) o local (sin conexión). Comercio electrónico y aplicaciones web (PWA) van <b>desde $3,000 MXN</b>. Las aplicaciones complejas, la IA y la ciberseguridad se cotizan a la medida. Las membresías se eligen por tamaño de negocio. '+wa('Hola, quiero una cotización')],
 [/play store|google play|pwa|app movil|aplicacion movil/,'Hacemos aplicaciones web progresivas (PWA): se instalan en el teléfono y se pueden publicar en Google Play, con dominio, hosting y base de datos en la nube. La publicación depende de las políticas de Google.'],
 [/pagina web|sitio web|estatica|landing|sencill|simple/,'Nos enfocamos en proyectos de alta complejidad: aplicaciones, inteligencia artificial, ciberseguridad e infraestructura. No hacemos páginas estáticas ni sitios sencillos. Si tu proyecto es complejo, cuéntame. '+wa('Hola, tengo un proyecto complejo')],
 [/pizza|pizzeria|horno/,'Puedes probar una <b>pizzería en vivo</b>: pides como cliente y del otro lado ves la cocina con hornos, cola de pedidos, inventario y ventas. <a href="#pizzeria">Ir a la demo</a>. Se adapta a tu menú y a tu forma de trabajar.'],
@@ -736,7 +766,7 @@ const KB=[
 [/restaurante|mesa|comanda|mesero|restaurantzey|comida/,'<b>Restaurantzey</b> incluye tótem en cada mesa, carta con alérgenos y punto de cocción, comandas, stock, caja y facturación, pronóstico de ventas y club de clientes. Se hace a medida y se capacita a tu equipo.'],
 [/wallet|sello|lealtad|tarjeta|puntos|fidel|premio/,'Tu cliente escanea un QR y guarda la tarjeta en Apple Wallet o Google Wallet, sin descargar apps. Con tu logo y tus colores. Tu equipo la escanea en cada visita y desde el panel ves quién vuelve y quién está cerca de su premio.'],
 [/zelecte|zmarth|grupo|supermercado|tienda|ecommerce|comercio electronico|vender en linea/,'<b>Zelecte México</b> es un supermercado premium en línea de Zmarth, empresa de nuestro grupo: departamentos de frescos, gourmet, hogar, tecnología y moda, entrega a domicilio o retiro en tienda, y un asistente de compras. Míralo funcionando: <a href="https://zelecte.onrender.com" target="_blank" rel="noopener">abrir Zelecte</a>.'],
-[/ciber|seguridad|hack|respaldo|incidente/,'En ciberseguridad revisamos y endurecemos tus sistemas, controlamos respaldos y vencimientos, y damos monitoreo y atención de incidentes.'],
+[/ciber|seguridad|hack|respaldo|incidente/,'Todos los planes incluyen ciberseguridad básica: respaldos, monitoreo y atención de incidentes. Además hay un plan independiente de <b>ciberseguridad avanzada</b>: pruebas de penetración y hacking ético sobre tu aplicación, sin hosting ni dominio. <a href="#precios">Ver precios</a>'],
 [/garant|contrato|render|responsab/,'En membresías, apps de comercio y ciberseguridad firmamos un contrato de responsabilidad. Cubrimos el funcionamiento de lo que desarrollamos; hospedaje, dominios y servidores externos dependen de terceros, pero te ayudamos a resolverlos.'],
 [/volver|retenc|regres|cliente/,'Hacemos que los clientes que ya vinieron vuelvan: club de clientes, puntos, sellos digitales y avisos con tu marca. Mira la calculadora «Cliente A o B» en esta página.'],
 [/contacto|whatsapp|hablar|humano|telefono|llamar|correo|email/,'Con gusto te atienden personas. '+wa('Hola, quiero platicar de mi proyecto')],
