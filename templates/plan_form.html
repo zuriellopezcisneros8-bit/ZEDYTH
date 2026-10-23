@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .pf{max-width:760px}
+  .pf h1{margin:0 0 6px}
+  .pf .sub{margin:0 0 22px;color:var(--text-secondary,#9a9a9a)}
+  .pf-card{border:1px solid var(--border-color,rgba(255,255,255,.12));border-radius:14px;padding:22px;background:var(--card-bg,transparent)}
+  .pf label{display:block;margin:0 0 6px;font-size:13px;font-weight:600}
+  .pf .ayuda{display:block;margin:5px 0 0;font-size:12px;font-weight:400;color:var(--text-secondary,#9a9a9a);line-height:1.5}
+  .pf input[type=text],.pf input[type=number],.pf select,.pf textarea{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid var(--border-color,rgba(255,255,255,.18));background:rgba(255,255,255,.04);color:var(--text-primary,#fff);font:inherit;font-size:14px}
+  .pf textarea{min-height:170px;line-height:1.5;resize:vertical}
+  .pf input:focus,.pf select:focus,.pf textarea:focus{outline:none;border-color:var(--accent-purple,#7c3aed)}
+  .pf-g{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .pf-f{margin-bottom:18px}
+  .pf-chk{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
+  .pf-chk input{margin-top:3px}
+  .pf-chk label{margin:0;font-weight:500}
+  .pf-err{margin:0 0 18px;padding:12px 16px;border-radius:10px;border:1px solid rgba(248,113,113,.5);background:rgba(248,113,113,.08);font-size:14px}
+  .pf-warn{margin:0 0 18px;padding:12px 16px;border-radius:10px;border:1px solid rgba(245,197,66,.45);background:rgba(245,197,66,.07);font-size:13px;line-height:1.55}
+  .pf-act{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+  .pf-b{padding:10px 20px;border-radius:10px;border:1px solid var(--border-color,rgba(255,255,255,.18));background:var(--card-bg,transparent);color:var(--text-primary,#fff);font:inherit;font-size:14px;cursor:pointer;text-decoration:none}
+  .pf-p{background:var(--accent-purple,#7c3aed);border-color:var(--accent-purple,#7c3aed);color:#fff}
+  @media (max-width:640px){.pf-g{grid-template-columns:1fr}}
+</style>
+
+<div class="pf">
+  <h1>{% if plan %}Editar plan{% else %}Nuevo plan{% endif %}</h1>
+  <p class="sub">{% if plan %}Los cambios se publican al guardar, en la web y en ZEDITH.{% else %}Al guardarlo aparece en la web y en ZEDITH si lo dejas vigente.{% endif %}</p>
+
+  {% if error %}<div class="pf-err">{{ error }}</div>{% endif %}
+  {% if plan and suscritos %}<div class="pf-warn">{{ suscritos }} cliente(s) tienen este plan. Cambiar el precio aquí no modifica lo que ya pagan: su tarifa se ajusta en su ficha de cliente.</div>{% endif %}
+
+  <form method="post" class="pf-card" autocomplete="off">
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="nombre">Nombre del plan</label>
+        <input type="text" id="nombre" name="nombre" maxlength="60" value="{{ f.nombre }}" required>
+      </div>
+      <div class="pf-f">
+        <label for="precio">Precio mensual (MXN)</label>
+        <input type="text" id="precio" name="precio" inputmode="decimal" placeholder="2500" value="{{ f.precio }}">
+        <span class="ayuda">Déjalo vacío si se cotiza a la medida.</span>
+      </div>
+    </div>
+
+    <div class="pf-f">
+      <label for="descripcion">Descripción corta</label>
+      <input type="text" id="descripcion" name="descripcion" maxlength="120" value="{{ f.descripcion }}">
+      <span class="ayuda">Máximo 120 caracteres. Aparece debajo del nombre.</span>
+    </div>
+
+    <div class="pf-f">
+      <label for="incluye">Qué incluye</label>
+      <textarea id="incluye" name="incluye">{{ f.incluye }}</textarea>
+      <span class="ayuda">Un elemento por línea. Cada línea se muestra como un punto de la lista.</span>
+    </div>
+
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="categoria">Dónde se muestra</label>
+        <select id="categoria" name="categoria">
+          <option value="tamano" {{ 'selected' if f.categoria == 'tamano' }}>Membresías por nivel (cuadrícula principal)</option>
+          <option value="ciber" {{ 'selected' if f.categoria == 'ciber' }}>Ciberseguridad aparte (sección propia)</option>
+        </select>
+      </div>
+      <div class="pf-f">
+        <label for="bd_incluida">Base de datos incluida</label>
+        <input type="text" id="bd_incluida" name="bd_incluida" maxlength="60" placeholder="5 GB" value="{{ f.bd_incluida }}">
+        <span class="ayuda">Opcional. Ej.: 5 GB, o «Dedicada».</span>
+      </div>
+    </div>
+
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="orden">Orden</label>
+        <input type="number" id="orden" name="orden" step="1" value="{{ f.orden }}">
+        <span class="ayuda">Menor número aparece primero.</span>
+      </div>
+      <div></div>
+    </div>
+
+    <div class="pf-chk"><input type="checkbox" id="a_medida" name="a_medida" {{ 'checked' if f.a_medida }}>
+      <label for="a_medida">Se cotiza a la medida<span class="ayuda">Con precio muestra «Desde $X»; sin precio muestra «A tu medida».</span></label></div>
+    <div class="pf-chk"><input type="checkbox" id="destacado" name="destacado" {{ 'checked' if f.destacado }}>
+      <label for="destacado">Plan destacado<span class="ayuda">Se resalta en la web como el recomendado.</span></label></div>
+    <div class="pf-chk"><input type="checkbox" id="activo" name="activo" {{ 'checked' if f.activo }}>
+      <label for="activo">Vigente<span class="ayuda">Si lo desmarcas, se oculta de la web y de ZEDITH; los clientes que lo tienen no se afectan.</span></label></div>
+
+    <div class="pf-act">
+      <button class="pf-b pf-p" type="submit">{% if plan %}Guardar cambios{% else %}Crear plan{% endif %}</button>
+      <a class="pf-b" href="{{ url_for('membresias') }}">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

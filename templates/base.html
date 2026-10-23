@@ -189,7 +189,7 @@
             <a href="/panel" class="nav-item {% if request.path == '/panel' %}active{% endif %}">
                 <i class="ph ph-squares-four"></i> Tablero Global
             </a>
-            <a href="/membresias" class="nav-item {% if request.path == '/membresias' %}active{% endif %}">
+            <a href="/membresias" class="nav-item {% if request.path.startswith('/membresias') %}active{% endif %}">
                 <i class="ph ph-credit-card"></i> Membresías
             </a>
             <a href="/clientes" class="nav-item {% if request.path.startswith('/clientes') %}active{% endif %}">

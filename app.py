@@ -56,6 +56,7 @@ class Plan(db.Model):
     bd_incluida = db.Column(db.String(60))                    # ej. "5 GB"
     activo = db.Column(db.Boolean, default=True)              # False = plan retirado (se conserva por clientes ya suscritos)
     orden = db.Column(db.Integer, default=0)
+    semilla = db.Column(db.String(40))                        # clave del plan inicial; no cambia aunque lo renombres
 
 
 class Cliente(db.Model):
@@ -260,7 +261,8 @@ def migrar_sqlite():
     nuevas = {
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
         "plan": [("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"),
-                 ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0")],
+                 ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
+                 ("semilla", "VARCHAR(40)")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
@@ -274,23 +276,29 @@ def migrar_sqlite():
 
 
 # (nombre, precio mensual MXN, a_medida, descripción, incluye separado por |, destacado, categoría, BD incluida, orden)
-# Los precios son una propuesta inicial: ajústalos aquí y se actualizan solos al reiniciar la app.
+# Carga INICIAL de planes (solo se usa la primera vez). Después se editan desde el panel: Membresías.
 PLANES_INICIALES = [
-    ("ZEDYTH Negocio Chico", 1200, False, "Un negocio o una sola sucursal",
-     "Dominio y hosting|Base de datos PostgreSQL en la nube|Respaldos automáticos|Ciberseguridad básica|Mantenimiento y monitoreo|Soporte por WhatsApp en horario hábil",
+    ("Esencial", 1200, False, "Para aplicaciones de complejidad básica.",
+     "Arquitectura: alojamiento y mantenimiento de ecosistemas ligeros e interfaces operativas|Ciberseguridad base: encriptación estándar de datos, certificados SSL y protección contra inyecciones SQL|Soporte: asistencia técnica 24/7 con nuestra IA, ZEDITH",
      False, "tamano", "1 GB", 1),
-    ("ZEDYTH Negocio Mediano", 2500, False, "Operación diaria con varios usuarios",
-     "Todo lo del plan Chico|Base de datos más amplia|Actualización de dependencias|Monitoreo continuo|Soporte prioritario",
+    ("Ascenso", 2500, False, "Para sistemas de complejidad media.",
+     "Arquitectura: gestión de bases de datos relacionales, automatización de reportes y estructuración de usuarios|Ciberseguridad intermedia: backups programados y monitoreo continuo de tiempo de actividad (uptime)|Soporte: ZEDITH 24/7 y asistencia técnica por WhatsApp en horario hábil",
      True, "tamano", "5 GB", 2),
-    ("ZEDYTH Negocio Grande", 4800, False, "Alto volumen y varias sucursales",
-     "Todo lo del plan Mediano|Base de datos de alto volumen|Respaldos con mayor frecuencia|Bolsa de 4 horas al mes para cambios menores|Soporte con respuesta rápida",
+    ("Scales", 4800, False, "Para arquitecturas robustas y escalables.",
+     "Arquitectura: integraciones complejas con APIs de terceros (pasarelas de pago, facturación) y automatización de procesos pesados|Ciberseguridad avanzada: firewall de aplicación web (WAF) y bloqueo automático de intrusiones|Soporte: escalamiento rápido a ingenieros especializados por WhatsApp",
      False, "tamano", "20 GB", 3),
-    ("ZEDYTH Corporativo y Cadenas", 9000, True, "Súper grandes y cadenas con muchas sucursales",
-     "Infraestructura dedicada|Base de datos a la medida|Contrato de servicio (SLA)|Soporte VIP|Desarrollo activo de nuevas funciones",
-     False, "tamano", "A la medida", 4),
-    ("ZEDYTH CyberShield Avanzada", 4500, True, "Solo ciberseguridad avanzada, sin hosting ni dominio",
-     "Pruebas de penetración (pentesting)|Hacking ético sobre tu aplicación|Reporte de vulnerabilidades y plan de corrección|Auditoría de seguridad y bóveda de credenciales|Se contrata por separado",
-     False, "ciber", None, 5),
+    ("Insignia", 8000, False, "Para sistemas de alta demanda transaccional.",
+     "Arquitectura: soporte para alto volumen de tráfico, gestión multi-sucursal y procesamiento de datos en tiempo real|Ciberseguridad avanzada: trazabilidad de accesos y auditoría de logs para detectar riesgos y fraudes internos|Soporte: prioridad en tiempo de respuesta y revisión de métricas de rendimiento",
+     False, "tamano", "50 GB", 4),
+    ("X Prime", 14000, False, "Para ecosistemas críticos interconectados.",
+     "Arquitectura: mantenimiento de infraestructuras complejas con varias aplicaciones trabajando en sincronía|Ciberseguridad proactiva: monitoreo 24/7 de vulnerabilidades y redundancia de datos en múltiples servidores|Soporte: línea directa prioritaria y un ingeniero líder exclusivo",
+     False, "tamano", "100 GB", 5),
+    ("Enterprise", None, True, "El nivel corporativo definitivo. Cotización a la medida.",
+     "Inclusión total: todo el plan X Prime sin límites y todo el esquema de inteligencia y protección de Zenith|Desarrollo a la medida: módulos y funciones construidos exclusivamente para tu corporación, integrados de forma nativa|Infraestructura aislada: servidores dedicados y privados, no compartidos con ningún otro cliente|Ciberseguridad Zero-Trust: protección máxima, cifrado de secretos industriales y auditorías constantes|SLA garantizado: contrato de disponibilidad del 99.99% y equipo de respuesta a incidentes asignado exclusivamente a tu empresa",
+     False, "tamano", "Dedicada", 6),
+    ("Zenith", 6500, True, "Plan exclusivo de ciberseguridad avanzada e inteligencia, para infraestructuras existentes.",
+     "Arquitectura Zero-Trust: ningún usuario ni dispositivo es confiable por defecto; todo se verifica constantemente|Protección de datos sensibles y patentes: cifrado de grado militar para secretos industriales, fórmulas, código fuente y bases de datos de alto valor|Pruebas de penetración (pentesting): ataques simulados y programados para encontrar y parchar vulnerabilidades antes que los atacantes reales|Inteligencia interna: rastreo y auditoría forense de fraudes internos o desvíos de capital, e investigación de comercialización ilegal de productos o bases de datos por parte de empleados|Neutralización de hackeos y recuperación ante desastres|Se contrata aparte: sin hosting, dominio ni base de datos",
+     False, "ciber", None, 7),
 ]
 
 # Almacenamiento adicional: se suma a lo que ya incluye el plan. (almacenamiento, extra mensual MXN)
@@ -305,17 +313,26 @@ def planes_visibles(categoria=None):
 
 
 def sembrar_planes():
-    nombres = set()
-    for n, p, am, d, inc, dest, cat, bd, orden in PLANES_INICIALES:
-        nombres.add(n)
-        plan = Plan.query.filter_by(nombre=n).first() or Plan(nombre=n)
+    """Carga inicial de planes. Solo crea los que faltan; nunca sobrescribe lo que edites en el panel.
+    La primera vez (cuando aún no existe ninguno de los planes iniciales) retira los planes anteriores
+    sin borrarlos, para que los clientes que ya los tienen conserven su suscripción."""
+    claves = {n.lower().replace(" ", "-"): t for t in PLANES_INICIALES for n in [t[0]]}
+    existentes = {p.semilla: p for p in Plan.query.filter(Plan.semilla.isnot(None)).all()}
+    primera_vez = not existentes
+    for clave, (n, p, am, d, inc, dest, cat, bd, orden) in claves.items():
+        if clave in existentes:
+            continue
+        plan = Plan.query.filter_by(nombre=n).first() if primera_vez else None
+        if plan is None:
+            if Plan.query.filter_by(nombre=n).first():      # el nombre ya lo usa otro plan: no choques
+                continue
+            plan = Plan(nombre=n)
         plan.precio, plan.a_medida, plan.descripcion, plan.incluye, plan.destacado = p, am, d, inc, dest
-        plan.categoria, plan.bd_incluida, plan.orden, plan.activo = cat, bd, orden, True
+        plan.categoria, plan.bd_incluida, plan.orden, plan.activo, plan.semilla = cat, bd, orden, True, clave
         db.session.add(plan)
-    # Los planes anteriores (Essential, Care, Core...) se retiran de la web pero NO se borran:
-    # los clientes que ya los tienen conservan su suscripción.
-    for viejo in Plan.query.filter(Plan.nombre.notin_(nombres)).all():
-        viejo.activo = False
+    if primera_vez:
+        for viejo in Plan.query.filter(Plan.semilla.is_(None)).all():
+            viejo.activo = False
     db.session.commit()
 
 def sembrar_usuario_admin():
@@ -427,8 +444,104 @@ def nuevo_cliente():
     return redirect(url_for('index'))
 
 
+def _valores_plan(plan=None):
+    """Valores para mostrar en el formulario de un plan (nuevo si plan es None)."""
+    if plan is None:
+        return {"nombre": "", "precio": "", "a_medida": False, "descripcion": "", "incluye": "",
+                "destacado": False, "categoria": "tamano", "bd_incluida": "", "orden": 0, "activo": True}
+    return {"nombre": plan.nombre, "precio": "" if plan.precio is None else f"{plan.precio:g}",
+            "a_medida": bool(plan.a_medida), "descripcion": plan.descripcion or "",
+            "incluye": (plan.incluye or "").replace("|", "\n"), "destacado": bool(plan.destacado),
+            "categoria": plan.categoria or "tamano", "bd_incluida": plan.bd_incluida or "",
+            "orden": plan.orden or 0, "activo": plan.activo is not False}
+
+
+def _leer_form_plan(plan):
+    """Valida el formulario y lo aplica a `plan`. Devuelve (error, valores_para_remostrar)."""
+    v = {"nombre": campo("nombre"), "precio": campo("precio"), "a_medida": "a_medida" in request.form,
+         "descripcion": campo("descripcion"), "incluye": request.form.get("incluye") or "",
+         "destacado": "destacado" in request.form, "categoria": campo("categoria"),
+         "bd_incluida": campo("bd_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form}
+    if not v["nombre"]:
+        return "Escribe un nombre para el plan.", v
+    if len(v["nombre"]) > 60:
+        return "El nombre admite hasta 60 caracteres.", v
+    if Plan.query.filter(Plan.nombre == v["nombre"], Plan.id != (plan.id or 0)).first():
+        return "Ya existe un plan con ese nombre.", v
+    if len(v["descripcion"]) > 120:
+        return f"La descripción admite hasta 120 caracteres (llevas {len(v['descripcion'])}).", v
+    crudo = v["precio"].replace("$", "").replace(",", "").replace("MXN", "").strip()
+    try:
+        precio = float(crudo) if crudo else None
+    except ValueError:
+        return "El precio debe ser un número, por ejemplo 2500. Déjalo vacío si se cotiza a la medida.", v
+    if precio is not None and precio < 0:
+        return "El precio no puede ser negativo.", v
+    try:
+        orden = int(v["orden"])
+    except ValueError:
+        return "El orden debe ser un número entero.", v
+    if v["categoria"] not in ("tamano", "ciber"):
+        v["categoria"] = "tamano"
+    lineas = [l.strip().replace("|", "/") for l in v["incluye"].splitlines() if l.strip()]
+    plan.nombre, plan.precio, plan.a_medida, plan.descripcion = v["nombre"], precio, v["a_medida"], v["descripcion"]
+    plan.incluye, plan.destacado, plan.categoria = "|".join(lineas), v["destacado"], v["categoria"]
+    plan.bd_incluida, plan.orden, plan.activo = v["bd_incluida"] or None, orden, v["activo"]
+    return None, v
+
+
 @app.route('/membresias')
 def membresias():
+    """Administración de membresías: lista de todos los planes, vigentes y retirados."""
+    planes = Plan.query.order_by(Plan.categoria, Plan.orden, Plan.id).all()
+    suscritos = {p.id: Suscripcion.query.filter_by(plan_id=p.id).count() for p in planes}
+    return render_template('planes_admin.html', planes=planes, suscritos=suscritos, dinero=dinero,
+                           msg=request.args.get('msg'))
+
+
+@app.route('/membresias/nuevo', methods=['GET', 'POST'])
+def plan_nuevo():
+    error, valores = None, _valores_plan()
+    if request.method == 'POST':
+        plan = Plan()
+        error, valores = _leer_form_plan(plan)
+        if not error:
+            db.session.add(plan)
+            db.session.flush()
+            registrar("crear", "Plan", plan.id, f"{plan.nombre} · {dinero(plan.precio)}")
+            db.session.commit()
+            return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» creado."))
+        db.session.rollback()
+    return render_template('plan_form.html', f=valores, plan=None, error=error, suscritos=0)
+
+
+@app.route('/membresias/<int:plan_id>/editar', methods=['GET', 'POST'])
+def plan_editar(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+    error, valores = None, _valores_plan(plan)
+    if request.method == 'POST':
+        error, valores = _leer_form_plan(plan)
+        if not error:
+            registrar("editar", "Plan", plan.id, f"{plan.nombre} · {dinero(plan.precio)}")
+            db.session.commit()
+            return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» actualizado."))
+        db.session.rollback()
+    suscritos = Suscripcion.query.filter_by(plan_id=plan.id).count()
+    return render_template('plan_form.html', f=valores, plan=plan, error=error, suscritos=suscritos)
+
+
+@app.route('/membresias/<int:plan_id>/activo', methods=['POST'])
+def plan_activo(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+    plan.activo = plan.activo is False          # retirado -> vigente; vigente -> retirado
+    registrar("activar" if plan.activo else "retirar", "Plan", plan.id, plan.nombre)
+    db.session.commit()
+    return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» " + ("vigente de nuevo." if plan.activo else "retirado de la web.")))
+
+
+@app.route('/membresias/vista')
+def membresias_vista():
+    """Vista de tarjetas (la anterior)."""
     planes = []
     for p in planes_visibles():
         if p.destacado:
