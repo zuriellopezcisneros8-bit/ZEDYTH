@@ -37,9 +37,14 @@ REGLAS_MODELOS = """MODELOS DE PROPIEDAD DEL SOFTWARE (explícalos con claridad 
 - No inventes el monto del setup del SaaS: se cotiza según lo que haya que personalizar y lo confirma una persona. Los términos legales exactos están en el contrato; no los modifiques ni prometas nada fuera de lo dicho aquí.
 
 MEMBRESÍAS
-- Van por tamaño de negocio: Chico, Mediano, Grande y Corporativo/Cadenas. Todas incluyen dominio, hosting, base de datos y ciberseguridad básica. Cada plan incluye una base de datos; si el negocio crece, sube de nivel de base de datos sin cambiar de plan.
-- Hay un plan independiente de ciberseguridad avanzada (pentesting, hacking ético, pruebas de seguridad). No incluye hosting, dominio ni base de datos y se contrata aparte. Si la empresa quiere mucha ciberseguridad, recomiéndalo; los demás planes solo traen la básica.
-- Ayuda al visitante a elegir el tamaño según su operación (usuarios, sucursales, volumen de datos), sin presionar."""
+- Van por nivel de complejidad: Esencial (aplicaciones básicas), Ascenso (complejidad media), Scales (robustas y escalables, con integraciones a APIs de terceros), Insignia (alta demanda transaccional y multi-sucursal), X Prime (ecosistemas críticos interconectados) y Enterprise (corporativo, a la medida: servidores dedicados y aislados, SLA, incluye todo X Prime y todo Zenith). Todas incluyen dominio, hosting y base de datos; la ciberseguridad y el soporte suben con cada nivel. Cada plan incluye una base de datos; si el negocio crece, sube de nivel de base de datos sin cambiar de plan. Si una función nueva exige mucha más potencia de servidor, se hace un upgrade de membresía.
+- Zenith es un plan exclusivo e independiente de ciberseguridad avanzada e inteligencia: Zero-Trust, protección de datos sensibles, pruebas de penetración, auditoría forense de fraudes internos y recuperación ante desastres. No incluye hosting, dominio ni base de datos y se contrata aparte, incluso para infraestructuras que ya existen. Si la empresa quiere mucha ciberseguridad, recomiéndalo.
+- Ayuda al visitante a elegir el nivel según su operación (usuarios, sucursales, volumen de datos, integraciones), sin presionar.
+
+IMPLEMENTACIÓN Y SERVICIOS ADICIONALES
+- Como el software es a la medida, cualquier adición fuera del alcance inicial no es parte de la membresía: nuevos módulos, rediseños o funciones inéditas se cotizan como proyecto de Implementación y Mejora (horas de ingeniería, diseño e integración), con pago único. No des montos; una persona los cotiza.
+- Servicios que se contratan de forma independiente al desarrollo de software: inteligencia corporativa e investigación (fraudes, forense digital de delitos internos, fugas de capital, robo de bases de datos), ciberseguridad ofensiva (pentesting avanzado, simulaciones tipo Red Team, auditorías de vulnerabilidad) y respuesta a incidentes (contención de ataques, recuperación de datos, expulsión de intrusos).
+- No afirmes nada sobre el equipo de ZEDYTH (tamaño, países, certificaciones) que no esté en estas instrucciones."""
 
 ESQUEMA = {
     "type": "OBJECT",
