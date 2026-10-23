@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e0d0c">
+<link rel="icon" type="image/png" href="/static/img/zedyth/favicon.png">
+<title>{% if doc == 'privacidad' %}Aviso de privacidad{% else %}Términos de servicio{% endif %} | ZEDYTH Technologies</title>
+<meta name="description" content="{% if doc == 'privacidad' %}Aviso de privacidad de ZEDYTH Technologies.{% else %}Términos de servicio de ZEDYTH Technologies.{% endif %}">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050505;--tx:#fff;--mu:#9a9a9a;--bd:rgba(255,255,255,.1)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--tx);line-height:1.7}
+a{color:inherit}
+.top{border-bottom:1px solid var(--bd);padding:18px 20px}.top a{text-decoration:none;font-size:14px;color:var(--mu)}.top a:hover{color:#fff}
+main{max-width:780px;margin:0 auto;padding:48px 20px 80px}
+h1{font-size:clamp(28px,5vw,40px);letter-spacing:-1px;margin:0 0 6px;line-height:1.15}
+h2{font-size:20px;margin:36px 0 8px;letter-spacing:-.3px}
+p,li{color:#cfcfcf;font-size:15px}li{margin:4px 0}
+.up{color:var(--mu);font-size:13px;margin:0 0 28px}
+.pend{background:rgba(245,197,66,.14);border-radius:4px;padding:0 4px;color:#f5c542}
+.tabs{display:flex;gap:16px;margin:0 0 28px;font-size:14px}.tabs a{color:var(--mu);text-decoration:none}.tabs a.on{color:#fff;border-bottom:1px solid #fff}
+footer{border-top:1px solid var(--bd);padding:26px 20px;text-align:center;color:var(--mu);font-size:13px}
+</style>
+</head>
+<body>
+<div class="top"><a href="{{ url_for('inicio') }}">← Volver a ZEDYTH Technologies</a></div>
+<main>
+<div class="tabs"><a href="{{ url_for('privacidad') }}" class="{{ 'on' if doc == 'privacidad' }}">Aviso de privacidad</a><a href="{{ url_for('terminos') }}" class="{{ 'on' if doc == 'terminos' }}">Términos de servicio</a></div>
+
+{% if doc == 'privacidad' %}
+<h1>Aviso de privacidad</h1>
+<p class="up">Última actualización: {{ legal.actualizado }}</p>
+
+<h2>1. Responsable de tus datos personales</h2>
+<p><span class="{{ 'pend' if '[COMPLETAR' in legal.razon_social }}">{{ legal.razon_social }}</span>, que opera bajo la marca ZEDYTH Technologies (en adelante, «ZEDYTH»), con domicilio en <span class="{{ 'pend' if '[COMPLETAR' in legal.domicilio }}">{{ legal.domicilio }}</span>, es responsable del tratamiento de tus datos personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares. Puedes contactarnos en <a href="mailto:{{ contacto.email }}">{{ contacto.email }}</a>.</p>
+
+<h2>2. Datos personales que recabamos</h2>
+<ul>
+<li><b>Contacto y cotización</b> (WhatsApp, llamada, correo o el asistente Zedith): nombre, medio de contacto (teléfono o correo), nombre y giro de tu negocio, tipo de sistema que buscas, funciones deseadas, presupuesto, plazo y el resumen de la conversación.</li>
+<li><b>Opiniones y reseñas:</b> nombre que escribas, calificación de 1 a 5 estrellas y comentario.</li>
+<li><b>Datos técnicos:</b> tu dirección IP, que usamos de forma temporal para prevenir spam y abuso en los formularios y en el asistente. Si activamos analítica del sitio, también datos agregados de navegación.</li>
+<li><b>Clientes:</b> los datos necesarios para contratar, facturar y prestar el servicio.</li>
+</ul>
+<p>No solicitamos datos personales sensibles. Te pedimos no compartirlos en formularios ni en la conversación con Zedith.</p>
+
+<h2>3. Para qué usamos tus datos</h2>
+<p><b>Finalidades necesarias:</b> responder tus mensajes, elaborar propuestas y cotizaciones, dar seguimiento a tu solicitud, contratar y facturar servicios, moderar y publicar las opiniones que envíes, y proteger el sitio y a nuestros clientes contra fraude, abuso y ataques.</p>
+<p><b>Finalidades adicionales:</b> generar estadísticas y mejorar el sitio y nuestros servicios. Si no deseas que usemos tus datos para estas finalidades, escríbenos al correo indicado y dejaremos de hacerlo, sin afectar el servicio que solicitaste.</p>
+
+<h2>4. Con quién compartimos tus datos</h2>
+<p>No vendemos tus datos personales. Los compartimos únicamente con proveedores que nos prestan servicios para operar el sitio (alojamiento, correo y servicios de inteligencia artificial del asistente Zedith), bajo la obligación de protegerlos, y con autoridades cuando la ley lo exija.</p>
+
+<h2>5. Derechos ARCO, revocación y limitación de uso</h2>
+<p>Tienes derecho a acceder a tus datos, rectificarlos, cancelarlos u oponerte a su tratamiento, así como a revocar tu consentimiento o limitar el uso de tus datos. Envía tu solicitud a <a href="mailto:{{ contacto.email }}">{{ contacto.email }}</a> indicando tu nombre, los datos y el derecho que deseas ejercer, y un documento que acredite tu identidad. Te responderemos en los plazos que marca la ley.</p>
+<p>Si publicamos una opinión tuya y quieres que la retiremos, también puedes pedirlo por ese medio.</p>
+
+<h2>6. Cookies y tecnologías similares</h2>
+<p>El sitio puede usar cookies o tecnologías similares para medir su uso. Puedes desactivarlas desde la configuración de tu navegador.</p>
+
+<h2>7. Cambios a este aviso</h2>
+<p>Podemos actualizar este aviso. La versión vigente siempre estará en esta página, con su fecha de actualización.</p>
+
+{% else %}
+<h1>Términos de servicio</h1>
+<p class="up">Última actualización: {{ legal.actualizado }}</p>
+
+<h2>1. Aceptación</h2>
+<p>Al usar este sitio o contratar servicios de ZEDYTH Technologies («ZEDYTH») aceptas estos términos. Los servicios contratados se rigen además por el contrato o la propuesta firmada con cada cliente, que prevalece sobre este texto en lo que se contradigan.</p>
+
+<h2>2. Nuestros servicios</h2>
+<ul>
+<li><b>Software a la medida con membresía mensual.</b> No usamos plantillas. Cada membresía refleja la complejidad, la arquitectura de servidores y el nivel de ciberseguridad del software desarrollado para el cliente, e incluye dominio, hosting y base de datos según el plan.</li>
+<li><b>Implementación y mejora.</b> Cualquier adición fuera del alcance inicial (nuevos módulos, rediseños o integraciones) se cotiza aparte por horas de ingeniería, diseño e integración, con pago único. Si la nueva función requiere más potencia de servidor, la membresía mensual puede subir de nivel.</li>
+<li><b>Zedyth Intelligence &amp; Cybersecurity.</b> Servicios que se contratan de forma independiente: inteligencia corporativa e investigación, ciberseguridad ofensiva y respuesta a incidentes.</li>
+</ul>
+
+<h2>3. Responsabilidad</h2>
+<p>En membresías, aplicaciones de comercio y servicios de ciberseguridad firmamos un contrato de responsabilidad. ZEDYTH responde por el mantenimiento de la aplicación, el correcto funcionamiento del código, la corrección de fallas en lo que desarrolla y el acompañamiento ante incidentes. No controlamos, y por tanto no respondemos directamente por, daños en bases de datos de servidores externos, fallas de hospedaje de terceros, problemas con dominios o registradores, ni cualquier servicio fuera de nuestro control; en esos casos haremos todo lo posible por ayudarte a resolver el inconveniente.</p>
+
+<h2>4. Propiedad intelectual</h2>
+<p>El código fuente, las arquitecturas y las plataformas SaaS desarrolladas por ZEDYTH, así como su marca, están protegidos. Se prohíbe copiar, distribuir, comercializar o usar sin autorización cualquiera de ellos, salvo lo que establezca por escrito el contrato con cada cliente.</p>
+
+<h2>5. Conductas prohibidas</h2>
+<ol>
+<li>La piratería, comercialización ilegal, copia o distribución no autorizada de código fuente o arquitectura SaaS desarrollada por ZEDYTH.</li>
+<li>La suplantación de identidad corporativa o el uso de nuestra marca para cometer fraudes.</li>
+<li>Cualquier ataque dirigido, espionaje industrial, intento de sabotaje o tráfico de datos que afecte a la compañía o a nuestros clientes.</li>
+</ol>
+<p>Estas conductas pueden implicar la terminación de los servicios y las acciones legales que correspondan.</p>
+
+<h2>6. Opiniones y reseñas</h2>
+<p>Puedes calificarnos de 1 a 5 estrellas. Tu opinión debe basarse en tu experiencia real, no contener ofensas, datos personales de terceros, publicidad ni spam. Revisamos cada opinión antes de publicarla y no modificamos la calificación ni el comentario; podemos no publicar o retirar las que incumplan estas reglas. Al enviarla autorizas que se publique en este sitio con el nombre que escribiste.</p>
+
+<h2>7. Asistente Zedith</h2>
+<p>Zedith es un asistente de inteligencia artificial en fase beta. Puede cometer errores, y sus respuestas no constituyen una cotización ni una oferta vinculante. Los precios y alcances definitivos son los de la propuesta o el contrato firmado.</p>
+
+<h2>8. Limitaciones</h2>
+<p>El sitio se ofrece «tal cual». No garantizamos que esté libre de interrupciones o errores, y podemos modificar su contenido, precios publicados o estos términos en cualquier momento; la versión vigente es la publicada en esta página.</p>
+
+<h2>9. Ley aplicable</h2>
+<p>Estos términos se rigen por las leyes de los Estados Unidos Mexicanos. Para su interpretación y cumplimiento, las partes se someten a los tribunales de <span class="{{ 'pend' if '[COMPLETAR' in legal.jurisdiccion }}">{{ legal.jurisdiccion }}</span>.</p>
+
+<h2>10. Contacto</h2>
+<p><a href="mailto:{{ contacto.email }}">{{ contacto.email }}</a> · <a href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a></p>
+{% endif %}
+</main>
+<footer>© {{ año }} ZEDYTH Technologies. ZEDYTH forma parte de THE ZMARTH ORGANIZATION.</footer>
+</body>
+</html>

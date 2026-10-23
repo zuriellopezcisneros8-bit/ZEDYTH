@@ -13,7 +13,7 @@ import notificar
 
 app = Flask(__name__)
 # Recuerda cambiar esta clave en producción
-app.config['SECRET_KEY'] = 'cambia-esto-por-una-clave-larga-y-segura-en-produccion'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cambia-esto-por-una-clave-larga-y-segura-en-produccion')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///zedyth.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -342,12 +342,28 @@ def sembrar_usuario_admin():
         db.session.add(admin)
         db.session.commit()
 
+# Las opiniones generales sobre ZEDYTH se guardan como reseñas de un proyecto interno
+# (categoría "General", oculto en la vitrina). Así reutilizan la moderación que ya existe.
+CAT_GENERAL = "General"
+
+
+def proyecto_general():
+    p = ProyectoPublico.query.filter_by(categoria=CAT_GENERAL).first()
+    if not p:
+        p = ProyectoPublico(nombre="ZEDYTH Technologies", categoria=CAT_GENERAL,
+                            descripcion="Opiniones generales sobre ZEDYTH Technologies.", visible=False)
+        db.session.add(p)
+        db.session.commit()
+    return p
+
+
 # Inicialización de la DB
 with app.app_context():
     db.create_all()
     migrar_sqlite()
     sembrar_planes()
     sembrar_usuario_admin()
+    proyecto_general()
 
 # --- SEGURIDAD Y PROTECCIÓN DE RUTAS ---------------------------------------
 
@@ -985,23 +1001,56 @@ def finanzas():
 
 # --- WEB PÚBLICA -----------------------------------------------------------
 # Únicas rutas que se pueden abrir sin iniciar sesión.
-RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo', 'zedith_chat'}
+RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
+                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
 _intentos_resena = {}   # ip -> [fechas]; límite simple anti-spam
+# Datos del responsable para el aviso de privacidad y los términos. Complétalos con variables de entorno
+# (LEGAL_RAZON, LEGAL_DOMICILIO, LEGAL_JURISDICCION) o editando estos valores.
+LEGAL = {"razon_social": os.environ.get("LEGAL_RAZON", "[COMPLETAR: razón social]"),
+         "domicilio": os.environ.get("LEGAL_DOMICILIO", "[COMPLETAR: domicilio fiscal]"),
+         "jurisdiccion": os.environ.get("LEGAL_JURISDICCION", "[COMPLETAR: ciudad y estado]"),
+         "actualizado": "octubre de 2026"}
+
+
+def _site_url():
+    """URL pública del sitio (define SITE_URL en producción, p. ej. https://tudominio.com)."""
+    base = (os.environ.get('SITE_URL') or request.url_root).rstrip('/')
+    if base.startswith('http://') and not re.match(r'http://(localhost|127\.|192\.168\.)', base):
+        base = 'https://' + base[7:]
+    return base
+
+
+def _ajustes_publicos():
+    """Opcionales por variable de entorno: Google Analytics (GA_ID) y agenda de llamadas (AGENDA_URL)."""
+    ga = os.environ.get('GA_ID', '').strip()
+    agenda = os.environ.get('AGENDA_URL', '').strip()
+    return {"ga_id": ga if re.fullmatch(r'[A-Za-z0-9-]{4,30}', ga) else None,
+            "agenda_url": agenda if agenda.startswith('https://') else None,
+            "site_url": _site_url()}
 
 
 @app.route('/')
 def inicio():
     vitrina = []
-    for p in ProyectoPublico.query.filter_by(visible=True).order_by(ProyectoPublico.id.desc()).all():
+    for p in ProyectoPublico.query.filter_by(visible=True).filter(ProyectoPublico.categoria != CAT_GENERAL)\
+            .order_by(ProyectoPublico.id.desc()).all():
         ok = sorted((r for r in p.resenas if r.aprobada), key=lambda r: r.id, reverse=True)
         prom = round(sum(r.calificacion for r in ok) / len(ok), 1) if ok else None
         vitrina.append({"p": p, "prom": prom, "n": len(ok), "recientes": ok[:3]})
+    # Opiniones generales sobre ZEDYTH (solo las aprobadas)
+    ok_gen = sorted((r for r in proyecto_general().resenas if r.aprobada), key=lambda r: r.id, reverse=True)
+    op_n = len(ok_gen)
+    op_prom = round(sum(r.calificacion for r in ok_gen) / op_n, 1) if op_n else None
+    op_dist = {n: sum(1 for r in ok_gen if r.calificacion == n) for n in (5, 4, 3, 2, 1)}
     return render_template('public.html', planes=planes_visibles('tamano'), plan_ciber=planes_visibles('ciber'),
                            niveles_bd=NIVELES_BD, vitrina=vitrina,
-                           contacto=CONTACTO, gracias=request.args.get('gracias'), año=date.today().year)
+                           opiniones=ok_gen[:9], op_n=op_n, op_prom=op_prom, op_dist=op_dist,
+                           gracias_op=request.args.get('gracias_op'), op_error=request.args.get('op_error'),
+                           contacto=CONTACTO, gracias=request.args.get('gracias'), año=date.today().year,
+                           **_ajustes_publicos())
 
 
 @app.route('/demo-pos')
@@ -1023,12 +1072,10 @@ def salir_equipo():
         logout_user()
     return redirect(url_for('demo_pos'))
 
-@app.route('/proyectos-publicos/<int:pid>/resena', methods=['POST'])
-def resena_enviar(pid):
-    p = db.get_or_404(ProyectoPublico, pid)
-    destino = url_for('inicio') + '#proyectos'
+def _guardar_resena(proyecto):
+    """Valida y guarda una reseña pendiente de aprobación. Devuelve True si se guardó."""
     ahora = datetime.utcnow()
-    ip = request.remote_addr or '-'
+    ip = _ip_cliente()   # respeta X-Forwarded-For (detrás de Render, remote_addr es el proxy)
     recientes = [t for t in _intentos_resena.get(ip, []) if ahora - t < timedelta(hours=1)]
     nombre = request.form.get('nombre', '').strip()[:80]
     comentario = request.form.get('comentario', '').strip()[:600]
@@ -1038,11 +1085,51 @@ def resena_enviar(pid):
         cal = 0
     # "web" es un campo trampa para bots; deben llenarse los datos y respetarse el límite por hora
     if request.form.get('web') or len(recientes) >= 3 or not nombre or not 1 <= cal <= 5 or len(comentario) < 5:
-        return redirect(destino)
+        return False
     _intentos_resena[ip] = recientes + [ahora]
-    db.session.add(Resena(proyecto_id=p.id, nombre=nombre, calificacion=cal, comentario=comentario))
+    db.session.add(Resena(proyecto_id=proyecto.id, nombre=nombre, calificacion=cal, comentario=comentario))
     db.session.commit()
-    return redirect(url_for('inicio', gracias=1) + '#proyectos')
+    return True
+
+
+@app.route('/proyectos-publicos/<int:pid>/resena', methods=['POST'])
+def resena_enviar(pid):
+    p = db.get_or_404(ProyectoPublico, pid)
+    if _guardar_resena(p):
+        return redirect(url_for('inicio', gracias=1) + '#proyectos')
+    return redirect(url_for('inicio') + '#proyectos')
+
+
+@app.route('/opiniones', methods=['POST'])
+def opinion_enviar():
+    """Opinión general sobre ZEDYTH (de 1 a 5 estrellas). Queda pendiente hasta que la apruebes en /resenas."""
+    if _guardar_resena(proyecto_general()):
+        return redirect(url_for('inicio', gracias_op=1) + '#opiniones')
+    return redirect(url_for('inicio', op_error=1) + '#opiniones')
+
+
+@app.route('/privacidad')
+def privacidad():
+    return render_template('legal.html', doc='privacidad', contacto=CONTACTO, legal=LEGAL, año=date.today().year)
+
+
+@app.route('/terminos')
+def terminos():
+    return render_template('legal.html', doc='terminos', contacto=CONTACTO, legal=LEGAL, año=date.today().year)
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    base = _site_url()
+    filas = ''.join(f"<url><loc>{base}{ruta}</loc></url>" for ruta in ('/', '/demo-pos', '/privacidad', '/terminos'))
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{filas}</urlset>'
+    return app.response_class(xml, mimetype='application/xml')
+
+
+@app.route('/robots.txt')
+def robots():
+    txt = f"User-agent: *\nAllow: /\nDisallow: /panel\nDisallow: /login\n\nSitemap: {_site_url()}/sitemap.xml\n"
+    return app.response_class(txt, mimetype='text/plain')
 
 
 @app.route('/resenas', methods=['GET', 'POST'])
@@ -1058,7 +1145,8 @@ def resenas_admin():
         return redirect(url_for('resenas_admin'))
     return render_template('resenas_admin.html',
                            pendientes=Resena.query.filter_by(aprobada=False).order_by(Resena.id).all(),
-                           proyectos=ProyectoPublico.query.order_by(ProyectoPublico.id.desc()).all())
+                           proyectos=ProyectoPublico.query.filter(ProyectoPublico.categoria != CAT_GENERAL)
+                           .order_by(ProyectoPublico.id.desc()).all())
 
 
 @app.route('/resenas/<int:rid>/<accion>', methods=['POST'])
@@ -1099,7 +1187,7 @@ def hechos_zedith():
         "niveles_bd": NIVELES_BD,
         "resenas": Resena.query.filter_by(aprobada=True).count(),
         "promedio": round(prom, 1) if prom else None,
-        "proyectos": ProyectoPublico.query.filter_by(visible=True).count(),
+        "proyectos": ProyectoPublico.query.filter_by(visible=True).filter(ProyectoPublico.categoria != CAT_GENERAL).count(),
         "cupo": os.environ.get("ZEDITH_CUPO_MES"),
         "promo": os.environ.get("ZEDITH_PROMO"),
         "promo_hasta": os.environ.get("ZEDITH_PROMO_HASTA"),

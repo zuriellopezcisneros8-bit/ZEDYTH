@@ -448,6 +448,32 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
 @media(max-width:900px){.hero{display:block;min-height:0;padding:0 0 110px}.himg{position:relative;aspect-ratio:1672/940;-webkit-mask-image:linear-gradient(180deg,#000 74%,transparent);mask-image:linear-gradient(180deg,#000 74%,transparent)}.himg:before{inset:0;background-position:center}.himg:after{background:linear-gradient(180deg,transparent 55%,rgba(11,10,9,.6))}.hero-in{margin-top:6px}}
 @media(prefers-reduced-motion:reduce){.himg:before{animation:none}}
 </style>
+{% set faq = [
+ ("¿Qué incluye la membresía mensual?", "Todas las membresías incluyen dominio, hosting y base de datos. La seguridad y el soporte crecen con cada nivel, y el precio refleja la complejidad, la arquitectura de servidores y el nivel de ciberseguridad que exige tu software."),
+ ("¿Ofrecen plantillas?", "No. Cada sistema se desarrolla a la medida de tu empresa; por eso no hay plantillas ni precios cerrados para todos los proyectos."),
+ ("¿Qué pasa si después necesito una función nueva?", "Cualquier adición fuera del alcance inicial se cotiza como un proyecto de implementación y mejora: horas de ingeniería, diseño e integración, con pago único. Si la nueva función requiere mucha más potencia de servidor, se hace un upgrade de tu membresía mensual."),
+ ("¿Puedo contratar solo ciberseguridad o inteligencia?", "Sí. Zedyth Intelligence & Cybersecurity se contrata de forma independiente al desarrollo de software: pruebas de penetración, simulaciones Red Team, auditorías de vulnerabilidad, investigación forense y respuesta a incidentes. Para infraestructuras ya existentes también tenemos el plan Zenith."),
+ ("¿Puedo ampliar el almacenamiento?", "Sí. Puedes sumar almacenamiento adicional por encima de lo que ya incluye tu plan. Los niveles y precios vigentes están en la sección de membresías."),
+ ("¿Qué cubre la garantía y qué no?", "Cubrimos el mantenimiento de la aplicación, el correcto funcionamiento del código, la corrección de fallas en lo que desarrollamos y el acompañamiento ante incidentes. Lo que depende de terceros, como fallas de hospedaje, dominios o bases de datos de servidores externos, queda fuera de nuestro control directo, pero siempre te ayudamos a resolverlo."),
+ ("¿Cómo empiezo?", "Cuéntanos qué necesita tu negocio por WhatsApp, teléfono o correo, o platica con Zedith, nuestro asistente de IA. Te respondemos con una propuesta."),
+ ("¿Las opiniones de la página son reales?", "Cualquier persona puede calificarnos de 1 a 5 estrellas. Revisamos cada opinión para filtrar spam y contenido ofensivo antes de publicarla, y no modificamos ni la calificación ni el comentario."),
+] %}
+<link rel="canonical" href="{{ site_url }}/">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"ZEDYTH Technologies","url":{{ site_url|tojson }},"logo":{{ (site_url ~ "/static/img/zedyth/apple-touch-icon.png")|tojson }},"email":{{ contacto.email|tojson }},"telephone":{{ contacto.tel_link|tojson }},"parentOrganization":{"@type":"Organization","name":"THE ZMARTH ORGANIZATION"}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{% for q, a in faq %}{"@type":"Question","name":{{ q|tojson }},"acceptedAnswer":{"@type":"Answer","text":{{ a|tojson }} } }{% if not loop.last %},{% endif %}{% endfor %}]}</script>
+{% if ga_id %}<script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_id }}"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','{{ ga_id }}');
+document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a');if(!a)return;var h=a.getAttribute('href')||'';if(h.indexOf('wa.me')>-1)gtag('event','contacto_whatsapp');else if(h.indexOf('tel:')===0)gtag('event','contacto_telefono');else if(h.indexOf('mailto:')===0)gtag('event','contacto_correo')});</script>{% endif %}
+<style>
+.wa-fab{position:fixed;left:18px;bottom:18px;z-index:30;width:54px;height:54px;border-radius:50%;background:#25d366;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 30px rgba(0,0,0,.5);transition:.2s}
+.wa-fab:hover{transform:translateY(-2px)}.wa-fab svg{width:28px;height:28px;fill:#fff}
+.step{padding:20px 22px}.step h3{font-size:17px;margin:10px 0 6px}.step p{font-size:14px;margin:0}
+.faq{max-width:820px;margin:0 auto;display:grid;gap:12px}
+.faq .card{padding:16px 22px}.faq details{margin:0}.faq summary{font-size:16px}.faq p{margin:10px 0 2px;color:var(--mu);font-size:15px}
+.bar{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mu);margin:5px 0}.bar i{flex:1;height:6px;border-radius:99px;background:var(--bd);overflow:hidden;display:block}.bar u{display:block;height:100%;background:var(--st)}
+.err{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.4);color:#f87171;padding:12px 18px;border-radius:12px;text-align:center;margin-bottom:24px}
+.legal-l{display:inline-flex;gap:14px;flex-wrap:wrap}.legal-l a{text-decoration:underline;text-underline-offset:3px}
+</style>
 </head>
 <body>
 <nav><div class="wrap">
@@ -622,6 +648,12 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
  <div class="trust"><small class="tag">Empresas que forman parte del ecosistema ZEDYTH</small><div class="row2"><span>ZMARTH</span><span>ZELECTE</span><span>ZEDYTHNET</span><span>ZEDITH</span></div></div>
 </div></section>
 
+<section id="proceso"><div class="wrap">
+ <h2>Así trabajamos</h2>
+ <p class="sub">Un proceso claro, de la primera conversación al soporte continuo.</p>
+ <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"><div class="card step"><span class="tag">Paso 1</span><h3>Conversación y diagnóstico</h3><p>Entendemos tu negocio, tus procesos y qué necesitas resolver.</p></div><div class="card step"><span class="tag">Paso 2</span><h3>Propuesta a la medida</h3><p>Te presentamos alcance, arquitectura y cotización. En membresías, comercio y ciberseguridad firmamos un contrato de responsabilidad.</p></div><div class="card step"><span class="tag">Paso 3</span><h3>Desarrollo</h3><p>Construimos tu software de principio a fin, revisándolo contigo.</p></div><div class="card step"><span class="tag">Paso 4</span><h3>Entrega y puesta en marcha</h3><p>Lo publicamos con dominio, hosting y base de datos listos, y te acompañamos en el arranque.</p></div><div class="card step"><span class="tag">Paso 5</span><h3>Membresía y soporte</h3><p>Mantenimiento, ciberseguridad y soporte continuo. Si tu negocio crece, escalamos contigo.</p></div></div>
+</div></section>
+
 <section id="precios"><div class="wrap">
  <h2>Precios claros</h2>
  <p class="sub">Primero eliges de quién es el código. Después, si quieres que nos encarguemos de todo, eliges tu plan de membresía.</p>
@@ -711,6 +743,34 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
  {% endif %}
 </div></section>
 
+<section id="opiniones"><div class="wrap">
+ <h2>Opiniones de clientes</h2>
+ <p class="sub">Tu opinión nos ayuda a mejorar y a que otras empresas decidan con confianza. Cada opinión se revisa antes de publicarse.</p>
+ {% if gracias_op %}<div class="ok">¡Gracias por tu opinión! Se publicará en cuanto la revisemos.</div>{% endif %}
+ {% if op_error %}<div class="err">No pudimos enviar tu opinión. Elige de 1 a 5 estrellas, escribe tu nombre y un comentario de al menos 5 caracteres. Si ya enviaste varias, intenta de nuevo más tarde.</div>{% endif %}
+ <div class="two">
+  <div class="card">
+   {% if op_n %}
+   <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><span style="font-size:44px;font-weight:700;line-height:1">{{ op_prom }}</span><span class="stars" style="font-size:22px">{{ '★' * (op_prom|round|int) }}{{ '☆' * (5 - (op_prom|round|int)) }}</span><span style="color:var(--mu);font-size:14px">{{ op_n }} opinión{{ '' if op_n == 1 else 'es' }}</span></div>
+   <div style="margin:14px 0 6px">{% for n in [5,4,3,2,1] %}<div class="bar"><span style="width:34px">{{ n }} ★</span><i><u style="width:{{ ((op_dist[n] * 100) / op_n)|round|int }}%"></u></i><span style="width:26px;text-align:right">{{ op_dist[n] }}</span></div>{% endfor %}</div>
+   {% for r in opiniones %}<div class="rev"><span class="stars">{{ '★' * r.calificacion }}{{ '☆' * (5 - r.calificacion) }}</span> <b>{{ r.nombre }}</b><p>{{ r.comentario }}</p></div>{% endfor %}
+   {% else %}
+   <h3>Aún no hay opiniones publicadas</h3><p>Si ya trabajaste con nosotros o probaste nuestras demos, sé la primera persona en calificarnos.</p>
+   {% endif %}
+  </div>
+  <div class="card hl"><h3>Deja tu opinión</h3><p style="margin-bottom:0">Califica tu experiencia de 1 a 5 estrellas.</p>
+   <form class="rf" method="POST" action="{{ url_for('opinion_enviar') }}">
+    <input type="text" name="nombre" placeholder="Tu nombre (y tu negocio, si quieres)" maxlength="80" required>
+    <div class="rate">{% for n in [5,4,3,2,1] %}<input type="radio" name="calificacion" id="og{{ n }}" value="{{ n }}" required><label for="og{{ n }}" title="{{ n }} estrellas">★</label>{% endfor %}</div>
+    <textarea name="comentario" placeholder="Cuéntanos tu experiencia" maxlength="600" required></textarea>
+    <input class="hp" type="text" name="web" tabindex="-1" autocomplete="off">
+    <button class="btn w" type="submit">Enviar opinión</button>
+    <small style="color:var(--mu);font-size:12px">Se publicará con el nombre que escribas, después de nuestra revisión. Consulta el <a href="{{ url_for('privacidad') }}" style="text-decoration:underline">aviso de privacidad</a>.</small>
+   </form>
+  </div>
+ </div>
+</div></section>
+
 <section id="garantia"><div class="wrap">
  <h2>Responsabilidad clara, sin letras chiquitas</h2>
  <p class="sub">En membresías, aplicaciones de comercio y servicios de ciberseguridad firmamos un contrato de responsabilidad.</p>
@@ -721,24 +781,31 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
  <p class="note">En esos casos no tenemos control directo, pero siempre haremos todo lo posible por ayudarte a manejarlo correctamente y resolver el inconveniente.</p>
 </div></section>
 
+<section id="faq"><div class="wrap">
+ <h2>Preguntas frecuentes</h2>
+ <p class="sub">Lo que más nos preguntan antes de empezar.</p>
+ <div class="faq">{% for q, a in faq %}<div class="card"><details><summary>{{ q }}</summary><p>{{ a }}</p></details></div>{% endfor %}</div>
+</div></section>
+
 <section id="grupo"><div class="wrap">
  <h2>Parte de THE ZMARTH ORGANIZATION</h2>
  <p class="sub">ZEDYTH pertenece a THE ZMARTH ORGANIZATION, holding e inversora que reúne a las compañías del grupo en telecomunicaciones, tecnología, inteligencia, biotecnología, alimentos e investigación.</p>
- <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTHNET Telecommunications</h3><p style="font-size:13px">Telecomunicaciones</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Zelecte</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Reserve</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZIECREATO</h3><p style="font-size:13px">Agencia de inteligencia de ZEDYTH</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Technologies</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Golden Flame Meat</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Yarifalte</h3><p style="font-size:13px">Biotecnología y bioingeniería</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Varezza</h3><p style="font-size:13px">Fast food</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Delicious Bread</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Delicious Pizzas</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Industries</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZERO</h3><p style="font-size:13px">Zmarth Experimental Research Organization</p></div></div>
+ <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTHNET Telecommunications</h3><p style="font-size:13px">Telecomunicaciones</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Zelecte</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Reserve</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZIECREATO</h3><p style="font-size:13px">Agencia de inteligencia de ZEDYTH</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Technologies</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Golden Flame Meat</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Yarifalet Coro</h3><p style="font-size:13px">Biotecnología y bioingeniería</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Varezza</h3><p style="font-size:13px">Fast food</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Delicious Bread</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Delicious Pizzas</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Industries</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZERO</h3><p style="font-size:13px">Zmarth Experimental Research Organization</p></div></div>
 </div></section>
 
 <section id="contacto"><div class="wrap"><div class="card hl" style="text-align:center;padding:50px 24px">
  <h2>Platiquemos de tu proyecto</h2><p class="sub" style="margin-bottom:26px">Cuéntanos qué necesita tu negocio y te respondemos con una propuesta.</p>
- <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a><a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
+ <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a>{% if agenda_url %}<a class="btn" href="{{ agenda_url }}" target="_blank" rel="noopener">Agendar una llamada</a>{% endif %}<a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
 </div></div></section>
 
-<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/zedyth-aguila-completo.webp" alt="ZEDYTH Technologies" width="190" height="114" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#grupo">Grupo</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
+<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/zedyth-aguila-completo.webp" alt="ZEDYTH Technologies" width="190" height="114" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="#opiniones">Opiniones</a><a href="#faq">FAQ</a><a href="#grupo">Grupo</a><a href="#contacto">Contacto</a><a href="{{ url_for('login') }}">Acceso clientes</a></div></div>
 <details class="aviso" style="margin-top:26px;font-size:12px;line-height:1.65;color:var(--mu)"><summary style="cursor:pointer;font-weight:600;color:var(--tx)">Aviso de la División de Inteligencia y Seguridad ZEDYTH</summary>
 <p style="margin:12px 0 6px">ZEDYTH opera bajo los más altos estándares de seguridad informática e inteligencia corporativa. Nuestra infraestructura y propiedad intelectual están protegidas por una división táctica internacional conformada por especialistas de élite de Israel, México, Rusia, Japón y Suiza.</p>
 <p style="margin:0 0 6px"><b>Cero tolerancia a actos ilícitos.</b> ZEDYTH monitorea activamente la clear, deep y dark web. Cualquier intento de vulnerar nuestra infraestructura será detectado inmediatamente. Queda estrictamente prohibido y será considerado un delito grave:</p>
 <ol style="margin:0 0 10px 18px;padding:0"><li>La piratería, comercialización ilegal, copia o distribución no autorizada de cualquier código fuente o arquitectura SaaS desarrollada por ZEDYTH.</li><li>La suplantación de identidad corporativa o el uso de nuestra marca para cometer fraudes.</li><li>Cualquier ataque dirigido, espionaje industrial, intento de sabotaje o tráfico de datos que afecte directamente a la compañía o a nuestros clientes.</li></ol>
 <p style="margin:0">Cualquier fraude, acto indebido o violación a estos términos no solo resultará en la terminación inmediata e irrefutable de los servicios, sino que será investigado exhaustivamente por nuestra División de Inteligencia y perseguido legalmente con todo el peso de las jurisdicciones internacionales correspondientes.</p></details>
-<div class="fb"><span>© {{ año }} ZEDYTH Technologies. ZEDYTH forma parte de THE ZMARTH ORGANIZATION.</span><b>INNOVACIÓN · SEGURIDAD · CRECIMIENTO</b></div></div></footer>
+<div class="fb"><span>© {{ año }} ZEDYTH Technologies. ZEDYTH forma parte de THE ZMARTH ORGANIZATION. <span class="legal-l"><a href="{{ url_for('privacidad') }}">Aviso de privacidad</a><a href="{{ url_for('terminos') }}">Términos de servicio</a></span></span><b>INNOVACIÓN · SEGURIDAD · CRECIMIENTO</b></div></div></footer>
+<a class="wa-fab" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener" aria-label="Escribir por WhatsApp"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 4h20a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3H13l-7 5v-5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z"/><circle cx="10.500" cy="13.500" r="1.800" fill="#25d366"/><circle cx="16" cy="13.500" r="1.800" fill="#25d366"/><circle cx="21.500" cy="13.500" r="1.800" fill="#25d366"/></svg></a>
 <div id="bot" data-wa="https://wa.me/{{ contacto.whatsapp }}" data-pos="{{ url_for('demo_pos') }}" data-ia="{{ url_for('zedith_chat') }}">
  <button class="fab" id="fab" type="button" aria-expanded="false" aria-label="Habla con ZEDITH, asistente de IA"><img class="fab-z" src="/static/img/zedyth/zedyth-aguila-oscuro.webp" alt="" width="36" height="20"><span class="l-lg">Habla con ZEDITH</span><span class="l-sm">ZEDITH</span></button>
  <div class="pnl" id="pnl" hidden role="dialog" aria-label="Zedith, asistente de ZEDYTH"><header><span class="zb"><img class="zb-z" src="/static/img/zedyth/zedyth-aguila.webp" alt="" width="48" height="26"><span><img class="zb-w" src="/static/img/zedyth/logo-zedith-blanco.webp" alt="ZEDITH" width="140" height="13"><em>Asistente de IA de ZEDYTH</em></span><u>BETA</u></span><button id="bx" type="button" aria-label="Cerrar">✕</button></header>
