@@ -26,7 +26,7 @@ a{color:inherit}
 h1,h2{font-family:'Cormorant Garamond',Georgia,serif;letter-spacing:-.5px;margin:0}
 h1{font-size:clamp(34px,6vw,58px);line-height:1.05}h2{font-size:clamp(26px,3.6vw,34px);margin-bottom:6px}
 .intro p{color:var(--mu);max-width:640px;margin:14px auto 0}
-.shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:40px;padding-bottom:80px;align-items:start}
+.shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:32px;padding-bottom:80px;align-items:start}
 .right{position:sticky;top:18px}
 .prog{display:flex;gap:6px;margin-bottom:8px}.prog i{flex:1;height:3px;border-radius:9px;background:var(--bd);transition:.3s}.prog i.on{background:var(--g)}
 .pn{font-size:12px;color:var(--mu);margin-bottom:22px;letter-spacing:.08em;text-transform:uppercase}
@@ -78,6 +78,21 @@ input[type=color]{width:44px;height:34px;padding:0;border:1px solid var(--bd);bo
 .fin{font-size:12px;color:var(--mu);margin-top:26px}.fin a{text-decoration:underline}
 @media(max-width:900px){.shell{grid-template-columns:1fr;gap:26px}.right{position:static;order:-1}.app{min-height:440px}.dev{max-width:310px}.pg{padding:10px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.cx{display:grid;gap:10px}.q{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px}.q p{margin:0 0 8px;font-size:14px;font-weight:600}.q small{display:block;color:var(--mu);font-weight:400;font-size:12px}.q .chips{gap:6px}.q .sb{margin-top:10px;padding-top:10px;border-top:1px dashed var(--bd)}
+.seg{display:flex;gap:6px;justify-content:center;margin-bottom:12px}.seg button{font:600 12px Inter,sans-serif;color:inherit;background:var(--card);border:1px solid var(--bd);border-radius:999px;padding:6px 14px;cursor:pointer}
+.devs{display:flex;gap:14px;justify-content:center;align-items:flex-start}.dw{flex:1;max-width:270px;min-width:0}.dw>small{display:block;text-align:center;color:var(--mu);font-size:11px;margin-top:8px}
+.devs[data-v=ios] .dw.and,.devs[data-v=and] .dw.ios{display:none}
+.dev{position:relative;max-width:none;margin:0;background:#000;box-shadow:0 24px 60px rgba(0,0,0,.55)}.dev .app{min-height:540px;font-size:12px}
+.dev.ios{border-radius:44px;padding:8px;border:2px solid #4a4a4e}.ios .app{border-radius:36px;font-family:-apple-system,'SF Pro Text',Inter,sans-serif}.dev.ios:before{content:'';position:absolute;top:17px;left:50%;width:62px;height:18px;margin-left:-31px;background:#000;border-radius:12px;z-index:3}
+.dev.and{border-radius:30px;padding:6px;border:2px solid #5b6270}.and .app{border-radius:24px;font-family:Roboto,Inter,sans-serif}.dev.and:before{content:'';position:absolute;top:14px;left:50%;width:9px;height:9px;margin-left:-4px;background:#000;border-radius:50%;z-index:3}
+.sb{display:flex;justify-content:space-between;padding:9px 18px 0;font:600 10px Inter,sans-serif;background:var(--pc);color:var(--on)}.ios .sb{padding:12px 20px 0}
+.hb{display:block;height:4px;width:36%;margin:4px auto 7px;border-radius:9px;background:var(--ptx);opacity:.65}.and .hb{width:24%}
+.app{--ppr:var(--pc);--pgr:var(--pc)}.pt em,.pr{color:var(--ppr)!important;opacity:1!important;font-weight:700}
+.fs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px 0}.fs span,.scan.cu,.pays span.cu{border:1px dashed currentColor;border-radius:999px;padding:2px 8px;font-size:10px}.fs span:not(.cu){background:var(--pcard);border:1px solid transparent}.fs span.cu{opacity:.75}.pays span.cu{background:none!important;color:var(--ptx)!important;border-style:dashed}
+.kpi .chb{flex:1.4}.bars{display:flex;gap:3px;align-items:flex-end;height:26px;margin-top:3px}.bars i{flex:1;background:var(--pgr);border-radius:2px 2px 0 0}
+.dx,.est{max-width:560px;margin-left:auto;margin-right:auto}.dx{border-radius:16px;padding:14px 16px;border:1px solid var(--bd);background:var(--card);margin-top:14px}.dx.ok{border-color:rgba(74,222,128,.55)}.dx.cu{border-color:var(--g)}
+.dx h3{font:600 15px Inter,sans-serif;margin:0 0 6px}.dx p,.dx li{font-size:12.5px;color:var(--mu);margin:4px 0}.dx ul{padding-left:18px;margin:6px 0}.zed{border-top:1px solid var(--bd);margin-top:10px;padding-top:8px}.zed b{color:var(--g);font-size:12px}
+@media(max-width:900px){.dw{max-width:none}.dev .app{min-height:500px}}
 </style>
 </head>
 <body>
@@ -94,29 +109,32 @@ input[type=color]{width:44px;height:34px;padding:0;border:1px solid var(--bd);bo
     <label class="lbl" for="nombre">Nombre de tu negocio <small>(opcional)</small></label><input type="text" id="nombre" maxlength="60" placeholder="Ej. Panadería La Espiga" autocomplete="organization">
     <div class="hint" id="h0" hidden>Elige el giro de tu negocio para continuar.</div></section>
 
-   <section class="paso" data-p="1"><h2>Tu marca</h2><p class="lead">Elige tus colores y mira cómo cambia tu sistema.</p>
+   <section class="paso" data-p="1"><h2>Tu operación</h2><p class="lead">Cuéntanos cómo funciona tu negocio. Con tus respuestas sabremos si la base Cloud te alcanza o si necesitas un sistema a la medida.</p><div class="cx" id="qs"></div></section>
+
+   <section class="paso" data-p="2"><h2>Tu marca</h2><p class="lead">Elige tus colores y mira cómo cambia tu sistema.</p>
     <span class="lbl" style="margin-top:0">Paletas</span><div class="sw" id="sw"></div>
     <div class="cols"><label>Color principal <input type="color" id="pc" value="#c8a96a"></label><label>Color de acento <input type="color" id="ac" value="#f3e7c9"></label></div>
+    <span class="lbl">Colores de tu app <small>(todo se puede cambiar)</small></span><div class="cols" id="cx"></div><button class="btn" type="button" id="cxr" style="margin-top:12px">Restablecer colores</button>
     <span class="lbl">Estilo</span><div class="chips" id="tema"></div>
     <span class="lbl">Esquinas</span><div class="chips" id="esq"></div>
     <span class="lbl">Tu logo <small>(opcional)</small></span>
     <div class="file"><label class="btn" for="logo">Subir logo</label><input type="file" id="logo" accept="image/*"><button class="btn" type="button" id="logoQ" hidden>Quitar</button><small id="logoT">Solo se ve en esta vista previa. Nos lo puedes mandar después por el chat.</small></div></section>
 
-   <section class="paso" data-p="2"><h2>Tu capacidad</h2><p class="lead">Con esto dimensionamos la infraestructura que necesitas. Una idea aproximada basta.</p>
+   <section class="paso" data-p="3"><h2>Tu capacidad</h2><p class="lead">Con esto dimensionamos la infraestructura que necesitas. Una idea aproximada basta.</p>
     <span class="lbl" style="margin-top:0">¿Cuántas personas usarán el sistema?</span><div class="chips" id="c-usuarios"></div>
     <span class="lbl">¿Cuántos clientes atiendes al día?</span><div class="chips" id="c-clientes"></div>
     <span class="lbl">¿Cuántos productos o servicios manejas?</span><div class="chips" id="c-productos"></div>
     <span class="lbl">¿Cuánto vendes al mes, más o menos?</span><div class="chips" id="c-ventas"></div>
     <span class="lbl">¿Cuántas sucursales tienes?</span><div class="chips" id="c-sucursales"></div></section>
 
-   <section class="paso" data-p="3"><h2>Funciones</h2><p class="lead">Marcamos las más comunes para tu giro. Quita o agrega lo que quieras.</p><div id="mods"></div></section>
+   <section class="paso" data-p="4"><h2>Funciones</h2><p class="lead">Ajusta lo que respondiste. Las marcadas «a medida» no existen en la base: se construyen para ti.</p><div id="mods"></div></section>
 
-   <section class="paso" data-p="4"><h2>Cómo lo quieres</h2><p class="lead">Elige cuánto quieres personalizar y de quién será la tecnología.</p>
+   <section class="paso" data-p="5"><h2>Cómo lo quieres</h2><p class="lead">Elige cuánto quieres personalizar y de quién será la tecnología.</p>
     <div class="mdls" id="mdls"></div><div class="hint" id="hm" hidden></div>
     <span class="lbl">¿Para cuándo lo necesitas?</span><div class="chips" id="plazo"></div>
     <label class="lbl" for="notas">Algo más que debamos saber <small>(opcional)</small></label><textarea id="notas" maxlength="300" placeholder="Ej. Quiero que imprima tickets, que tenga lector de código de barras, que se parezca a…"></textarea></section>
 
-   <section class="paso" data-p="5"><h2>Tu resumen</h2><p class="lead">Revisa tu configuración. Déjanos tus datos y seguimos por chat para afinarla.</p>
+   <section class="paso" data-p="6"><h2>Tu resumen</h2><p class="lead">Revisa tu configuración. Déjanos tus datos y seguimos por chat para afinarla.</p>
     <dl class="sum" id="sum"></dl>
     <form class="frm" id="frm" novalidate>
      <input type="text" id="cn" placeholder="Tu nombre" maxlength="120" autocomplete="name" required>
@@ -132,15 +150,13 @@ input[type=color]{width:44px;height:34px;padding:0;border:1px solid var(--bd);bo
   </div>
 
   <aside class="right" aria-label="Vista previa de tu sistema">
-   <div class="dev"><div class="app" id="prev">
-    <div class="ah"><span class="lg" id="pLogo">Z</span><b><span id="pNombre">Tu negocio</span><small id="pTipo">Punto de venta</small></b><button class="scan" id="pScan" type="button" hidden>▮▯▮ Escanear</button></div>
-    <div class="kpi" id="pKpi" hidden><div><small>Ventas hoy</small><b>$4,860</b></div><div><small>Tickets</small><b>63</b></div></div>
-    <div class="pg" id="pProds"></div>
-    <div class="cart"><div class="lines" id="pLines"></div><div class="tot"><span>Total</span><b id="pTot">$0</b></div><div class="pays" id="pPays"></div></div>
-   </div></div>
-   <p class="cap">Toca los productos: es una vista aproximada de cómo se vería tu sistema.</p>
+   <div class="seg" id="seg"></div>
+   <div class="devs" id="devs" data-v="ambos"></div>
+   <p class="cap">Toca los productos. Línea punteada = función <b>a medida</b>: no viene en la base, se construye para ti.</p>
+   <div class="dx" id="dx" aria-live="polite"></div>
    <div class="est" id="est" aria-live="polite"></div>
   </aside>
+  <template id="tpl"><div class="dev"><div class="app"><div class="sb"><span>9:41</span><span class="si"></span></div><div class="ah"><span class="lg pLogo">Z</span><b><span class="pNombre">Tu negocio</span><small class="pTipo"></small></b><button class="scan pScan" type="button" hidden>▮▯▮ Escanear</button></div><div class="fs pFs"></div><div class="kpi pKpi" hidden><div><small>Ventas hoy</small><b class="pr">$4,860</b></div><div class="chb"><small>Semana</small><span class="bars"><i style="height:35%"></i><i style="height:55%"></i><i style="height:42%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:76%"></i></span></div></div><div class="pg pProds"></div><div class="cart"><div class="lines pLines"></div><div class="tot"><span>Total</span><b class="pTot pr">$0</b></div><div class="pays pPays"></div></div><i class="hb"></i></div></div></template>
  </div>
 </main>
 <script>window.CFG={planes:{{ planes|tojson }},niveles:{{ niveles_bd|tojson }},wa:{{ contacto.whatsapp|tojson }},url:{{ url_for('configurador_enviar')|tojson }}};</script>
@@ -166,34 +182,36 @@ const TIPOS=[
  {id:'ferreteria',n:'Ferretería',e:'🔧',c:'#b45309',a:'#fbe3bd',p:[['Martillo',120],['Cinta métrica',65],['Pintura 1 L',210],['Candado',95]],m:['codigo','inventario','fiado','proveedores']},
  {id:'papeleria',n:'Papelería',e:'✏️',c:'#6d28d9',a:'#e5d9fb',p:[['Cuaderno',38],['Pluma (3 pzas)',24],['Copias (10)',20],['Cartulina',8]],m:['codigo','inventario','reportes']},
  {id:'ropa',n:'Tienda de ropa',e:'👕',c:'#111827',a:'#e5e7eb',p:[['Playera',250],['Jeans',520],['Gorra',180],['Calcetas (par)',60]],m:['codigo','inventario','clientes','tienda']},
- {id:'restaurante',n:'Restaurante / fonda',e:'🍽️',c:'#b91c1c',a:'#fcdada',p:[['Tacos al pastor',65],['Torta',60],['Agua fresca',30],['Postre del día',55]],m:['mesas','inventario','reportes']},
+ {id:'restaurante',n:'Restaurante / fonda',e:'🍽️',c:'#b91c1c',a:'#fcdada',p:[['Tacos al pastor',65],['Torta',60],['Agua fresca',30],['Postre del día',55]],m:['mesas','citas','inventario','reportes']},
  {id:'cafeteria',n:'Cafetería',e:'☕',c:'#78350f',a:'#f1dcc4',p:[['Latte',55],['Capuchino',50],['Croissant',40],['Frappé',65]],m:['clientes','pedidos','whatsapp']},
  {id:'otro',n:'Otro giro',e:'✨',c:'#c8a96a',a:'#f3e7c9',p:[['Producto A',100],['Producto B',150],['Servicio C',250],['Producto D',60]],m:['inventario','reportes']}
 ];
 const MODS=[
- {g:'Ventas y caja',id:'pos',n:'Punto de venta y cobro',d:'Ventas rápidas, ticket y corte de caja',l:0,fijo:1},
+ {g:'Ventas y caja',id:'ventas',n:'Registro de ventas simple',d:'Anota cada venta y su total',l:0,fijo:1,b:1},
+ {g:'Ventas y caja',id:'pos',n:'Punto de venta completo',d:'Ventas rápidas, ticket y corte de caja',l:1},
  {g:'Ventas y caja',id:'codigo',n:'Código de barras y lector',d:'Cobra escaneando',l:1},
  {g:'Ventas y caja',id:'peso',n:'Venta por peso (báscula)',d:'Kilos y gramos al cobrar',l:1},
  {g:'Ventas y caja',id:'mesas',n:'Mesas y comandas',d:'Pedidos a cocina',l:1},
  {g:'Ventas y caja',id:'pagos',n:'Terminal y pagos con tarjeta',d:'Integración con pasarela o terminal',l:2,x:1},
  {g:'Ventas y caja',id:'factura',n:'Facturación electrónica (CFDI)',d:'Facturas desde la venta',l:2,x:1},
- {g:'Operación',id:'inventario',n:'Inventario y existencias',d:'Entradas, salidas y alertas',l:1},
+ {g:'Operación',id:'inventario',n:'Inventario y existencias',d:'Entradas, salidas y alertas',l:1,b:1},
  {g:'Operación',id:'caducidad',n:'Lotes y caducidades',d:'Avisos antes de que venza',l:1},
  {g:'Operación',id:'merma',n:'Control de merma',d:'Pérdidas y desperdicio',l:1},
  {g:'Operación',id:'proveedores',n:'Proveedores y compras',d:'Pedidos y costos',l:1},
- {g:'Operación',id:'pedidos',n:'Pedidos y encargos',d:'Apartados y entregas',l:1},
+ {g:'Operación',id:'pedidos',n:'Pedidos y encargos',d:'Apartados y entregas',l:1,b:1},
  {g:'Operación',id:'reparto',n:'Reparto a domicilio',d:'Rutas y repartidores',l:2,x:1},
  {g:'Operación',id:'citas',n:'Agenda de citas',d:'Reservas por cliente y empleado',l:1},
  {g:'Operación',id:'comisiones',n:'Comisiones por empleado',d:'Pago por servicio o venta',l:1},
- {g:'Clientes y crecimiento',id:'clientes',n:'Clientes y lealtad',d:'Historial, puntos y sellos',l:1},
- {g:'Clientes y crecimiento',id:'fiado',n:'Fiado / crédito a clientes',d:'Cuentas por cobrar',l:1},
+ {g:'Clientes y crecimiento',id:'clientes',n:'Clientes y lealtad',d:'Historial, puntos y sellos',l:1,b:1},
+ {g:'Clientes y crecimiento',id:'fiado',n:'Fiado / crédito a clientes',d:'Cuentas por cobrar',l:1,b:1},
  {g:'Clientes y crecimiento',id:'whatsapp',n:'Avisos por WhatsApp',d:'Recordatorios y promociones',l:2,x:1},
  {g:'Clientes y crecimiento',id:'tienda',n:'Tienda en línea',d:'Vende por internet',l:2,x:1},
  {g:'Clientes y crecimiento',id:'sucursales',n:'Varias sucursales',d:'Todo conectado en tiempo real',l:3,x:1},
  {g:'Clientes y crecimiento',id:'ia',n:'Asistente con IA',d:'Respuestas y análisis automáticos',l:2,x:1},
+ {g:'Control',id:'seg',n:'Seguridad reforzada',d:'Cifrado y auditoría para datos sensibles',l:3,x:1},
  {g:'Control',id:'roles',n:'Usuarios y permisos',d:'Quién ve y hace qué',l:1},
- {g:'Control',id:'reportes',n:'Reportes y gráficas',d:'Ventas, utilidades y tendencias',l:1},
- {g:'Control',id:'app',n:'App instalable en el celular',d:'PWA, sin tiendas de apps',l:1}
+ {g:'Control',id:'reportes',n:'Reportes y gráficas',d:'Ventas, utilidades y tendencias',l:1,b:1},
+ {g:'Control',id:'app',n:'App instalable en el celular',d:'PWA, sin tiendas de apps',l:1,b:1}
 ];
 const R={
  usuarios:['1 a 2','3 a 6','7 a 15','16 a 40','Más de 40'],
@@ -205,14 +223,35 @@ const R={
 const TIER_SUC=[0,3,4],TIER_VENTAS=[0,0,1,2,3];
 const PALETAS=[['#c8a96a','#f3e7c9'],['#1f4e79','#cfe3f5'],['#2f855a','#cdeed9'],['#be3b8a','#f8d7ea'],['#9b1c1c','#f7cdc7'],['#6d28d9','#e5d9fb'],['#111827','#e5e7eb'],['#c2410c','#fde0c8']];
 const MODELOS=[
- {id:'cloud',n:'Zedyth Cloud',d:'Plataforma lista para operar. Suscripción, sin costos de desarrollo.'},
+ {id:'cloud',n:'Zedyth Cloud',d:'Base lista para operar: ventas simples, inventario, clientes y reportes. Sin personalización.'},
  {id:'boutique',n:'Zedyth Boutique',d:'Cloud más funciones e integraciones exclusivas para tu negocio.'},
  {id:'enterprise',n:'Zedyth Enterprise',d:'Sistema único desde cero. Tú eres dueño de la tecnología.'}
 ];
 const PLAZOS=['Lo antes posible','De 1 a 3 meses','Sin prisa'];
+const BASE_LIM={usuarios:0,clientes:1,productos:1,sucursales:0};
+const Q=[
+ ['citas','¿Necesitas reservas o citas?','Mesas, turnos o servicios con horario',['citas'],['¿Cómo manejas las cancelaciones?',['Sin anticipo','Anticipo para reservar','Cancelación gratis con aviso previo']]],
+ ['tienda','¿Vendes por internet?','Catálogo y compras en línea',['tienda']],
+ ['pagos','¿Necesitas cobrar en línea o con terminal?','Tarjeta, transferencia, meses sin intereses',['pagos'],['¿Qué medios quieres?',['Solo tarjeta','Tarjeta y transferencia','Todos, incluso efectivo en tiendas']]],
+ ['reparto','¿Haces envíos a domicilio?','',['reparto'],['¿Cómo entregas?',['Reparto propio','Paquetería','Ambos']]],
+ ['mesas','¿Atiendes en mesas con comandas a cocina?','',['mesas']],
+ ['factura','¿Tus clientes piden factura?','CFDI desde la venta',['factura']],
+ ['pos','¿Quieres caja completa con ticket y corte?','Ventas rápidas, ticket impreso y corte de caja',['pos']],
+ ['codigo','¿Cobras con lector de código de barras?','',['codigo']],
+ ['peso','¿Vendes por peso con báscula?','',['peso']],
+ ['caducidad','¿Manejas productos perecederos o con caducidad?','',['caducidad','merma']],
+ ['proveedores','¿Compras a proveedores y llevas costos?','',['proveedores']],
+ ['comisiones','¿Pagas comisión a tus empleados?','',['comisiones']],
+ ['roles','¿Varias personas con permisos distintos?','Cajero, gerente, dueño',['roles']],
+ ['sucursales','¿Tienes o planeas varias sucursales?','',['sucursales']],
+ ['whatsapp','¿Quieres avisar y promocionar por WhatsApp?','',['whatsapp']],
+ ['ia','¿Quieres un asistente de IA?','',['ia']],
+ ['seg','¿Manejas datos sensibles?','Expedientes, salud o tarjetas guardadas',['seg']],
+ ['mig','¿Ya usas algún sistema para tu negocio?','',[],['Tu situación actual',['Empiezo de cero','Uso Excel o libreta','Tengo otro sistema']]]
+];
 
 /*LOGIC*/
-const S={tipo:null,otro:'',nombre:'',pc:'#c8a96a',ac:'#f3e7c9',tema:'claro',esq:'redonda',logo:null,usuarios:1,clientes:1,productos:1,ventas:1,sucursales:0,mods:['pos'],modelo:'boutique',plazo:1,notas:''};
+const S={tipo:null,otro:'',nombre:'',pc:'#c8a96a',ac:'#f3e7c9',tema:'claro',esq:'redonda',logo:null,usuarios:1,clientes:1,productos:1,ventas:1,sucursales:0,mods:['ventas'],modelo:'cloud',plazo:1,notas:'',sub:{},col:{}};
 const tipoActual=()=>TIPOS.find(t=>t.id===S.tipo)||null;
 function calcular(s){
  const mods=MODS.filter(m=>s.mods.includes(m.id));
@@ -220,8 +259,10 @@ function calcular(s){
  const n=PLANES.length,i=n?Math.round(tier*(n-1)/4):-1;
  const plan=i>=0?PLANES[i]:null,sig=(i>=0&&i<n-1)?PLANES[i+1]:null;
  const complejidad=tier<=1?'Básica':tier===2?'Media':tier===3?'Alta':'Muy alta';
- const ing=mods.filter(m=>m.x).map(m=>m.n);
- return {tier,plan,sig,complejidad,mods,ing};
+ const ing=mods.filter(m=>m.x).map(m=>m.n),custom=mods.filter(m=>!m.b),base=mods.filter(m=>m.b),exc=[];
+ Object.keys(BASE_LIM).forEach(k=>{if(s[k]>BASE_LIM[k])exc.push(k[0].toUpperCase()+k.slice(1)+': '+R[k][s[k]]+' excede los límites de la base')});
+ const apto=!custom.length&&!exc.length,pts=custom.length+2*ing.length+(tier>=3?3:0)+(s.sub.mig===2?1:0);
+ return {tier,plan,sig,complejidad,mods,ing,custom,base,exc,apto,rec:apto?'cloud':(tier>=4||pts>12?'enterprise':'boutique')};
 }
 function estimado(s,c){
  const p=c.plan,suscr=p?'desde '+money(p.precio)+' MXN/mes':'por cotizar';
@@ -240,6 +281,7 @@ function resumenTexto(s,c,e){
   'Capacidad: personas '+R.usuarios[s.usuarios]+' · clientes/día '+R.clientes[s.clientes]+' · productos '+R.productos[s.productos]+' · ventas/mes '+R.ventas[s.ventas],
   'Funciones: '+c.mods.map(m=>m.n).join(', '),
   'Diseño: '+s.pc+' / '+s.ac+', estilo '+s.tema+', esquinas '+(s.esq==='redonda'?'redondeadas':'rectas')+', logo: '+(s.logo?'sí (lo enviará por chat)':'no'),
+  'Diagnóstico: '+(c.apto?'apto para base Cloud':'requiere personalización ('+c.custom.length+' funciones a medida'+(c.exc.length?', capacidad fuera de base':'')+')')+Q.filter(q=>q[4]&&s.sub[q[0]]!=null).map(q=>' · '+q[4][1][s.sub[q[0]]]).join(''),
   'Plazo: '+PLAZOS[s.plazo]+(s.notas.trim()?'\nNotas: '+s.notas.trim():''),
   'Estimado: '+e.corto].join('\n').slice(0,1480);
 }
@@ -268,66 +310,103 @@ function iniciar(){
  chips('#plazo','plazo',PLAZOS);
  const mb=$('#mods');let g='',grid;
  MODS.forEach(m=>{if(m.g!==g){g=m.g;mb.append(el('div',{class:'grp',text:g}));grid=el('div',{class:'mods'});mb.append(grid)}
-  const b=el('button',{type:'button',class:'mod','aria-pressed':'false','data-id':m.id},[document.createTextNode(m.n),el('span',{text:m.d})]);
+  const b=el('button',{type:'button',class:'mod','aria-pressed':'false','data-id':m.id},[document.createTextNode(m.n),el('span',{text:m.d+(m.b?' · Incluida en la base':' · A medida')})]);
   if(m.fijo){b.setAttribute('disabled','');b.setAttribute('aria-pressed','true')}
   b.onclick=()=>{if(m.fijo)return;S.tocoMods=1;const i=S.mods.indexOf(m.id);i>=0?S.mods.splice(i,1):S.mods.push(m.id);pintar()};grid.append(b)});
- const md=$('#mdls');MODELOS.forEach(m=>{const b=el('button',{type:'button',class:'mdl','aria-pressed':String(S.modelo===m.id),'data-id':m.id},[el('b',{text:m.n}),el('span',{text:m.d})]);b.onclick=()=>{S.modelo=m.id;pintar()};md.append(b)});
+ const md=$('#mdls');MODELOS.forEach(m=>{const b=el('button',{type:'button',class:'mdl','aria-pressed':String(S.modelo===m.id),'data-id':m.id},[el('b',{text:m.n}),el('span',{text:m.d})]);b.onclick=()=>{S.modelo=m.id;S.tocoModelo=1;pintar()};md.append(b)});
  $('#notas').oninput=e=>{S.notas=e.target.value};
  $('#atras').onclick=()=>ir(paso-1);$('#sig').onclick=()=>ir(paso+1);
  const prog=$('#prog');for(let i=0;i<TOTAL;i++)prog.append(el('i'));
  $('#frm').onsubmit=enviar;
+
+ const qb=$('#qs');Q.forEach(q=>{const [id,tx,ay,ms,sb]=q,d=el('div',{class:'q','data-id':id}),
+  mk=(arr,fn)=>{const w=el('div',{class:'chips'});arr.forEach((n,i)=>{const b=el('button',{type:'button',class:'chip','aria-pressed':'false',text:n});b.onclick=()=>fn(i);w.append(b)});return w};
+  d.append(el('p',{},[document.createTextNode(tx),el('small',{text:ay})]));
+  if(ms.length)d.append(mk(['Sí','No'],i=>{ms.forEach(m=>{const k=S.mods.indexOf(m);if(i===0&&k<0)S.mods.push(m);if(i===1&&k>=0)S.mods.splice(k,1)});S.tocoMods=1;pintar()}));
+  if(sb){const w=el('div',{class:'sb'});w.append(el('p',{text:sb[0]}),mk(sb[1],i=>{S.sub[id]=i;pintar()}));d.append(w)}
+  qb.append(d)});
+ [['bg','Fondo'],['tx','Texto'],['pr','Precios'],['gr','Gráficas']].forEach(([k,n])=>{const i=el('input',{type:'color',id:'col-'+k});i.oninput=e=>{S.col[k]=e.target.value;pintar()};$('#cx').append(el('label',{},[document.createTextNode(n+' '),i]))});
+ $('#cxr').onclick=()=>{S.col={};pintar()};
+ [['ios','iPhone 16'],['and','Samsung Galaxy S25']].forEach(([k,n])=>{const d=$('#tpl').content.firstElementChild.cloneNode(true);d.classList.add(k);$('.si',d).textContent=k==='ios'?'5G ▮':'▾◢ 87%';$('#devs').append(el('div',{class:'dw '+k},[d,el('small',{text:n})]))});
+ [['ambos','Ambos'],['ios','iPhone'],['and','Android']].forEach(([v,n])=>{const b=el('button',{type:'button','aria-pressed':'false',text:n});b.onclick=()=>{$('#devs').dataset.v=v;$$('#seg button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)))};$('#seg').append(b);if(v===(matchMedia('(max-width:900px)').matches?'ios':'ambos'))b.click()});
  pintar();ir(0);
 }
 function elegirTipo(id){
  S.tipo=id;const t=tipoActual();
  if(!S.tocoColor){S.pc=t.c;S.ac=t.a;$('#pc').value=t.c;$('#ac').value=t.a}
- if(!S.tocoMods)S.mods=['pos',...t.m];
+ if(!S.tocoMods)S.mods=['ventas',...t.m];
  S.carrito={};pintar();
 }
 
 /* ---------- vista previa ---------- */
+const ratio=(x,y)=>{const a=lum(x),b=lum(y);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+function colores(){const o=S.col,os=S.tema==='oscuro';return {bg:o.bg||(os?'#15161a':'#ffffff'),tx:o.tx||(os?'#f2f2f2':'#1a1a1a'),pr:o.pr||S.pc,gr:o.gr||S.pc}}
+function consejos(c){
+ const L=[],has=id=>S.mods.includes(id),k=colores();
+ const r=ratio(k.tx,k.bg),rp=ratio(k.pr,k.bg);
+ if(r<4.5)L.push('Tu texto casi no se lee sobre el fondo (contraste '+r.toFixed(1)+':1). Separa más sus tonos.');
+ if(rp<3)L.push('El color de los precios se pierde sobre el fondo ('+rp.toFixed(1)+':1). Usa uno más fuerte.');
+ if(has('citas')&&!has('whatsapp'))L.push('Con reservas conviene WhatsApp para recordatorios: baja las faltas.');
+ if(S.sub.citas===1&&!has('pagos'))L.push('Cobrar anticipo para reservar requiere pagos en línea.');
+ if(has('tienda')&&!has('pagos'))L.push('Tu tienda en línea no podrá cobrar sin pagos con tarjeta.');
+ if(has('tienda')&&!has('reparto'))L.push('Vendes por internet: define cómo entregarás los pedidos.');
+ if(S.sucursales>0&&!has('roles'))L.push('Con varias sucursales necesitas usuarios y permisos.');
+ if(S.sub.mig===2)L.push('Migrar desde otro sistema suma trabajo: confirma que podrás exportar tus datos.');
+ return L.length?L.slice(0,4):['Tu configuración es coherente. Sin observaciones por ahora.'];
+}
 function pintar(){
- const t=tipoActual(),c=calcular(S),e=estimado(S,c),app=$('#prev');
+ const t=tipoActual(),c=calcular(S),e=estimado(S,c),k=colores();
  $$('.tipo').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===S.tipo)));
  $('#otroBox').hidden=S.tipo!=='otro';
  $$('.sw button').forEach((b,i)=>b.setAttribute('aria-pressed',String(PALETAS[i][0]===S.pc&&PALETAS[i][1]===S.ac)));
  $$('.mod').forEach(b=>{if(!b.hasAttribute('disabled'))b.setAttribute('aria-pressed',String(S.mods.includes(b.dataset.id)))});
- $$('.mdl').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===S.modelo)));
- const oscuro=S.tema==='oscuro';
- app.style.setProperty('--pc',S.pc);app.style.setProperty('--ac',S.ac);app.style.setProperty('--on',onColor(S.pc));
- app.style.setProperty('--pbg',oscuro?'#15161a':'#ffffff');app.style.setProperty('--ptx',oscuro?'#f2f2f2':'#1a1a1a');app.style.setProperty('--pcard',oscuro?'#23252b':'#f3f3f3');
- app.style.setProperty('--rad',S.esq==='redonda'?'14px':'3px');
- const nom=(S.nombre||'').trim()||'Tu negocio';
- $('#pNombre').textContent=nom;
- $('#pTipo').textContent=t?(t.id==='otro'&&S.otro.trim()?S.otro.trim():t.n):'Punto de venta';
- const lg=$('#pLogo');lg.textContent='';
- if(S.logo){const im=el('img',{alt:''});im.src=S.logo;lg.append(im)}else lg.textContent=nom.charAt(0).toUpperCase();
- const has=id=>S.mods.includes(id);
- $('#pScan').hidden=!has('codigo');$('#pKpi').hidden=!has('reportes');
- const prods=(t||TIPOS[TIPOS.length-1]).p,unidad=has('peso');
- const pg=$('#pProds');pg.textContent='';
- prods.forEach(([n,pr],i)=>{const b=el('button',{type:'button',class:'pt'},[el('i'),el('span',{text:n}),el('em',{text:money(pr)})]);b.onclick=()=>{S.carrito=S.carrito||{};S.carrito[i]=(S.carrito[i]||0)+1;carrito(prods)};pg.append(b)});
- const pays=$('#pPays');pays.textContent='';['Efectivo','Tarjeta'].concat(has('fiado')?['Fiado']:[]).forEach(x=>pays.append(el('span',{text:x})));
+ if(!S.tocoModelo||(S.modelo==='cloud'&&!c.apto))S.modelo=c.rec;
+ $$('.mdl').forEach(b=>{const id=b.dataset.id,bl=id==='cloud'&&!c.apto;b.disabled=bl;b.style.opacity=bl?.45:'';b.setAttribute('aria-pressed',String(id===S.modelo));$('span',b).textContent=bl?'No disponible: tu configuración necesita personalización.':MODELOS.find(m=>m.id===id).d});
+ $$('.q').forEach(d=>{const q=Q.find(x=>x[0]===d.dataset.id),ms=q[3],on=ms.some(m=>S.mods.includes(m));
+  $$(':scope>.chips .chip',d).forEach((b,i)=>b.setAttribute('aria-pressed',String(i===0?on:!on)));
+  const w=$('.sb',d);if(w){w.hidden=ms.length?!on:false;$$('.chip',w).forEach((b,i)=>b.setAttribute('aria-pressed',String(S.sub[q[0]]===i)))}});
+ [['bg',k.bg],['tx',k.tx],['pr',k.pr],['gr',k.gr]].forEach(([n,v])=>{const i=$('#col-'+n);if(i&&document.activeElement!==i)i.value=v});
+ const nom=(S.nombre||'').trim()||'Tu negocio',has=id=>S.mods.includes(id),prods=(t||TIPOS[TIPOS.length-1]).p;
+ $$('.app').forEach(app=>{
+  const st=(a,v)=>app.style.setProperty(a,v);
+  st('--pc',S.pc);st('--ac',S.ac);st('--on',onColor(S.pc));st('--pbg',k.bg);st('--ptx',k.tx);st('--pcard','color-mix(in srgb,'+k.tx+' 8%,'+k.bg+')');st('--ppr',k.pr);st('--pgr',k.gr);st('--rad',S.esq==='redonda'?'14px':'3px');
+  $('.pNombre',app).textContent=nom;
+  $('.pTipo',app).textContent=t?(t.id==='otro'&&S.otro.trim()?S.otro.trim():t.n):'Punto de venta';
+  const lg=$('.pLogo',app);lg.textContent='';
+  if(S.logo){const im=el('img',{alt:''});im.src=S.logo;lg.append(im)}else lg.textContent=nom.charAt(0).toUpperCase();
+  const sc=$('.pScan',app);sc.hidden=!has('codigo');sc.className='scan pScan cu';
+  $('.pKpi',app).hidden=!has('reportes');
+  const fs=$('.pFs',app);fs.textContent='';c.mods.filter(m=>m.id!=='ventas').slice(0,6).forEach(m=>fs.append(el('span',{class:m.b?'':'cu',text:m.n.replace(/ y .*| \(.*|\/.*| con .*/,'')})));
+  const pg=$('.pProds',app);pg.textContent='';
+  prods.forEach(([n,pr],i)=>{const b=el('button',{type:'button',class:'pt'},[el('i'),el('span',{text:n}),el('em',{text:money(pr)})]);b.onclick=()=>{S.carrito=S.carrito||{};S.carrito[i]=(S.carrito[i]||0)+1;carrito(prods)};pg.append(b)});
+  const pays=$('.pPays',app);pays.textContent='';pays.append(el('span',{text:'Efectivo'}));
+  if(has('pagos'))pays.append(el('span',{class:'cu',text:'Tarjeta'}));if(has('fiado'))pays.append(el('span',{text:'Fiado'}));if(has('citas'))pays.append(el('span',{class:'cu',text:'Reservar'}))});
  carrito(prods);
- /* estimado en vivo */
+ const dx=$('#dx');dx.textContent='';dx.className='dx '+(c.apto?'ok':'cu');
+ dx.append(el('h3',{text:c.apto?'✓ Tu negocio cabe en la base Zedyth Cloud':'⚠ Tu negocio no es apto para la base: requiere personalización'}),
+  el('p',{text:c.apto?'Solo usas funciones de la base y tu capacidad está dentro de sus límites. Opera sobre infraestructura compartida.':'La base cubre lo esencial. Lo que pides necesita ingeniería propia y, en funciones críticas (pagos, facturas, sucursales, datos sensibles), un ambiente aislado: no puede montarse sobre la infraestructura compartida. Recomendado: '+MODELOS.find(m=>m.id===c.rec).n+'.'}));
+ if(!c.apto){const ul=el('ul');c.custom.forEach(m=>ul.append(el('li',{text:m.n+(m.x?' · crítica, ambiente aislado':' · a medida')})));c.exc.forEach(x=>ul.append(el('li',{text:x})));dx.append(ul)}
+ dx.append(el('p',{text:'Incluido en la base: '+c.base.map(m=>m.n).join(', ')+'.'}));
+ const z=el('div',{class:'zed'},[el('b',{text:'ZEDITH · análisis en vivo'})]);consejos(c).forEach(x=>z.append(el('p',{text:'• '+x})));dx.append(z);
  const est=$('#est');est.textContent='';
  est.append(el('small',{text:'Estimado aproximado'}),el('b',{text:e.big}));
  e.l.forEach(x=>est.append(el('p',{text:x})));
  const bd=el('div',{class:'badges'});c.mods.slice(0,8).forEach(m=>bd.append(el('span',{text:m.n})));if(c.mods.length>8)bd.append(el('span',{text:'+'+(c.mods.length-8)+' más'}));est.append(bd);
- if(c.ing.length&&S.modelo==='cloud'){const h=$('#hm');h.hidden=false;h.textContent='Con '+c.ing.slice(0,2).join(' y ')+(c.ing.length>2?' y otras':'')+', normalmente conviene Zedyth Boutique: son funciones que requieren ingeniería a la medida.'}else $('#hm').hidden=true;
+ if(c.ing.length&&S.modelo==='cloud'){const h=$('#hm');h.hidden=false;h.textContent='Con '+c.ing.slice(0,2).join(' y ')+', normalmente conviene Zedyth Boutique.'}else $('#hm').hidden=true;
  $('#h0').hidden=true;
- if(paso===5)resumen();
+ if(paso===6)resumen();
 }
 function carrito(prods){
- const q=S.carrito||{},ids=Object.keys(q),L=$('#pLines');L.textContent='';let tot=0;
- if(!ids.length)L.append(el('p',{text:'Toca un producto para cobrar'}));
- ids.forEach(i=>{const [n,p]=prods[i]||[];if(!n)return;const sub=p*q[i];tot+=sub;L.append(el('div',{},[el('span',{text:q[i]+' × '+n}),el('span',{text:money(sub)})]))});
- $('#pTot').textContent=money(tot);
+ const q=S.carrito||{},ids=Object.keys(q);let tot=0;
+ $$('.app').forEach(app=>{const L=$('.pLines',app);L.textContent='';tot=0;
+  if(!ids.length)L.append(el('p',{text:'Toca un producto para cobrar'}));
+  ids.forEach(i=>{const [n,p]=prods[i]||[];if(!n)return;const sub=p*q[i];tot+=sub;L.append(el('div',{},[el('span',{text:q[i]+' × '+n}),el('span',{text:money(sub)})]))});
+  $('.pTot',app).textContent=money(tot)});
 }
 
 /* ---------- pasos ---------- */
-const TOTAL=6;let paso=0;
-const TITULOS=['Tu negocio','Tu marca','Tu capacidad','Funciones','Cómo lo quieres','Resumen'];
+const TOTAL=7;let paso=0;
+const TITULOS=['Tu negocio','Tu operación','Tu marca','Tu capacidad','Funciones','Cómo lo quieres','Resumen'];
 function ir(n){
  if(n>paso&&paso===0&&!S.tipo){$('#h0').hidden=false;return}
  paso=Math.max(0,Math.min(TOTAL-1,n));
@@ -336,7 +415,7 @@ function ir(n){
  $('#pn').textContent='Paso '+(paso+1)+' de '+TOTAL+' · '+TITULOS[paso];
  $('#atras').style.visibility=paso?'visible':'hidden';
  $('#sig').style.display=paso===TOTAL-1?'none':'';
- if(paso===5)resumen();
+ if(paso===6)resumen();
  const top=$('.intro');if(top&&window.scrollY>top.offsetTop+top.offsetHeight)window.scrollTo({top:top.offsetTop+top.offsetHeight-10,behavior:'smooth'});
 }
 function resumen(){
@@ -344,7 +423,7 @@ function resumen(){
  const filas=[['Negocio',(t?(t.id==='otro'&&S.otro.trim()?S.otro.trim():t.n):'-')+(S.nombre.trim()?' · '+S.nombre.trim():'')],
   ['Modelo',MODELOS.find(m=>m.id===S.modelo).n],['Capacidad',R.usuarios[S.usuarios]+' personas · '+R.clientes[S.clientes]+' clientes/día'],
   ['Productos',R.productos[S.productos]],['Sucursales',R.sucursales[S.sucursales]],['Funciones',c.mods.length+' seleccionadas'],
-  ['Complejidad',c.complejidad],['Plazo',PLAZOS[S.plazo]],['Estimado',e.big]];
+  ['Diagnóstico',c.apto?'Apto para la base Cloud':'Requiere personalización ('+c.custom.length+' funciones)'],['Complejidad',c.complejidad],['Plazo',PLAZOS[S.plazo]],['Estimado',e.big]];
  filas.forEach(([k,v])=>sum.append(el('div',{},[el('dt',{text:k}),el('dd',{text:v})])));
 }
 
