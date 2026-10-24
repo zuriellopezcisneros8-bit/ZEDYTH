@@ -1002,7 +1002,7 @@ def finanzas():
 # --- WEB PÚBLICA -----------------------------------------------------------
 # Únicas rutas que se pueden abrir sin iniciar sesión.
 RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
-                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar'}
+                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -1252,6 +1252,32 @@ def zedith_chat():
                  f"\nContacto: {lead.contacto}")
         wa = f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"
     return {"reply": r["reply"], "wa": wa}
+
+
+@app.route('/api/zedith/analisis', methods=['POST'])
+def zedith_analisis():
+    """Zedith revisa la configuración del configurador y recomienda mejoras. NUNCA crea prospectos."""
+    cfg = str((request.get_json(silent=True) or {}).get('resumen') or '').strip()[:1000]
+    if len(cfg) < 20:
+        return {"error": "datos"}, 400
+    ahora, hoy = datetime.utcnow(), date.today()
+    ip = _ip_cliente()
+    recientes = [t for t in _zed_ip.get(ip, []) if ahora - t < timedelta(minutes=10)]
+    if _zed_dia["fecha"] != hoy:
+        _zed_dia.update(fecha=hoy, n=0)
+    if len(recientes) >= ZED_MAX_IP or _zed_dia["n"] >= ZED_MAX_DIA:
+        return {"error": "límite alcanzado"}, 429
+    _zed_ip[ip] = recientes + [ahora]
+    _zed_dia["n"] += 1
+    texto = ("[ANÁLISIS DEL CONFIGURADOR. No captures pedido ni pidas datos: pedido_listo=false. Revisa esta configuración "
+             "como ingeniero y responde en máximo 5 viñetas cortas: incoherencias, riesgos (infraestructura crítica, pagos, "
+             "reservas, cancelaciones) y mejoras concretas. Sin precios.]\n" + cfg)
+    try:
+        r = zedith.responder([{"role": "user", "text": texto}], hechos_zedith())
+    except zedith.ZedithError as e:
+        app.logger.warning("Zedith (análisis) no respondió: %s", e)
+        return {"error": "no disponible"}, 503
+    return {"reply": r["reply"]}   # se ignora r["pedido"] a propósito
 
 
 @app.route('/configurador')
