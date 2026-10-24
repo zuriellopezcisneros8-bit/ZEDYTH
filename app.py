@@ -1002,11 +1002,12 @@ def finanzas():
 # --- WEB PÚBLICA -----------------------------------------------------------
 # Únicas rutas que se pueden abrir sin iniciar sesión.
 RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
-                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots'}
+                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
 _intentos_resena = {}   # ip -> [fechas]; límite simple anti-spam
+_intentos_config = {}   # ip -> [fechas]; límite del configurador
 # Datos del responsable para el aviso de privacidad y los términos. Complétalos con variables de entorno
 # (LEGAL_RAZON, LEGAL_DOMICILIO, LEGAL_JURISDICCION) o editando estos valores.
 LEGAL = {"razon_social": os.environ.get("LEGAL_RAZON", "[COMPLETAR: razón social]"),
@@ -1121,7 +1122,7 @@ def terminos():
 @app.route('/sitemap.xml')
 def sitemap():
     base = _site_url()
-    filas = ''.join(f"<url><loc>{base}{ruta}</loc></url>" for ruta in ('/', '/demo-pos', '/privacidad', '/terminos'))
+    filas = ''.join(f"<url><loc>{base}{ruta}</loc></url>" for ruta in ('/', '/configurador', '/demo-pos', '/privacidad', '/terminos'))
     xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{filas}</urlset>'
     return app.response_class(xml, mimetype='application/xml')
 
@@ -1251,6 +1252,54 @@ def zedith_chat():
                  f"\nContacto: {lead.contacto}")
         wa = f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"
     return {"reply": r["reply"], "wa": wa}
+
+
+@app.route('/configurador')
+def configurador():
+    """Configurador de software: el cliente arma su sistema y recibe un estimado aproximado.
+    Los planes salen de tu base de datos, así que los precios siempre son los vigentes."""
+    planes = [{"nombre": p.nombre, "precio": float(p.precio), "bd": p.bd_incluida or ""}
+              for p in planes_visibles('tamano') if p.precio and not p.a_medida]
+    return render_template('configurador.html', planes=planes, niveles_bd=NIVELES_BD, contacto=CONTACTO,
+                           año=date.today().year, **_ajustes_publicos())
+
+
+@app.route('/configurador/enviar', methods=['POST'])
+def configurador_enviar():
+    """Guarda la configuración como prospecto (Lead) y avisa. Devuelve el enlace de WhatsApp con el resumen."""
+    d = request.get_json(silent=True) or {}
+    ahora = datetime.utcnow()
+    ip = _ip_cliente()
+    recientes = [t for t in _intentos_config.get(ip, []) if ahora - t < timedelta(hours=1)]
+    if d.get('web'):                      # campo trampa para bots
+        return {"ok": False}, 400
+    if len(recientes) >= 5:
+        return {"ok": False, "error": "limite"}, 429
+    nombre = str(d.get('nombre') or '').strip()[:120]
+    contacto = str(d.get('contacto') or '').strip()[:150]
+    valido_contacto = ('@' in contacto and '.' in contacto) or len(re.sub(r'\D', '', contacto)) >= 8
+    cfg = d.get('config') if isinstance(d.get('config'), dict) else {}
+    if len(nombre) < 2 or not valido_contacto or not cfg:
+        return {"ok": False, "error": "datos"}, 400
+    _intentos_config[ip] = recientes + [ahora]
+    txt = lambda k, n: str(cfg.get(k) or '').strip()[:n]
+    lead, es_nuevo = guardar_pedido({
+        "nombre": nombre, "contacto": contacto,
+        "negocio": txt('negocio', 200), "sistema": "Configurador · " + (txt('modelo', 40) or "sin modelo"),
+        "funciones": txt('funciones', 1000), "presupuesto": txt('estimado', 100),
+        "plazo": txt('plazo', 100), "resumen": txt('resumen', 1500)})
+    if es_nuevo:
+        try:
+            notificar.avisar(
+                f"Nueva configuración en ZEDYTH: {lead.nombre}",
+                f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
+                f"Modelo: {lead.sistema or '-'}\nEstimado: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n"
+                f"Funciones: {lead.funciones or '-'}\n\n{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
+        except Exception as e:   # un fallo de aviso no debe perder el prospecto
+            app.logger.warning("No se pudo avisar de la configuración: %s", e)
+    texto = (f"Hola, soy {lead.nombre}. Armé mi sistema en el configurador de ZEDYTH:\n"
+             f"{lead.resumen or lead.negocio or ''}\nContacto: {lead.contacto}")
+    return {"ok": True, "wa": f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"}
 
 
 @app.route('/leads')

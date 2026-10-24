@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0d0c">
+<title>Diseña tu sistema | ZEDYTH Technologies</title>
+<meta name="description" content="Configura tu sistema de punto de venta: elige tu giro, tus colores y tu capacidad, míralo funcionar y recibe un estimado aproximado.">
+<link rel="canonical" href="{{ site_url }}/configurador">
+<link rel="icon" type="image/png" href="/static/img/zedyth/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
+{% if ga_id %}<script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_id }}"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','{{ ga_id }}');</script>{% endif %}
+<style>
+:root{--bg:#0e0d0c;--tx:#f4f1ea;--mu:#a29c90;--g:#c8a96a;--gl:#e2cba5;--card:rgba(255,255,255,.04);--bd:rgba(255,255,255,.12);--ok:#4ade80;--er:#f87171}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);background-image:radial-gradient(900px 380px at 50% -8%,rgba(200,169,106,.1),transparent 70%);background-repeat:no-repeat;color:var(--tx);line-height:1.55}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.top{border-bottom:1px solid var(--bd);padding:14px 0;padding-top:calc(14px + env(safe-area-inset-top,0px))}
+.top .wrap{display:flex;align-items:center;gap:16px}.top img{height:16px;width:auto}.top .back{font-size:14px;color:var(--mu);text-decoration:none}.top .back:hover{color:#fff}.top .sp{flex:1}
+.btn{display:inline-block;padding:12px 22px;border-radius:8px;font:600 14px Inter,sans-serif;border:1px solid var(--bd);background:transparent;color:var(--tx);cursor:pointer;text-decoration:none;transition:.2s}
+.btn:hover{opacity:.9;transform:translateY(-1px)}.btn.g{background:var(--g);border-color:var(--g);color:#16120b}.btn[disabled]{opacity:.35;pointer-events:none}
+.eyebrow{display:block;font:600 11px Inter,sans-serif;letter-spacing:.3em;text-transform:uppercase;color:var(--g);margin-bottom:14px}
+.intro{text-align:center;padding:44px 0 26px}
+h1,h2{font-family:'Cormorant Garamond',Georgia,serif;letter-spacing:-.5px;margin:0}
+h1{font-size:clamp(34px,6vw,58px);line-height:1.05}h2{font-size:clamp(26px,3.6vw,34px);margin-bottom:6px}
+.intro p{color:var(--mu);max-width:640px;margin:14px auto 0}
+.shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:40px;padding-bottom:80px;align-items:start}
+.right{position:sticky;top:18px}
+.prog{display:flex;gap:6px;margin-bottom:8px}.prog i{flex:1;height:3px;border-radius:9px;background:var(--bd);transition:.3s}.prog i.on{background:var(--g)}
+.pn{font-size:12px;color:var(--mu);margin-bottom:22px;letter-spacing:.08em;text-transform:uppercase}
+.paso{display:none;animation:in .3s ease}.paso.on{display:block}@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.lead{color:var(--mu);margin:0 0 22px;font-size:15px}
+.lbl{display:block;font-size:13px;font-weight:600;margin:22px 0 10px}.lbl small{font-weight:400;color:var(--mu)}
+.tipos{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.tipo,.chip,.mod,.mdl{font:inherit;color:inherit;text-align:left;background:var(--card);border:1px solid var(--bd);border-radius:12px;cursor:pointer;transition:.15s}
+.tipo{padding:14px 10px;text-align:center;font-size:14px}.tipo b{display:block;font-size:26px;margin-bottom:4px;font-weight:400}
+.tipo:hover,.chip:hover,.mod:hover,.mdl:hover{border-color:rgba(255,255,255,.35)}
+[aria-pressed=true]{border-color:var(--g)!important;background:rgba(200,169,106,.12)!important;box-shadow:0 0 0 1px var(--g) inset}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{padding:9px 15px;font-size:14px;border-radius:999px}
+input[type=text],textarea{width:100%;padding:12px 14px;background:rgba(0,0,0,.4);border:1px solid var(--bd);border-radius:10px;color:var(--tx);font:inherit;font-size:16px}
+textarea{min-height:90px;resize:vertical}input:focus,textarea:focus{outline:none;border-color:var(--g)}
+.sw{display:flex;gap:8px;flex-wrap:wrap}.sw button{width:38px;height:38px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;position:relative}
+.sw button[aria-pressed=true]{border-color:#fff!important;box-shadow:0 0 0 2px var(--bg) inset!important}
+.cols{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:14px}.cols label{font-size:13px;color:var(--mu);display:flex;gap:8px;align-items:center}
+input[type=color]{width:44px;height:34px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none;cursor:pointer}
+.file{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.file input{display:none}.file small{color:var(--mu);font-size:12px}
+.grp{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin:24px 0 10px}
+.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.mod{padding:12px 14px;font-size:14px;display:block;width:100%}.mod span{display:block;font-size:12px;color:var(--mu);margin-top:2px}.mod[disabled]{opacity:.7;cursor:default}
+.mdls{display:grid;gap:10px}.mdl{padding:16px 18px;display:block;width:100%}.mdl b{font-size:16px}.mdl span{display:block;color:var(--mu);font-size:13px;margin-top:3px}
+.hint{background:rgba(200,169,106,.1);border:1px solid rgba(200,169,106,.35);border-radius:10px;padding:10px 14px;font-size:13px;margin-top:12px}
+.nav{display:flex;justify-content:space-between;gap:12px;margin-top:34px}
+.sum{display:grid;gap:8px;margin:0 0 20px}.sum div{display:flex;gap:12px;justify-content:space-between;border-bottom:1px solid var(--bd);padding:8px 0;font-size:14px}.sum dt{color:var(--mu)}.sum dd{margin:0;text-align:right}
+.frm{display:grid;gap:10px;margin-top:6px}.frm label.ck{display:flex;gap:10px;font-size:13px;color:var(--mu);align-items:flex-start}.frm label.ck input{margin-top:3px}
+.msg{padding:12px 16px;border-radius:10px;font-size:14px;margin-top:12px}.msg.ok{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.4);color:var(--ok)}.msg.er{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.4);color:var(--er)}
+.hp{position:absolute;left:-9999px}
+/* vista previa */
+.dev{max-width:360px;margin:0 auto;border:1px solid var(--bd);border-radius:34px;padding:12px;background:#000;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.app{--pc:#c8a96a;--ac:#f3e7c9;--on:#111;--pbg:#fff;--ptx:#1a1a1a;--pcard:#f3f3f3;--rad:14px;background:var(--pbg);color:var(--ptx);border-radius:24px;overflow:hidden;min-height:520px;display:flex;flex-direction:column;font-size:13px;transition:background .25s,color .25s}
+.ah{display:flex;align-items:center;gap:10px;padding:14px 14px 12px;background:var(--pc);color:var(--on)}
+.lg{width:34px;height:34px;border-radius:calc(var(--rad)*.7);background:rgba(255,255,255,.28);display:flex;align-items:center;justify-content:center;font-weight:700;overflow:hidden;flex:none}.lg img{width:100%;height:100%;object-fit:contain}
+.ah b{font-size:15px;line-height:1.1;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ah small{opacity:.8;font-size:11px;display:block;font-weight:400}
+.scan{border:0;background:rgba(0,0,0,.18);color:inherit;border-radius:calc(var(--rad)*.7);padding:7px 10px;font:600 11px Inter,sans-serif}
+.kpi{display:flex;gap:8px;padding:10px 12px 0}.kpi div{flex:1;background:var(--pcard);border-radius:var(--rad);padding:8px 10px}.kpi small{display:block;opacity:.65;font-size:10px}.kpi b{font-size:15px}
+.pg{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.pt{border:0;text-align:left;font:inherit;color:inherit;background:var(--pcard);border-radius:var(--rad);padding:0;cursor:pointer;overflow:hidden;transition:transform .12s}.pt:active{transform:scale(.96)}
+.pt i{display:block;height:46px;background:linear-gradient(135deg,var(--pc),var(--ac))}.pt span{display:block;padding:8px 10px 2px;font-weight:600;font-size:12px;line-height:1.2}.pt em{display:block;padding:0 10px 9px;font-style:normal;opacity:.7;font-size:12px}
+.cart{margin-top:auto;border-top:1px solid rgba(128,128,128,.25);padding:12px 14px 14px}
+.lines{min-height:34px;max-height:74px;overflow:auto;font-size:12px}.lines div{display:flex;justify-content:space-between;padding:1px 0}.lines p{margin:0;opacity:.55}
+.tot{display:flex;justify-content:space-between;align-items:baseline;margin:8px 0 10px}.tot b{font-size:22px}
+.pays{display:flex;gap:6px}.pays span{flex:1;text-align:center;padding:10px 4px;border-radius:var(--rad);font-weight:600;font-size:12px;border:1px solid var(--pc);color:var(--ptx)}.pays span:first-child{background:var(--pc);color:var(--on)}
+.cap{text-align:center;font-size:12px;color:var(--mu);margin:14px auto 0;max-width:340px}
+.est{max-width:360px;margin:16px auto 0;background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px 18px}
+.est small{color:var(--mu);font-size:11px;letter-spacing:.14em;text-transform:uppercase}.est b{display:block;font-family:'Cormorant Garamond',serif;font-size:32px;line-height:1.1;margin:4px 0}.est p{margin:4px 0 0;font-size:13px;color:var(--mu)}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.badges span{font-size:11px;border:1px solid var(--bd);border-radius:999px;padding:3px 9px;color:var(--mu)}
+.fin{font-size:12px;color:var(--mu);margin-top:26px}.fin a{text-decoration:underline}
+@media(max-width:900px){.shell{grid-template-columns:1fr;gap:26px}.right{position:static;order:-1}.app{min-height:440px}.dev{max-width:310px}.pg{padding:10px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><a class="back" href="{{ url_for('inicio') }}">← Volver</a><img src="/static/img/zedyth/zedyth-wordmark.webp" alt="ZEDYTH Technologies" width="210" height="16"><span class="sp"></span><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}" target="_blank" rel="noopener">WhatsApp</a></div></header>
+<main class="wrap">
+ <div class="intro"><span class="eyebrow">Configurador</span><h1>Diseña tu sistema</h1><p>Cuéntanos cómo es tu negocio y míralo cobrar en vivo. Es una simulación aproximada: con ella afinamos tu proyecto contigo, por chat.</p></div>
+ <div class="shell">
+  <div class="left">
+   <div class="prog" id="prog"></div><div class="pn" id="pn"></div>
+
+   <section class="paso on" data-p="0"><h2>Tu negocio</h2><p class="lead">¿Qué tipo de negocio tienes?</p>
+    <div class="tipos" id="tipos"></div>
+    <div id="otroBox" hidden><label class="lbl" for="otro">¿Qué giro es?</label><input type="text" id="otro" maxlength="60" placeholder="Ej. Dulcería, florería, refaccionaria"></div>
+    <label class="lbl" for="nombre">Nombre de tu negocio <small>(opcional)</small></label><input type="text" id="nombre" maxlength="60" placeholder="Ej. Panadería La Espiga" autocomplete="organization">
+    <div class="hint" id="h0" hidden>Elige el giro de tu negocio para continuar.</div></section>
+
+   <section class="paso" data-p="1"><h2>Tu marca</h2><p class="lead">Elige tus colores y mira cómo cambia tu sistema.</p>
+    <span class="lbl" style="margin-top:0">Paletas</span><div class="sw" id="sw"></div>
+    <div class="cols"><label>Color principal <input type="color" id="pc" value="#c8a96a"></label><label>Color de acento <input type="color" id="ac" value="#f3e7c9"></label></div>
+    <span class="lbl">Estilo</span><div class="chips" id="tema"></div>
+    <span class="lbl">Esquinas</span><div class="chips" id="esq"></div>
+    <span class="lbl">Tu logo <small>(opcional)</small></span>
+    <div class="file"><label class="btn" for="logo">Subir logo</label><input type="file" id="logo" accept="image/*"><button class="btn" type="button" id="logoQ" hidden>Quitar</button><small id="logoT">Solo se ve en esta vista previa. Nos lo puedes mandar después por el chat.</small></div></section>
+
+   <section class="paso" data-p="2"><h2>Tu capacidad</h2><p class="lead">Con esto dimensionamos la infraestructura que necesitas. Una idea aproximada basta.</p>
+    <span class="lbl" style="margin-top:0">¿Cuántas personas usarán el sistema?</span><div class="chips" id="c-usuarios"></div>
+    <span class="lbl">¿Cuántos clientes atiendes al día?</span><div class="chips" id="c-clientes"></div>
+    <span class="lbl">¿Cuántos productos o servicios manejas?</span><div class="chips" id="c-productos"></div>
+    <span class="lbl">¿Cuánto vendes al mes, más o menos?</span><div class="chips" id="c-ventas"></div>
+    <span class="lbl">¿Cuántas sucursales tienes?</span><div class="chips" id="c-sucursales"></div></section>
+
+   <section class="paso" data-p="3"><h2>Funciones</h2><p class="lead">Marcamos las más comunes para tu giro. Quita o agrega lo que quieras.</p><div id="mods"></div></section>
+
+   <section class="paso" data-p="4"><h2>Cómo lo quieres</h2><p class="lead">Elige cuánto quieres personalizar y de quién será la tecnología.</p>
+    <div class="mdls" id="mdls"></div><div class="hint" id="hm" hidden></div>
+    <span class="lbl">¿Para cuándo lo necesitas?</span><div class="chips" id="plazo"></div>
+    <label class="lbl" for="notas">Algo más que debamos saber <small>(opcional)</small></label><textarea id="notas" maxlength="300" placeholder="Ej. Quiero que imprima tickets, que tenga lector de código de barras, que se parezca a…"></textarea></section>
+
+   <section class="paso" data-p="5"><h2>Tu resumen</h2><p class="lead">Revisa tu configuración. Déjanos tus datos y seguimos por chat para afinarla.</p>
+    <dl class="sum" id="sum"></dl>
+    <form class="frm" id="frm" novalidate>
+     <input type="text" id="cn" placeholder="Tu nombre" maxlength="120" autocomplete="name" required>
+     <input type="text" id="cc" placeholder="Tu WhatsApp o correo" maxlength="150" autocomplete="email" inputmode="email" required>
+     <input class="hp" type="text" id="web" tabindex="-1" autocomplete="off" aria-hidden="true">
+     <label class="ck"><input type="checkbox" id="ok" required><span>Acepto el <a href="{{ url_for('privacidad') }}" target="_blank" rel="noopener" style="text-decoration:underline">aviso de privacidad</a> y que ZEDYTH me contacte sobre mi configuración.</span></label>
+     <button class="btn g" type="submit" id="env">Enviar mi configuración</button>
+    </form>
+    <div id="res" role="status" aria-live="polite"></div></section>
+
+   <div class="nav"><button class="btn" type="button" id="atras">← Atrás</button><button class="btn g" type="button" id="sig">Continuar →</button></div>
+   <p class="fin">Esta herramienta da una <b>idea aproximada</b>, no una cotización ni una oferta vinculante. El alcance, el precio y las condiciones finales se acuerdan por escrito. Datos tratados conforme al <a href="{{ url_for('privacidad') }}">aviso de privacidad</a>.</p>
+  </div>
+
+  <aside class="right" aria-label="Vista previa de tu sistema">
+   <div class="dev"><div class="app" id="prev">
+    <div class="ah"><span class="lg" id="pLogo">Z</span><b><span id="pNombre">Tu negocio</span><small id="pTipo">Punto de venta</small></b><button class="scan" id="pScan" type="button" hidden>▮▯▮ Escanear</button></div>
+    <div class="kpi" id="pKpi" hidden><div><small>Ventas hoy</small><b>$4,860</b></div><div><small>Tickets</small><b>63</b></div></div>
+    <div class="pg" id="pProds"></div>
+    <div class="cart"><div class="lines" id="pLines"></div><div class="tot"><span>Total</span><b id="pTot">$0</b></div><div class="pays" id="pPays"></div></div>
+   </div></div>
+   <p class="cap">Toca los productos: es una vista aproximada de cómo se vería tu sistema.</p>
+   <div class="est" id="est" aria-live="polite"></div>
+  </aside>
+ </div>
+</main>
+<script>window.CFG={planes:{{ planes|tojson }},niveles:{{ niveles_bd|tojson }},wa:{{ contacto.whatsapp|tojson }},url:{{ url_for('configurador_enviar')|tojson }}};</script>
+{% raw %}<script>
+(function(){
+'use strict';
+const D=window.CFG||{};
+const PLANES=(D.planes||[]).slice().sort((a,b)=>a.precio-b.precio);
+const $=(s,r)=>(r||document).querySelector(s),$$=(s,r)=>[...(r||document).querySelectorAll(s)];
+const money=n=>'$'+Math.round(n).toLocaleString('es-MX');
+const el=(tag,props,kids)=>{const e=document.createElement(tag);Object.entries(props||{}).forEach(([k,v])=>{if(k==='text')e.textContent=v;else if(k==='class')e.className=v;else e.setAttribute(k,v)});(kids||[]).forEach(k=>e.append(k));return e};
+
+/* ---------- DATOS ---------- */
+const TIPOS=[
+ {id:'panaderia',n:'Panadería',e:'🥖',c:'#b7791f',a:'#f6e0b4',p:[['Concha',15],['Bolillo',4],['Pastel (rebanada)',55],['Café americano',30]],m:['inventario','pedidos','caducidad','reportes']},
+ {id:'estetica',n:'Estética / salón',e:'💇',c:'#be3b8a',a:'#f8d7ea',p:[['Corte dama',250],['Tinte',650],['Manicure',200],['Peinado',300]],m:['citas','comisiones','clientes','whatsapp']},
+ {id:'barberia',n:'Barbería',e:'💈',c:'#1f4e79',a:'#cfe3f5',p:[['Corte clásico',120],['Corte + barba',180],['Afeitado',100],['Cera / gel',90]],m:['citas','comisiones','clientes']},
+ {id:'carniceria',n:'Carnicería',e:'🥩',c:'#9b1c1c',a:'#f7cdc7',p:[['Bistec de res (kg)',210],['Molida (kg)',160],['Arrachera (kg)',260],['Chorizo (kg)',130]],m:['peso','inventario','merma','proveedores']},
+ {id:'polleria',n:'Pollería',e:'🍗',c:'#c2410c',a:'#fde0c8',p:[['Pollo entero (kg)',68],['Pechuga (kg)',110],['Muslo (kg)',70],['Huevo (kg)',48]],m:['peso','pedidos','reparto','inventario']},
+ {id:'abarrotes',n:'Abarrotes',e:'🛒',c:'#2f855a',a:'#cdeed9',p:[['Refresco 600 ml',18],['Leche 1 L',27],['Huevo (12)',52],['Aceite 1 L',45]],m:['codigo','fiado','proveedores','inventario']},
+ {id:'fruteria',n:'Frutería / verdulería',e:'🍎',c:'#38a169',a:'#e1f5cf',p:[['Manzana (kg)',48],['Plátano (kg)',24],['Jitomate (kg)',28],['Aguacate (kg)',75]],m:['peso','inventario','merma']},
+ {id:'farmacia',n:'Farmacia',e:'💊',c:'#0f766e',a:'#c9efe9',p:[['Paracetamol 500 mg',35],['Suero oral',28],['Vitamina C',90],['Alcohol 250 ml',30]],m:['codigo','caducidad','inventario','proveedores']},
+ {id:'ferreteria',n:'Ferretería',e:'🔧',c:'#b45309',a:'#fbe3bd',p:[['Martillo',120],['Cinta métrica',65],['Pintura 1 L',210],['Candado',95]],m:['codigo','inventario','fiado','proveedores']},
+ {id:'papeleria',n:'Papelería',e:'✏️',c:'#6d28d9',a:'#e5d9fb',p:[['Cuaderno',38],['Pluma (3 pzas)',24],['Copias (10)',20],['Cartulina',8]],m:['codigo','inventario','reportes']},
+ {id:'ropa',n:'Tienda de ropa',e:'👕',c:'#111827',a:'#e5e7eb',p:[['Playera',250],['Jeans',520],['Gorra',180],['Calcetas (par)',60]],m:['codigo','inventario','clientes','tienda']},
+ {id:'restaurante',n:'Restaurante / fonda',e:'🍽️',c:'#b91c1c',a:'#fcdada',p:[['Tacos al pastor',65],['Torta',60],['Agua fresca',30],['Postre del día',55]],m:['mesas','inventario','reportes']},
+ {id:'cafeteria',n:'Cafetería',e:'☕',c:'#78350f',a:'#f1dcc4',p:[['Latte',55],['Capuchino',50],['Croissant',40],['Frappé',65]],m:['clientes','pedidos','whatsapp']},
+ {id:'otro',n:'Otro giro',e:'✨',c:'#c8a96a',a:'#f3e7c9',p:[['Producto A',100],['Producto B',150],['Servicio C',250],['Producto D',60]],m:['inventario','reportes']}
+];
+const MODS=[
+ {g:'Ventas y caja',id:'pos',n:'Punto de venta y cobro',d:'Ventas rápidas, ticket y corte de caja',l:0,fijo:1},
+ {g:'Ventas y caja',id:'codigo',n:'Código de barras y lector',d:'Cobra escaneando',l:1},
+ {g:'Ventas y caja',id:'peso',n:'Venta por peso (báscula)',d:'Kilos y gramos al cobrar',l:1},
+ {g:'Ventas y caja',id:'mesas',n:'Mesas y comandas',d:'Pedidos a cocina',l:1},
+ {g:'Ventas y caja',id:'pagos',n:'Terminal y pagos con tarjeta',d:'Integración con pasarela o terminal',l:2,x:1},
+ {g:'Ventas y caja',id:'factura',n:'Facturación electrónica (CFDI)',d:'Facturas desde la venta',l:2,x:1},
+ {g:'Operación',id:'inventario',n:'Inventario y existencias',d:'Entradas, salidas y alertas',l:1},
+ {g:'Operación',id:'caducidad',n:'Lotes y caducidades',d:'Avisos antes de que venza',l:1},
+ {g:'Operación',id:'merma',n:'Control de merma',d:'Pérdidas y desperdicio',l:1},
+ {g:'Operación',id:'proveedores',n:'Proveedores y compras',d:'Pedidos y costos',l:1},
+ {g:'Operación',id:'pedidos',n:'Pedidos y encargos',d:'Apartados y entregas',l:1},
+ {g:'Operación',id:'reparto',n:'Reparto a domicilio',d:'Rutas y repartidores',l:2,x:1},
+ {g:'Operación',id:'citas',n:'Agenda de citas',d:'Reservas por cliente y empleado',l:1},
+ {g:'Operación',id:'comisiones',n:'Comisiones por empleado',d:'Pago por servicio o venta',l:1},
+ {g:'Clientes y crecimiento',id:'clientes',n:'Clientes y lealtad',d:'Historial, puntos y sellos',l:1},
+ {g:'Clientes y crecimiento',id:'fiado',n:'Fiado / crédito a clientes',d:'Cuentas por cobrar',l:1},
+ {g:'Clientes y crecimiento',id:'whatsapp',n:'Avisos por WhatsApp',d:'Recordatorios y promociones',l:2,x:1},
+ {g:'Clientes y crecimiento',id:'tienda',n:'Tienda en línea',d:'Vende por internet',l:2,x:1},
+ {g:'Clientes y crecimiento',id:'sucursales',n:'Varias sucursales',d:'Todo conectado en tiempo real',l:3,x:1},
+ {g:'Clientes y crecimiento',id:'ia',n:'Asistente con IA',d:'Respuestas y análisis automáticos',l:2,x:1},
+ {g:'Control',id:'roles',n:'Usuarios y permisos',d:'Quién ve y hace qué',l:1},
+ {g:'Control',id:'reportes',n:'Reportes y gráficas',d:'Ventas, utilidades y tendencias',l:1},
+ {g:'Control',id:'app',n:'App instalable en el celular',d:'PWA, sin tiendas de apps',l:1}
+];
+const R={
+ usuarios:['1 a 2','3 a 6','7 a 15','16 a 40','Más de 40'],
+ clientes:['Hasta 50','50 a 200','200 a 600','600 a 2,000','Más de 2,000'],
+ productos:['Hasta 200','200 a 1,500','1,500 a 8,000','8,000 a 30,000','Más de 30,000'],
+ ventas:['Hasta $50 mil','$50 a $150 mil','$150 a $500 mil','$500 mil a $1.5 millones','Más de $1.5 millones'],
+ sucursales:['1','2 a 3','4 o más']
+};
+const TIER_SUC=[0,3,4],TIER_VENTAS=[0,0,1,2,3];
+const PALETAS=[['#c8a96a','#f3e7c9'],['#1f4e79','#cfe3f5'],['#2f855a','#cdeed9'],['#be3b8a','#f8d7ea'],['#9b1c1c','#f7cdc7'],['#6d28d9','#e5d9fb'],['#111827','#e5e7eb'],['#c2410c','#fde0c8']];
+const MODELOS=[
+ {id:'cloud',n:'Zedyth Cloud',d:'Plataforma lista para operar. Suscripción, sin costos de desarrollo.'},
+ {id:'boutique',n:'Zedyth Boutique',d:'Cloud más funciones e integraciones exclusivas para tu negocio.'},
+ {id:'enterprise',n:'Zedyth Enterprise',d:'Sistema único desde cero. Tú eres dueño de la tecnología.'}
+];
+const PLAZOS=['Lo antes posible','De 1 a 3 meses','Sin prisa'];
+
+/*LOGIC*/
+const S={tipo:null,otro:'',nombre:'',pc:'#c8a96a',ac:'#f3e7c9',tema:'claro',esq:'redonda',logo:null,usuarios:1,clientes:1,productos:1,ventas:1,sucursales:0,mods:['pos'],modelo:'boutique',plazo:1,notas:''};
+const tipoActual=()=>TIPOS.find(t=>t.id===S.tipo)||null;
+function calcular(s){
+ const mods=MODS.filter(m=>s.mods.includes(m.id));
+ const tier=Math.max(s.usuarios,s.clientes,s.productos,TIER_VENTAS[s.ventas],TIER_SUC[s.sucursales],...mods.map(m=>m.l));
+ const n=PLANES.length,i=n?Math.round(tier*(n-1)/4):-1;
+ const plan=i>=0?PLANES[i]:null,sig=(i>=0&&i<n-1)?PLANES[i+1]:null;
+ const complejidad=tier<=1?'Básica':tier===2?'Media':tier===3?'Alta':'Muy alta';
+ const ing=mods.filter(m=>m.x).map(m=>m.n);
+ return {tier,plan,sig,complejidad,mods,ing};
+}
+function estimado(s,c){
+ const p=c.plan,suscr=p?'desde '+money(p.precio)+' MXN/mes':'por cotizar';
+ const rango=p?(c.sig?money(p.precio)+' a '+money(c.sig.precio)+' MXN/mes':'desde '+money(p.precio)+' MXN/mes'):'por cotizar';
+ const plan=p?'Plan '+p.nombre+(p.bd?' · base de datos de '+p.bd:''):'Plan por definir';
+ if(s.modelo==='cloud')return {big:p?'Desde '+money(p.precio)+'/mes':'Por cotizar',l:['Sin costos de desarrollo de software','Suscripción sugerida: '+plan,'Rango estimado: '+rango],corto:p?'Plan '+p.nombre+' '+suscr:'Por cotizar'};
+ if(s.modelo==='boutique')return {big:p?'Desde '+money(p.precio)+'/mes':'Por cotizar',l:['Más una tarifa de configuración e ingeniería, que se cotiza según tus funciones (complejidad '+c.complejidad.toLowerCase()+')','Suscripción sugerida: '+plan,'Rango estimado: '+rango],corto:(p?'Plan '+p.nombre+' '+suscr:'Por cotizar')+' + setup'};
+ return {big:'Por hitos',l:['Proyecto desde cero: se cotiza al definir el alcance y se paga por hitos (30-30-20-20)','Pólizas de mantenimiento y ciberseguridad: opcionales si tú alojas y administras tu sistema; obligatorias si ZEDYTH lo aloja o lo protege','Referencia de infraestructura: '+plan],corto:'Enterprise por hitos (cotización)'};
+}
+function resumenTexto(s,c,e){
+ const t=tipoActual(),nom=(s.nombre||'').trim();
+ const giro=(t?(t.id==='otro'&&s.otro?s.otro:t.n):'-')+(nom?' "'+nom+'"':'');
+ const mod=MODELOS.find(m=>m.id===s.modelo).n;
+ return ['Negocio: '+giro+' · Sucursales: '+R.sucursales[s.sucursales],
+  'Modelo: '+mod+' · '+(c.plan?'Plan sugerido: '+c.plan.nombre:'Plan por definir')+' · Complejidad: '+c.complejidad,
+  'Capacidad: personas '+R.usuarios[s.usuarios]+' · clientes/día '+R.clientes[s.clientes]+' · productos '+R.productos[s.productos]+' · ventas/mes '+R.ventas[s.ventas],
+  'Funciones: '+c.mods.map(m=>m.n).join(', '),
+  'Diseño: '+s.pc+' / '+s.ac+', estilo '+s.tema+', esquinas '+(s.esq==='redonda'?'redondeadas':'rectas')+', logo: '+(s.logo?'sí (lo enviará por chat)':'no'),
+  'Plazo: '+PLAZOS[s.plazo]+(s.notas.trim()?'\nNotas: '+s.notas.trim():''),
+  'Estimado: '+e.corto].join('\n').slice(0,1480);
+}
+/*FIN LOGIC*/
+
+/* ---------- color ---------- */
+const rgb=h=>{h=h.replace('#','');if(h.length===3)h=h.split('').map(x=>x+x).join('');const n=parseInt(h,16);return [n>>16&255,n>>8&255,n&255]};
+const lum=h=>{const [r,g,b]=rgb(h).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*r+.7152*g+.0722*b};
+const onColor=h=>lum(h)>.45?'#141414':'#ffffff';
+
+/* ---------- construcción de la interfaz ---------- */
+function chips(box,key,opts,offset){
+ const c=$(box);opts.forEach((o,i)=>{const b=el('button',{type:'button',class:'chip','aria-pressed':String(S[key]===i),text:o});b.onclick=()=>{S[key]=i;$$('.chip',c).forEach((x,j)=>x.setAttribute('aria-pressed',String(j===i)));pintar()};c.append(b)});
+}
+function iniciar(){
+ const tb=$('#tipos');
+ TIPOS.forEach(t=>{const b=el('button',{type:'button',class:'tipo','aria-pressed':'false','data-id':t.id},[el('b',{text:t.e}),document.createTextNode(t.n)]);b.onclick=()=>elegirTipo(t.id);tb.append(b)});
+ $('#nombre').oninput=e=>{S.nombre=e.target.value;pintar()};
+ $('#otro').oninput=e=>{S.otro=e.target.value;pintar()};
+ const sw=$('#sw');PALETAS.forEach(([c,a])=>{const b=el('button',{type:'button','aria-label':'Paleta '+c,'aria-pressed':'false'});b.style.background='linear-gradient(135deg,'+c+' 55%,'+a+' 55%)';b.onclick=()=>{S.pc=c;S.ac=a;$('#pc').value=c;$('#ac').value=a;S.tocoColor=1;pintar()};sw.append(b)});
+ $('#pc').oninput=e=>{S.pc=e.target.value;S.tocoColor=1;pintar()};$('#ac').oninput=e=>{S.ac=e.target.value;S.tocoColor=1;pintar()};
+ [['#tema','tema',[['claro','Claro'],['oscuro','Oscuro']]],['#esq','esq',[['redonda','Redondeadas'],['recta','Rectas']]]].forEach(([box,key,opts])=>{opts.forEach(([v,n])=>{const b=el('button',{type:'button',class:'chip','aria-pressed':String(S[key]===v),text:n});b.onclick=()=>{S[key]=v;$$('.chip',$(box)).forEach(x=>x.setAttribute('aria-pressed',String(x===b)));pintar()};$(box).append(b)})});
+ $('#logo').onchange=e=>{const f=e.target.files[0];if(!f)return;if(!/^image\//.test(f.type)||f.size>2*1024*1024){$('#logoT').textContent='Elige una imagen de hasta 2 MB.';e.target.value='';return}const r=new FileReader();r.onload=()=>{S.logo=r.result;$('#logoQ').hidden=false;$('#logoT').textContent=f.name.slice(0,40);pintar()};r.readAsDataURL(f)};
+ $('#logoQ').onclick=()=>{S.logo=null;$('#logo').value='';$('#logoQ').hidden=true;$('#logoT').textContent='Solo se ve en esta vista previa. Nos lo puedes mandar después por el chat.';pintar()};
+ ['usuarios','clientes','productos','ventas','sucursales'].forEach(k=>chips('#c-'+k,k,R[k]));
+ chips('#plazo','plazo',PLAZOS);
+ const mb=$('#mods');let g='',grid;
+ MODS.forEach(m=>{if(m.g!==g){g=m.g;mb.append(el('div',{class:'grp',text:g}));grid=el('div',{class:'mods'});mb.append(grid)}
+  const b=el('button',{type:'button',class:'mod','aria-pressed':'false','data-id':m.id},[document.createTextNode(m.n),el('span',{text:m.d})]);
+  if(m.fijo){b.setAttribute('disabled','');b.setAttribute('aria-pressed','true')}
+  b.onclick=()=>{if(m.fijo)return;S.tocoMods=1;const i=S.mods.indexOf(m.id);i>=0?S.mods.splice(i,1):S.mods.push(m.id);pintar()};grid.append(b)});
+ const md=$('#mdls');MODELOS.forEach(m=>{const b=el('button',{type:'button',class:'mdl','aria-pressed':String(S.modelo===m.id),'data-id':m.id},[el('b',{text:m.n}),el('span',{text:m.d})]);b.onclick=()=>{S.modelo=m.id;pintar()};md.append(b)});
+ $('#notas').oninput=e=>{S.notas=e.target.value};
+ $('#atras').onclick=()=>ir(paso-1);$('#sig').onclick=()=>ir(paso+1);
+ const prog=$('#prog');for(let i=0;i<TOTAL;i++)prog.append(el('i'));
+ $('#frm').onsubmit=enviar;
+ pintar();ir(0);
+}
+function elegirTipo(id){
+ S.tipo=id;const t=tipoActual();
+ if(!S.tocoColor){S.pc=t.c;S.ac=t.a;$('#pc').value=t.c;$('#ac').value=t.a}
+ if(!S.tocoMods)S.mods=['pos',...t.m];
+ S.carrito={};pintar();
+}
+
+/* ---------- vista previa ---------- */
+function pintar(){
+ const t=tipoActual(),c=calcular(S),e=estimado(S,c),app=$('#prev');
+ $$('.tipo').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===S.tipo)));
+ $('#otroBox').hidden=S.tipo!=='otro';
+ $$('.sw button').forEach((b,i)=>b.setAttribute('aria-pressed',String(PALETAS[i][0]===S.pc&&PALETAS[i][1]===S.ac)));
+ $$('.mod').forEach(b=>{if(!b.hasAttribute('disabled'))b.setAttribute('aria-pressed',String(S.mods.includes(b.dataset.id)))});
+ $$('.mdl').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===S.modelo)));
+ const oscuro=S.tema==='oscuro';
+ app.style.setProperty('--pc',S.pc);app.style.setProperty('--ac',S.ac);app.style.setProperty('--on',onColor(S.pc));
+ app.style.setProperty('--pbg',oscuro?'#15161a':'#ffffff');app.style.setProperty('--ptx',oscuro?'#f2f2f2':'#1a1a1a');app.style.setProperty('--pcard',oscuro?'#23252b':'#f3f3f3');
+ app.style.setProperty('--rad',S.esq==='redonda'?'14px':'3px');
+ const nom=(S.nombre||'').trim()||'Tu negocio';
+ $('#pNombre').textContent=nom;
+ $('#pTipo').textContent=t?(t.id==='otro'&&S.otro.trim()?S.otro.trim():t.n):'Punto de venta';
+ const lg=$('#pLogo');lg.textContent='';
+ if(S.logo){const im=el('img',{alt:''});im.src=S.logo;lg.append(im)}else lg.textContent=nom.charAt(0).toUpperCase();
+ const has=id=>S.mods.includes(id);
+ $('#pScan').hidden=!has('codigo');$('#pKpi').hidden=!has('reportes');
+ const prods=(t||TIPOS[TIPOS.length-1]).p,unidad=has('peso');
+ const pg=$('#pProds');pg.textContent='';
+ prods.forEach(([n,pr],i)=>{const b=el('button',{type:'button',class:'pt'},[el('i'),el('span',{text:n}),el('em',{text:money(pr)})]);b.onclick=()=>{S.carrito=S.carrito||{};S.carrito[i]=(S.carrito[i]||0)+1;carrito(prods)};pg.append(b)});
+ const pays=$('#pPays');pays.textContent='';['Efectivo','Tarjeta'].concat(has('fiado')?['Fiado']:[]).forEach(x=>pays.append(el('span',{text:x})));
+ carrito(prods);
+ /* estimado en vivo */
+ const est=$('#est');est.textContent='';
+ est.append(el('small',{text:'Estimado aproximado'}),el('b',{text:e.big}));
+ e.l.forEach(x=>est.append(el('p',{text:x})));
+ const bd=el('div',{class:'badges'});c.mods.slice(0,8).forEach(m=>bd.append(el('span',{text:m.n})));if(c.mods.length>8)bd.append(el('span',{text:'+'+(c.mods.length-8)+' más'}));est.append(bd);
+ if(c.ing.length&&S.modelo==='cloud'){const h=$('#hm');h.hidden=false;h.textContent='Con '+c.ing.slice(0,2).join(' y ')+(c.ing.length>2?' y otras':'')+', normalmente conviene Zedyth Boutique: son funciones que requieren ingeniería a la medida.'}else $('#hm').hidden=true;
+ $('#h0').hidden=true;
+ if(paso===5)resumen();
+}
+function carrito(prods){
+ const q=S.carrito||{},ids=Object.keys(q),L=$('#pLines');L.textContent='';let tot=0;
+ if(!ids.length)L.append(el('p',{text:'Toca un producto para cobrar'}));
+ ids.forEach(i=>{const [n,p]=prods[i]||[];if(!n)return;const sub=p*q[i];tot+=sub;L.append(el('div',{},[el('span',{text:q[i]+' × '+n}),el('span',{text:money(sub)})]))});
+ $('#pTot').textContent=money(tot);
+}
+
+/* ---------- pasos ---------- */
+const TOTAL=6;let paso=0;
+const TITULOS=['Tu negocio','Tu marca','Tu capacidad','Funciones','Cómo lo quieres','Resumen'];
+function ir(n){
+ if(n>paso&&paso===0&&!S.tipo){$('#h0').hidden=false;return}
+ paso=Math.max(0,Math.min(TOTAL-1,n));
+ $$('.paso').forEach(p=>p.classList.toggle('on',+p.dataset.p===paso));
+ $$('#prog i').forEach((i,k)=>i.classList.toggle('on',k<=paso));
+ $('#pn').textContent='Paso '+(paso+1)+' de '+TOTAL+' · '+TITULOS[paso];
+ $('#atras').style.visibility=paso?'visible':'hidden';
+ $('#sig').style.display=paso===TOTAL-1?'none':'';
+ if(paso===5)resumen();
+ const top=$('.intro');if(top&&window.scrollY>top.offsetTop+top.offsetHeight)window.scrollTo({top:top.offsetTop+top.offsetHeight-10,behavior:'smooth'});
+}
+function resumen(){
+ const c=calcular(S),e=estimado(S,c),t=tipoActual(),sum=$('#sum');sum.textContent='';
+ const filas=[['Negocio',(t?(t.id==='otro'&&S.otro.trim()?S.otro.trim():t.n):'-')+(S.nombre.trim()?' · '+S.nombre.trim():'')],
+  ['Modelo',MODELOS.find(m=>m.id===S.modelo).n],['Capacidad',R.usuarios[S.usuarios]+' personas · '+R.clientes[S.clientes]+' clientes/día'],
+  ['Productos',R.productos[S.productos]],['Sucursales',R.sucursales[S.sucursales]],['Funciones',c.mods.length+' seleccionadas'],
+  ['Complejidad',c.complejidad],['Plazo',PLAZOS[S.plazo]],['Estimado',e.big]];
+ filas.forEach(([k,v])=>sum.append(el('div',{},[el('dt',{text:k}),el('dd',{text:v})])));
+}
+
+/* ---------- envío ---------- */
+async function enviar(ev){
+ ev.preventDefault();
+ const res=$('#res'),btn=$('#env'),nombre=$('#cn').value.trim(),contacto=$('#cc').value.trim();
+ const msg=(t,ok)=>{res.textContent='';res.append(el('div',{class:'msg '+(ok?'ok':'er'),text:t}))};
+ const valido=(contacto.includes('@')&&contacto.includes('.'))||contacto.replace(/\D/g,'').length>=8;
+ if(nombre.length<2||!valido){msg('Escribe tu nombre y un WhatsApp o correo válido.',false);return}
+ if(!$('#ok').checked){msg('Acepta el aviso de privacidad para continuar.',false);return}
+ const c=calcular(S),e=estimado(S,c),t=tipoActual();
+ const resumenT=resumenTexto(S,c,e);
+ const body={nombre,contacto,web:$('#web').value,config:{
+  negocio:(t?(t.id==='otro'&&S.otro.trim()?S.otro.trim():t.n):'')+(S.nombre.trim()?' · '+S.nombre.trim():''),
+  modelo:MODELOS.find(m=>m.id===S.modelo).n,funciones:c.mods.map(m=>m.n).join(', '),estimado:e.corto,plazo:PLAZOS[S.plazo],resumen:resumenT}};
+ btn.disabled=true;btn.textContent='Enviando…';
+ const wa=u=>{const a=el('a',{class:'btn g',href:u,target:'_blank',rel:'noopener',text:'Continuar por WhatsApp',style:'margin-top:12px;display:inline-block'});return a};
+ try{
+  const r=await fetch(D.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||!j.ok)throw new Error(j.error||'x');
+  res.textContent='';res.append(el('div',{class:'msg ok',text:'¡Listo! Recibimos tu configuración. Te contactaremos pronto; si quieres avanzar de inmediato, continúa por WhatsApp.'}),wa(j.wa));
+  btn.textContent='Enviado';if(window.gtag)gtag('event','configurador_enviado');
+ }catch(err){
+  btn.disabled=false;btn.textContent='Enviar mi configuración';
+  const alt='https://wa.me/'+D.wa+'?text='+encodeURIComponent('Hola, soy '+nombre+'. Armé mi sistema en el configurador de ZEDYTH:\n'+resumenT+'\nContacto: '+contacto);
+  res.textContent='';res.append(el('div',{class:'msg er',text:'No pudimos guardar tu configuración ahora mismo (puede que hayas enviado varias seguidas). Puedes mandárnosla directo por WhatsApp.'}),wa(alt));
+ }
+}
+iniciar();
+})();
+</script>{% endraw %}
+</body>
+</html>
