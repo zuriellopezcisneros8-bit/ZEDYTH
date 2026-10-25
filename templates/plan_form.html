@@ -81,15 +81,48 @@
 
     <div class="pf-g">
       <div class="pf-f">
-        <label for="bd_incluida">Base de datos de texto (Neon)</label>
+        <label for="bd_incluida">Base de datos PostgreSQL</label>
         <input type="text" id="bd_incluida" name="bd_incluida" maxlength="60" placeholder="5 GB" value="{{ f.bd_incluida }}">
         <span class="ayuda">Clientes, ventas, reservas y demás datos. Ej.: 5 GB, o «Dedicada».</span>
       </div>
       <div class="pf-f">
-        <label for="img_incluida">Almacenamiento de imágenes (Cloudinary)</label>
+        <label for="img_incluida">Imágenes y archivos</label>
         <input type="text" id="img_incluida" name="img_incluida" maxlength="60" placeholder="10 GB" value="{{ f.img_incluida }}">
         <span class="ayuda">Fotos de productos, logos y archivos. Ej.: 10 GB, o «Dedicado».</span>
       </div>
+    </div>
+
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="nivel">Etiqueta de nivel</label>
+        <input type="text" id="nivel" name="nivel" maxlength="30" placeholder="Profesional" value="{{ f.nivel }}">
+        <span class="ayuda">Entrada, Profesional, Negocio, Avanzado, Alta demanda…</span>
+      </div>
+      <div class="pf-f">
+        <label for="transferencia">Transferencia mensual</label>
+        <input type="text" id="transferencia" name="transferencia" maxlength="30" placeholder="100 GB/mes" value="{{ f.transferencia }}">
+        <span class="ayuda">Cuota comercial de datos servidos a los usuarios cada mes.</span>
+      </div>
+    </div>
+
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="cpu">CPU de la aplicación</label>
+        <input type="text" id="cpu" name="cpu" maxlength="30" placeholder="1 vCPU" value="{{ f.cpu }}">
+      </div>
+      <div class="pf-f">
+        <label for="ram">RAM de la aplicación</label>
+        <input type="text" id="ram" name="ram" maxlength="30" placeholder="2 GB" value="{{ f.ram }}">
+      </div>
+    </div>
+
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="respaldos">Retención de respaldos</label>
+        <input type="text" id="respaldos" name="respaldos" maxlength="30" placeholder="7 días" value="{{ f.respaldos }}">
+        <span class="ayuda">Respaldos diarios. CPU y RAM son de la instancia de la aplicación, no de la base de datos.</span>
+      </div>
+      <div></div>
     </div>
 
     <div class="pf-chk"><input type="checkbox" id="a_medida" name="a_medida" {{ 'checked' if f.a_medida }}>

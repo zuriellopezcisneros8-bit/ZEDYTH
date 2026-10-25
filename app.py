@@ -53,8 +53,14 @@ class Plan(db.Model):
     incluye = db.Column(db.Text, default="")           # elementos separados por |
     destacado = db.Column(db.Boolean, default=False)
     categoria = db.Column(db.String(20), default="tamano")   # tamano | ciber
-    bd_incluida = db.Column(db.String(60))                    # base de datos de texto (Neon), ej. "5 GB"
-    img_incluida = db.Column(db.String(60))                   # imágenes y archivos (Cloudinary), ej. "10 GB"
+    bd_incluida = db.Column(db.String(60))                    # base de datos PostgreSQL (datos de negocio), ej. "5 GB"
+    img_incluida = db.Column(db.String(60))                   # imágenes y archivos (almacenamiento de objetos, ej. R2), ej. "10 GB"
+    nivel = db.Column(db.String(30))                          # etiqueta comercial: Entrada, Profesional, Negocio...
+    cpu = db.Column(db.String(30))                            # CPU de la instancia de aplicación, ej. "0.5 vCPU"
+    ram = db.Column(db.String(30))                            # RAM de la instancia de aplicación, ej. "1 GB"
+    transferencia = db.Column(db.String(40))                  # cuota comercial de transferencia mensual, ej. "25 GB/mes"
+    respaldos = db.Column(db.String(40))                      # retención de respaldos diarios, ej. "7 días"
+    ficha_version = db.Column(db.Integer, default=0)          # versión de la ficha técnica aplicada (ver FICHAS)
     precio_anual = db.Column(Dinero, nullable=True)           # None = mensual x ANUAL_MESES_PAGADOS
     activo = db.Column(db.Boolean, default=True)              # False = plan retirado (se conserva por clientes ya suscritos)
     orden = db.Column(db.Integer, default=0)
@@ -282,7 +288,10 @@ def migrar_sqlite():
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
         "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
                  ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
-                 ("semilla", "VARCHAR(40)")],
+                 ("semilla", "VARCHAR(40)"),
+                 ("nivel", "VARCHAR(30)"), ("cpu", "VARCHAR(30)"), ("ram", "VARCHAR(30)"),
+                 ("transferencia", "VARCHAR(40)"), ("respaldos", "VARCHAR(40)"),
+                 ("ficha_version", "INTEGER DEFAULT 0")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
@@ -355,6 +364,99 @@ def sembrar_planes():
             viejo.activo = False
     db.session.commit()
 
+# --- FICHAS TÉCNICAS DE LAS 5 MEMBRESÍAS (texto de la auditoría de octubre de 2026) ---------------------
+# Fuente única de recursos, precios y textos de Esencial, Ascenso, Scales, Insignia y X Prime.
+# Se aplican UNA sola vez por plan: al arrancar, todo plan con ficha_version menor a FICHA_VERSION se
+# reescribe con estos datos y queda marcado. Después puedes seguir editando desde el panel sin que se pierda
+# nada. Para publicar un cambio de texto: edita aquí y sube FICHA_VERSION en 1.
+# Enterprise y Zenith no se tocan.
+FICHA_VERSION = 1
+FICHAS = {
+    "esencial": {
+        "nivel": "Entrada", "precio": 1200, "precio_anual": 12000,
+        "cpu": "0.5 vCPU", "ram": "1 GB", "bd": "5 GB", "img": "10 GB",
+        "transferencia": "25 GB/mes", "respaldos": "7 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, monitoreo básico, transferencia mensual limitada a 25 GB como cuota comercial y respaldos diarios con retención de 7 días, una vez configurados.",
+            "Soporte: asistente de IA disponible 24/7 y atención técnica por correo en horario laboral.",
+            "Ideal para pequeños sistemas de reservas, aplicaciones operativas ligeras y proyectos con uso moderado.",
+        ],
+    },
+    "ascenso": {
+        "nivel": "Profesional", "precio": 2500, "precio_anual": 25000,
+        "cpu": "1 vCPU", "ram": "2 GB", "bd": "10 GB", "img": "25 GB",
+        "transferencia": "100 GB/mes", "respaldos": "7 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, monitoreo de disponibilidad, cuota comercial de 100 GB de transferencia al mes y respaldos diarios con retención de 7 días.",
+            "Soporte: asistencia de IA y atención técnica por WhatsApp en horario hábil.",
+            "Ideal para una aplicación de negocio con usuarios, registros, operaciones frecuentes y un volumen moderado de información.",
+        ],
+    },
+    "scales": {
+        "nivel": "Negocio", "precio": 4800, "precio_anual": 48000,
+        "cpu": "1 vCPU", "ram": "4 GB", "bd": "25 GB", "img": "50 GB",
+        "transferencia": "250 GB/mes", "respaldos": "14 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, monitoreo y alertas, cuota comercial de 250 GB de transferencia al mes, respaldos diarios con retención de 14 días y revisión programada de rendimiento.",
+            "Soporte: prioridad frente a los niveles inferiores y atención técnica por WhatsApp en horario hábil.",
+            "Ideal para aplicaciones comerciales, catálogos amplios, reservas con mucha actividad y plataformas con más trabajo de backend.",
+        ],
+    },
+    "insignia": {
+        "nivel": "Avanzado", "precio": 8000, "precio_anual": 80000,
+        "cpu": "2 vCPU", "ram": "4 GB", "bd": "50 GB", "img": "100 GB",
+        "transferencia": "500 GB/mes", "respaldos": "30 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, cuota comercial de 500 GB de transferencia al mes, respaldos diarios con retención de 30 días, entorno de pruebas con recursos limitados y registro de eventos de seguridad.",
+            "Soporte: atención prioritaria y revisión de métricas operativas. Un WAF y otras protecciones avanzadas se incluyen únicamente cuando estén desplegados y configurados.",
+            "Ideal para negocios establecidos con operaciones intensivas o sistemas que requieren mayor capacidad y controles de administración.",
+        ],
+    },
+    "x-prime": {
+        "nivel": "Alta demanda", "precio": 14000, "precio_anual": 140000,
+        "cpu": "2 vCPU", "ram": "8 GB", "bd": "100 GB", "img": "200 GB",
+        "transferencia": "1 TB/mes", "respaldos": "30 días",
+        "incluye": [
+            "También incluye: una aplicación de producción, entorno de pruebas con recursos limitados, un dominio personalizado, HTTPS, cuota comercial de 1 TB de transferencia al mes, respaldos diarios con retención de 30 días, monitoreo reforzado y revisión periódica de capacidad y recuperación.",
+            "Soporte: atención prioritaria con tiempos de respuesta definidos por contrato y escalamiento técnico.",
+            "Ideal para sistemas de demanda alta. La alta disponibilidad real, la redundancia entre servidores y las garantías estrictas de recuperación deben cotizarse y desplegarse expresamente; no quedan garantizadas por tener más RAM.",
+        ],
+    },
+}
+
+
+def _copia_antes_de_fichas():
+    """Copia de la base SQLite antes de reescribir planes (si la base no es SQLite, no hace nada)."""
+    ruta = db.engine.url.database if db.engine.dialect.name == "sqlite" else None
+    if ruta and os.path.exists(ruta):
+        os.makedirs("respaldos_panel", exist_ok=True)
+        shutil.copy2(ruta, os.path.join("respaldos_panel", f"zedyth_antes_fichas_v{FICHA_VERSION}_{date.today().isoformat()}.db"))
+
+
+def aplicar_fichas():
+    """Aplica FICHAS a los planes que aún no tienen esta versión. Es idempotente: si ya se aplicó, no hace nada."""
+    planes = {p.semilla: p for p in Plan.query.filter(Plan.semilla.in_(list(FICHAS))).all()}
+    for p in Plan.query.filter(Plan.semilla.is_(None)).all():          # planes antiguos sin clave de semilla
+        clave = p.nombre.lower().replace(" ", "-")
+        if clave in FICHAS and clave not in planes:
+            planes[clave] = p
+    pendientes = {c: p for c, p in planes.items() if (p.ficha_version or 0) < FICHA_VERSION}
+    if not pendientes:
+        return
+    _copia_antes_de_fichas()
+    for clave, p in pendientes.items():
+        f = FICHAS[clave]
+        p.nivel, p.cpu, p.ram = f["nivel"], f["cpu"], f["ram"]
+        p.bd_incluida, p.img_incluida = f["bd"], f["img"]
+        p.transferencia, p.respaldos = f["transferencia"], f["respaldos"]
+        p.precio, p.precio_anual = f["precio"], f["precio_anual"]
+        p.incluye = "|".join(f["incluye"])
+        p.ficha_version = FICHA_VERSION
+        db.session.add(Auditoria(usuario="sistema", accion="ficha", entidad="Plan", entidad_id=p.id,
+                                 detalle=f"Ficha técnica v{FICHA_VERSION} aplicada · {p.nombre}"))
+    db.session.commit()
+
+
 def sembrar_usuario_admin():
     if not Usuario.query.first():
         admin = Usuario(username="admin", nombre="Administrador Principal")
@@ -382,6 +484,7 @@ with app.app_context():
     db.create_all()
     migrar_sqlite()
     sembrar_planes()
+    aplicar_fichas()
     sembrar_usuario_admin()
     proyecto_general()
 
@@ -480,17 +583,23 @@ def nuevo_cliente():
     return redirect(url_for('index'))
 
 
+CAMPOS_RECURSOS = ("nivel", "cpu", "ram", "transferencia", "respaldos")
+
+
 def _valores_plan(plan=None):
     """Valores para mostrar en el formulario de un plan (nuevo si plan es None)."""
     if plan is None:
         return {"nombre": "", "precio": "", "a_medida": False, "descripcion": "", "incluye": "",
-                "destacado": False, "categoria": "tamano", "bd_incluida": "", "img_incluida": "", "orden": 0, "activo": True, "precio_anual": ""}
+                "destacado": False, "categoria": "tamano", "bd_incluida": "", "img_incluida": "", "orden": 0, "activo": True, "precio_anual": "",
+                "nivel": "", "cpu": "", "ram": "", "transferencia": "", "respaldos": ""}
     return {"nombre": plan.nombre, "precio": "" if plan.precio is None else f"{plan.precio:g}",
             "a_medida": bool(plan.a_medida), "descripcion": plan.descripcion or "",
             "incluye": (plan.incluye or "").replace("|", "\n"), "destacado": bool(plan.destacado),
             "categoria": plan.categoria or "tamano", "bd_incluida": plan.bd_incluida or "", "img_incluida": plan.img_incluida or "",
             "orden": plan.orden or 0, "activo": plan.activo is not False,
-            "precio_anual": "" if plan.precio_anual is None else f"{plan.precio_anual:g}"}
+            "precio_anual": "" if plan.precio_anual is None else f"{plan.precio_anual:g}",
+            "nivel": plan.nivel or "", "cpu": plan.cpu or "", "ram": plan.ram or "",
+            "transferencia": plan.transferencia or "", "respaldos": plan.respaldos or ""}
 
 
 def _leer_form_plan(plan):
@@ -499,7 +608,9 @@ def _leer_form_plan(plan):
          "descripcion": campo("descripcion"), "incluye": request.form.get("incluye") or "",
          "destacado": "destacado" in request.form, "categoria": campo("categoria"),
          "bd_incluida": campo("bd_incluida"), "img_incluida": campo("img_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form,
-         "precio_anual": campo("precio_anual")}
+         "precio_anual": campo("precio_anual"),
+         "nivel": campo("nivel"), "cpu": campo("cpu"), "ram": campo("ram"),
+         "transferencia": campo("transferencia"), "respaldos": campo("respaldos")}
     if not v["nombre"]:
         return "Escribe un nombre para el plan.", v
     if len(v["nombre"]) > 60:
@@ -536,6 +647,9 @@ def _leer_form_plan(plan):
         plan.img_incluida = v["img_incluida"] or None
     if "precio_anual" in request.form:        # si el formulario aún no trae el campo, se conserva el valor actual
         plan.precio_anual = anual
+    for k in CAMPOS_RECURSOS:                 # nivel, cpu, ram, transferencia, respaldos (mismo criterio)
+        if k in request.form:
+            setattr(plan, k, v[k][:30] or None)
     return None, v
 
 
@@ -611,6 +725,8 @@ def membresias_vista():
             "ahorro": (dinero(p.precio * 12 - precio_anual(p)) if p.precio and not p.a_medida and precio_anual(p)
                        and p.precio * 12 > precio_anual(p) else ""),
             "bd": p.bd_incluida or "", "img": p.img_incluida or "",
+            "nivel": p.nivel or "", "cpu": p.cpu or "", "ram": p.ram or "",
+            "transferencia": p.transferencia or "", "respaldos": p.respaldos or "",
             "desc": p.descripcion,
             "incluye": [i for i in (p.incluye or "").split("|") if i],
             "color": color,
@@ -1229,7 +1345,10 @@ def hechos_zedith():
     return {
         "planes": [(p.nombre, p.precio, p.a_medida,
                     (p.descripcion or "") + (f" · base de datos de texto {p.bd_incluida}" if p.bd_incluida else "")
-                    + (f" · almacenamiento de imágenes {p.img_incluida}" if p.img_incluida else "") + (f" · pago anual {dinero(precio_anual(p))}" if p.precio and not p.a_medida else ""))
+                    + (f" · almacenamiento de imágenes {p.img_incluida}" if p.img_incluida else "")
+                    + (f" · aplicación {p.cpu} y {p.ram} de RAM" if p.cpu and p.ram else "")
+                    + (f" · transferencia {p.transferencia}" if p.transferencia else "")
+                    + (f" · respaldos diarios con retención de {p.respaldos}" if p.respaldos else "") + (f" · pago anual {dinero(precio_anual(p))}" if p.precio and not p.a_medida else ""))
                    for p in planes_visibles()],
         "niveles_bd": NIVELES_BD,
         "resenas": Resena.query.filter_by(aprobada=True).count(),
@@ -1330,7 +1449,8 @@ def zedith_analisis():
 def configurador():
     """Configurador de software: el cliente arma su sistema y recibe un estimado aproximado.
     Los planes salen de tu base de datos, así que los precios siempre son los vigentes."""
-    planes = [{"nombre": p.nombre, "precio": float(p.precio), "anual": precio_anual(p), "bd": p.bd_incluida or "", "img": p.img_incluida or ""}
+    planes = [{"nombre": p.nombre, "precio": float(p.precio), "anual": precio_anual(p), "bd": p.bd_incluida or "", "img": p.img_incluida or "",
+               "cpu": p.cpu or "", "ram": p.ram or "", "transferencia": p.transferencia or "", "respaldos": p.respaldos or ""}
               for p in planes_visibles('tamano') if p.precio and not p.a_medida]
     return render_template('configurador.html', planes=planes, niveles_bd=NIVELES_BD, contacto=CONTACTO,
                            desde={"boutique": DESDE_BOUTIQUE, "enterprise": DESDE_ENTERPRISE},

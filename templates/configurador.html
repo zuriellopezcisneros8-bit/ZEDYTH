@@ -285,7 +285,7 @@ function calcular(s){
 function estimado(s,c){
  const p=c.plan,an=s.fact==='anual',pm=q=>an?money(q.anual)+'/año':money(q.precio)+'/mes',
   eq=q=>an?' (equivale a '+money(q.anual/12)+'/mes'+(q.precio*12>q.anual?'; ahorras '+money(q.precio*12-q.anual)+' al año':'')+')':'',
-  ds=D.desde||{boutique:1500,enterprise:3000},plan=p?'Plan '+p.nombre+(p.bd?' · base de datos de '+p.bd:'')+(p.img?' · imágenes: '+p.img:''):'Plan por definir',
+  ds=D.desde||{boutique:1500,enterprise:3000},plan=p?'Plan '+p.nombre+(p.bd?' · base de datos de '+p.bd:'')+(p.img?' · imágenes: '+p.img:'')+(p.cpu&&p.ram?' · aplicación: '+p.cpu+' y '+p.ram+' de RAM':''):'Plan por definir',
   rango=p?(c.sig?pm(p)+' a '+pm(c.sig):'desde '+pm(p)):'por cotizar',
   mem=p?'Membresía '+(an?'anual':'mensual')+': desde '+pm(p)+eq(p):'Membresía por cotizar';
  if(s.modelo==='cloud')return {big:p?'Desde '+pm(p):'Por cotizar',l:['Sin costos de desarrollo de software',mem,'Rango estimado: '+rango],corto:p?plan+' '+pm(p):'Por cotizar'};

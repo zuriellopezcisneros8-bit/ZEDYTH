@@ -10,7 +10,7 @@
   .pa-primary{background:var(--accent-purple,#7c3aed);border-color:var(--accent-purple,#7c3aed);color:#fff}
   .pa-ok{margin:0 0 18px;padding:12px 16px;border-radius:10px;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.08);font-size:14px}
   .pa-wrap{overflow-x:auto;border:1px solid var(--border-color,rgba(255,255,255,.12));border-radius:14px;background:var(--card-bg,transparent)}
-  .pa-t{width:100%;border-collapse:collapse;font-size:14px;min-width:960px}
+  .pa-t{width:100%;border-collapse:collapse;font-size:14px;min-width:1280px}
   .pa-t th{text-align:left;padding:12px 14px;font-weight:600;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-secondary,#9a9a9a);border-bottom:1px solid var(--border-color,rgba(255,255,255,.12))}
   .pa-t td{padding:13px 14px;border-bottom:1px solid var(--border-color,rgba(255,255,255,.08));vertical-align:middle}
   .pa-t tr:last-child td{border-bottom:0}
@@ -40,7 +40,7 @@
 
 <div class="pa-wrap">
 <table class="pa-t">
-  <thead><tr><th>Orden</th><th>Plan</th><th>Precio / mes</th><th>Precio / año</th><th>Texto (Neon)</th><th>Imágenes (Cloudinary)</th><th>Clientes</th><th>Estado</th><th></th></tr></thead>
+  <thead><tr><th>Orden</th><th>Plan</th><th>Precio / mes</th><th>Precio / año</th><th>CPU / RAM</th><th>PostgreSQL</th><th>Imágenes y archivos</th><th>Transferencia</th><th>Respaldos</th><th>Clientes</th><th>Estado</th><th></th></tr></thead>
   <tbody>
   {% for p in planes %}
   <tr class="{{ 'off' if p.activo is false }}">
@@ -50,13 +50,17 @@
       <span class="pa-d">
         {% if p.categoria == 'ciber' %}<span class="pa-tag">Ciberseguridad aparte</span>{% endif %}
         {% if p.destacado %}<span class="pa-tag hl">Destacado</span>{% endif %}
+        {% if p.nivel %}<span class="pa-tag">{{ p.nivel }}</span>{% endif %}
         {{ p.descripcion or '' }}
       </span>
     </td>
     <td>{% if p.precio and p.a_medida %}Desde {{ dinero(p.precio) }}{% elif p.precio %}{{ dinero(p.precio) }}{% elif p.a_medida %}A medida{% else %}Por definir{% endif %}</td>
     <td>{% set pa = anual(p) %}{% if pa and p.a_medida %}Desde {{ dinero(pa) }}{% elif pa %}{{ dinero(pa) }}{% elif p.a_medida %}A medida{% else %}Por definir{% endif %}{% if p.precio_anual %}<span class="pa-d">precio fijado a mano</span>{% elif pa %}<span class="pa-d">pagas {{ meses_anual }} de 12 meses</span>{% endif %}</td>
+    <td>{% if p.cpu or p.ram %}{{ p.cpu or '—' }} / {{ p.ram or '—' }}{% else %}—{% endif %}</td>
     <td>{{ p.bd_incluida or '—' }}</td>
     <td>{{ p.img_incluida or '—' }}</td>
+    <td>{{ p.transferencia or '—' }}</td>
+    <td>{{ p.respaldos or '—' }}</td>
     <td>{{ suscritos.get(p.id, 0) }}</td>
     <td>{% if p.activo is false %}Retirado{% else %}Vigente{% endif %}</td>
     <td>
@@ -70,7 +74,7 @@
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="9">Aún no hay planes. Crea el primero con «Nuevo plan».</td></tr>
+  <tr><td colspan="12">Aún no hay planes. Crea el primero con «Nuevo plan».</td></tr>
   {% endfor %}
   </tbody>
 </table>
