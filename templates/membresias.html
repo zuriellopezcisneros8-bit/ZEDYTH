@@ -22,6 +22,7 @@
 
         <div class="plan-price"><span class="pm">{{ plan.precio }}{% if plan.precio.startswith('$') %}<small>/mes</small>{% endif %}</span><span class="pa" hidden>{{ plan.anual }}{% if plan.anual.startswith('$') %}<small>/año</small>{% endif %}{% if plan.ahorro %}<span class="plan-save">Ahorras {{ plan.ahorro }} al año</span>{% endif %}</span></div>
         <div class="plan-desc">{{ plan.desc }}</div>
+        {% if plan.bd or plan.img %}<div class="plan-desc">{% if plan.bd %}Texto: <b>{{ plan.bd }}</b>{% endif %}{% if plan.bd and plan.img %} · {% endif %}{% if plan.img %}Imágenes: <b>{{ plan.img }}</b>{% endif %}</div>{% endif %}
 
         <ul class="plan-list">
             {% for item in plan.incluye %}

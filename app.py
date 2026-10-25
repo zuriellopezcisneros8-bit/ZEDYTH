@@ -53,7 +53,8 @@ class Plan(db.Model):
     incluye = db.Column(db.Text, default="")           # elementos separados por |
     destacado = db.Column(db.Boolean, default=False)
     categoria = db.Column(db.String(20), default="tamano")   # tamano | ciber
-    bd_incluida = db.Column(db.String(60))                    # ej. "5 GB"
+    bd_incluida = db.Column(db.String(60))                    # base de datos de texto (Neon), ej. "5 GB"
+    img_incluida = db.Column(db.String(60))                   # imágenes y archivos (Cloudinary), ej. "10 GB"
     precio_anual = db.Column(Dinero, nullable=True)           # None = mensual x ANUAL_MESES_PAGADOS
     activo = db.Column(db.Boolean, default=True)              # False = plan retirado (se conserva por clientes ya suscritos)
     orden = db.Column(db.Integer, default=0)
@@ -279,7 +280,7 @@ def migrar_sqlite():
         return
     nuevas = {
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
-        "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"),
+        "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
                  ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
                  ("semilla", "VARCHAR(40)")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
@@ -483,11 +484,11 @@ def _valores_plan(plan=None):
     """Valores para mostrar en el formulario de un plan (nuevo si plan es None)."""
     if plan is None:
         return {"nombre": "", "precio": "", "a_medida": False, "descripcion": "", "incluye": "",
-                "destacado": False, "categoria": "tamano", "bd_incluida": "", "orden": 0, "activo": True, "precio_anual": ""}
+                "destacado": False, "categoria": "tamano", "bd_incluida": "", "img_incluida": "", "orden": 0, "activo": True, "precio_anual": ""}
     return {"nombre": plan.nombre, "precio": "" if plan.precio is None else f"{plan.precio:g}",
             "a_medida": bool(plan.a_medida), "descripcion": plan.descripcion or "",
             "incluye": (plan.incluye or "").replace("|", "\n"), "destacado": bool(plan.destacado),
-            "categoria": plan.categoria or "tamano", "bd_incluida": plan.bd_incluida or "",
+            "categoria": plan.categoria or "tamano", "bd_incluida": plan.bd_incluida or "", "img_incluida": plan.img_incluida or "",
             "orden": plan.orden or 0, "activo": plan.activo is not False,
             "precio_anual": "" if plan.precio_anual is None else f"{plan.precio_anual:g}"}
 
@@ -497,7 +498,7 @@ def _leer_form_plan(plan):
     v = {"nombre": campo("nombre"), "precio": campo("precio"), "a_medida": "a_medida" in request.form,
          "descripcion": campo("descripcion"), "incluye": request.form.get("incluye") or "",
          "destacado": "destacado" in request.form, "categoria": campo("categoria"),
-         "bd_incluida": campo("bd_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form,
+         "bd_incluida": campo("bd_incluida"), "img_incluida": campo("img_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form,
          "precio_anual": campo("precio_anual")}
     if not v["nombre"]:
         return "Escribe un nombre para el plan.", v
@@ -531,6 +532,8 @@ def _leer_form_plan(plan):
     plan.nombre, plan.precio, plan.a_medida, plan.descripcion = v["nombre"], precio, v["a_medida"], v["descripcion"]
     plan.incluye, plan.destacado, plan.categoria = "|".join(lineas), v["destacado"], v["categoria"]
     plan.bd_incluida, plan.orden, plan.activo = v["bd_incluida"] or None, orden, v["activo"]
+    if "img_incluida" in request.form:        # si el formulario aún no trae el campo, se conserva el valor actual
+        plan.img_incluida = v["img_incluida"] or None
     if "precio_anual" in request.form:        # si el formulario aún no trae el campo, se conserva el valor actual
         plan.precio_anual = anual
     return None, v
@@ -607,6 +610,7 @@ def membresias_vista():
                       else dinero(precio_anual(p)) if precio_anual(p) else "Por definir"),
             "ahorro": (dinero(p.precio * 12 - precio_anual(p)) if p.precio and not p.a_medida and precio_anual(p)
                        and p.precio * 12 > precio_anual(p) else ""),
+            "bd": p.bd_incluida or "", "img": p.img_incluida or "",
             "desc": p.descripcion,
             "incluye": [i for i in (p.incluye or "").split("|") if i],
             "color": color,
@@ -1224,7 +1228,8 @@ def hechos_zedith():
     prom = db.session.query(db.func.avg(Resena.calificacion)).filter(Resena.aprobada.is_(True)).scalar()
     return {
         "planes": [(p.nombre, p.precio, p.a_medida,
-                    (p.descripcion or "") + (f" · pago anual {dinero(precio_anual(p))}" if p.precio and not p.a_medida else ""))
+                    (p.descripcion or "") + (f" · base de datos de texto {p.bd_incluida}" if p.bd_incluida else "")
+                    + (f" · almacenamiento de imágenes {p.img_incluida}" if p.img_incluida else "") + (f" · pago anual {dinero(precio_anual(p))}" if p.precio and not p.a_medida else ""))
                    for p in planes_visibles()],
         "niveles_bd": NIVELES_BD,
         "resenas": Resena.query.filter_by(aprobada=True).count(),
@@ -1325,7 +1330,7 @@ def zedith_analisis():
 def configurador():
     """Configurador de software: el cliente arma su sistema y recibe un estimado aproximado.
     Los planes salen de tu base de datos, así que los precios siempre son los vigentes."""
-    planes = [{"nombre": p.nombre, "precio": float(p.precio), "anual": precio_anual(p), "bd": p.bd_incluida or ""}
+    planes = [{"nombre": p.nombre, "precio": float(p.precio), "anual": precio_anual(p), "bd": p.bd_incluida or "", "img": p.img_incluida or ""}
               for p in planes_visibles('tamano') if p.precio and not p.a_medida]
     return render_template('configurador.html', planes=planes, niveles_bd=NIVELES_BD, contacto=CONTACTO,
                            desde={"boutique": DESDE_BOUTIQUE, "enterprise": DESDE_ENTERPRISE},

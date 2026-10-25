@@ -73,19 +73,23 @@
         </select>
       </div>
       <div class="pf-f">
-        <label for="bd_incluida">Base de datos incluida</label>
-        <input type="text" id="bd_incluida" name="bd_incluida" maxlength="60" placeholder="5 GB" value="{{ f.bd_incluida }}">
-        <span class="ayuda">Opcional. Ej.: 5 GB, o «Dedicada».</span>
+        <label for="orden">Orden</label>
+        <input type="number" id="orden" name="orden" step="1" value="{{ f.orden }}">
+        <span class="ayuda">Menor número aparece primero.</span>
       </div>
     </div>
 
     <div class="pf-g">
       <div class="pf-f">
-        <label for="orden">Orden</label>
-        <input type="number" id="orden" name="orden" step="1" value="{{ f.orden }}">
-        <span class="ayuda">Menor número aparece primero.</span>
+        <label for="bd_incluida">Base de datos de texto (Neon)</label>
+        <input type="text" id="bd_incluida" name="bd_incluida" maxlength="60" placeholder="5 GB" value="{{ f.bd_incluida }}">
+        <span class="ayuda">Clientes, ventas, reservas y demás datos. Ej.: 5 GB, o «Dedicada».</span>
       </div>
-      <div></div>
+      <div class="pf-f">
+        <label for="img_incluida">Almacenamiento de imágenes (Cloudinary)</label>
+        <input type="text" id="img_incluida" name="img_incluida" maxlength="60" placeholder="10 GB" value="{{ f.img_incluida }}">
+        <span class="ayuda">Fotos de productos, logos y archivos. Ej.: 10 GB, o «Dedicado».</span>
+      </div>
     </div>
 
     <div class="pf-chk"><input type="checkbox" id="a_medida" name="a_medida" {{ 'checked' if f.a_medida }}>
