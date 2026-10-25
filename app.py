@@ -1,4 +1,5 @@
 import os
+import secrets
 import shutil
 import calendar
 import re
@@ -13,8 +14,18 @@ import zedith
 import notificar
 
 app = Flask(__name__)
-# Recuerda cambiar esta clave en producción
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cambia-esto-por-una-clave-larga-y-segura-en-produccion')
+EN_RENDER = bool(os.environ.get("RENDER"))   # Render define esta variable en sus servidores
+
+
+def _clave_secreta():
+    """La clave de las sesiones viene de la variable SECRET_KEY (Render). En local, si falta, se genera una al azar."""
+    clave = (os.environ.get("SECRET_KEY") or "").strip()
+    if EN_RENDER and len(clave) < 32:
+        raise RuntimeError("Falta SECRET_KEY en Render (variable de entorno de al menos 32 caracteres).")
+    return clave or secrets.token_hex(32)
+
+
+app.config['SECRET_KEY'] = _clave_secreta()
 
 
 def _url_base_de_datos():
@@ -24,6 +35,10 @@ def _url_base_de_datos():
         return "sqlite:///zedyth.db"
     if url.startswith("postgres://"):                     # SQLAlchemy exige "postgresql://"
         url = "postgresql://" + url[len("postgres://"):]
+    if not url.startswith(("postgresql://", "postgresql+", "sqlite:")):
+        esquema = url.split(":", 1)[0] if ":" in url else "(sin esquema)"
+        raise RuntimeError(f"DATABASE_URL debe ser la cadena de conexión de Neon y empezar con postgresql:// "
+                           f"(la actual empieza con «{esquema}»). Cópiala de Neon: Connect > Connection string.")
     if "neon.tech" in url and "sslmode=" not in url:       # Neon solo acepta conexiones cifradas
         url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
@@ -36,7 +51,7 @@ if not app.config['SQLALCHEMY_DATABASE_URI'].startswith("sqlite"):
     print("Base de datos: PostgreSQL (DATABASE_URL)", flush=True)
 else:
     print("Base de datos: SQLite local", flush=True)
-    if os.environ.get("RENDER"):
+    if EN_RENDER:
         print("AVISO: en Render sin DATABASE_URL se usa SQLite y los datos se pierden en cada despliegue.", flush=True)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -496,11 +511,26 @@ def aplicar_fichas():
 
 
 def sembrar_usuario_admin():
-    if not Usuario.query.first():
-        admin = Usuario(username="admin", nombre="Administrador Principal")
-        admin.set_password(os.environ.get("ADMIN_PASSWORD", "ZedythAdmin2026"))  # define ADMIN_PASSWORD en Render; cámbiala en el primer login
+    """El administrador se crea y se mantiene con las variables ADMIN_USER y ADMIN_PASSWORD (Render).
+    Para cambiar la contraseña: cambia ADMIN_PASSWORD y vuelve a desplegar. Ninguna contraseña vive en el código."""
+    usuario = (os.environ.get("ADMIN_USER") or "admin").strip()
+    clave = os.environ.get("ADMIN_PASSWORD") or ""
+    if not clave:
+        if EN_RENDER:
+            raise RuntimeError("Falta ADMIN_PASSWORD en Render (variable de entorno de al menos 12 caracteres).")
+        if Usuario.query.first():
+            return                                   # local: se conserva el usuario que ya existe
+        clave = secrets.token_urlsafe(12)            # local: contraseña aleatoria, se muestra una sola vez
+        print(f"Usuario local creado: {usuario} / {clave}", flush=True)
+    elif len(clave) < 12:
+        raise RuntimeError("ADMIN_PASSWORD debe tener al menos 12 caracteres.")
+    admin = Usuario.query.filter_by(username=usuario).first()
+    if not admin:
+        admin = Usuario(username=usuario, nombre="Administrador Principal")
         db.session.add(admin)
-        db.session.commit()
+    if not admin.password_hash or not admin.check_password(clave):
+        admin.set_password(clave)                    # también reemplaza cualquier contraseña anterior guardada
+    db.session.commit()
 
 # Las opiniones generales sobre ZEDYTH se guardan como reseñas de un proyecto interno
 # (categoría "General", oculto en la vitrina). Así reutilizan la moderación que ya existe.
