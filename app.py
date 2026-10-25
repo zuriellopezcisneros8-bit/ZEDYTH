@@ -1085,7 +1085,7 @@ def inicio():
     op_n = len(ok_gen)
     op_prom = round(sum(r.calificacion for r in ok_gen) / op_n, 1) if op_n else None
     op_dist = {n: sum(1 for r in ok_gen if r.calificacion == n) for n in (5, 4, 3, 2, 1)}
-    return render_template('public.html', planes=planes_visibles('tamano'), plan_ciber=planes_visibles('ciber'),
+    return render_template('public.html', anual_de=precio_anual, planes=planes_visibles('tamano'), plan_ciber=planes_visibles('ciber'),
                            niveles_bd=NIVELES_BD, vitrina=vitrina,
                            opiniones=ok_gen[:9], op_n=op_n, op_prom=op_prom, op_dist=op_dist,
                            gracias_op=request.args.get('gracias_op'), op_error=request.args.get('op_error'),
