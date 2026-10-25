@@ -39,6 +39,8 @@ def _url_base_de_datos():
         esquema = url.split(":", 1)[0] if ":" in url else "(sin esquema)"
         raise RuntimeError(f"DATABASE_URL debe ser la cadena de conexión de Neon y empezar con postgresql:// "
                            f"(la actual empieza con «{esquema}»). Cópiala de Neon: Connect > Connection string.")
+    if url.startswith("postgresql://"):                   # driver explícito: psycopg 3 (el que instala requirements.txt)
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
     if "neon.tech" in url and "sslmode=" not in url:       # Neon solo acepta conexiones cifradas
         url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
