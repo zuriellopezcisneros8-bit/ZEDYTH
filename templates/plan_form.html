@@ -43,6 +43,15 @@
       </div>
     </div>
 
+    <div class="pf-g">
+      <div class="pf-f">
+        <label for="precio_anual">Precio anual (MXN)</label>
+        <input type="text" id="precio_anual" name="precio_anual" inputmode="decimal" placeholder="Opcional" value="{{ f.precio_anual }}">
+        <span class="ayuda">Lo que paga el cliente si elige pago anual. Si lo dejas vacío se cobran {{ meses_anual }} de 12 mensualidades.</span>
+      </div>
+      <div></div>
+    </div>
+
     <div class="pf-f">
       <label for="descripcion">Descripción corta</label>
       <input type="text" id="descripcion" name="descripcion" maxlength="120" value="{{ f.descripcion }}">
