@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from urllib.parse import quote
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event, inspect as sa_inspect
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import zedith
@@ -14,7 +15,29 @@ import notificar
 app = Flask(__name__)
 # Recuerda cambiar esta clave en producción
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cambia-esto-por-una-clave-larga-y-segura-en-produccion')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///zedyth.db'
+
+
+def _url_base_de_datos():
+    """Lee DATABASE_URL (Neon, definida como variable de entorno en Render). Sin ella usa SQLite local."""
+    url = (os.environ.get("DATABASE_URL") or "").strip()
+    if not url:
+        return "sqlite:///zedyth.db"
+    if url.startswith("postgres://"):                     # SQLAlchemy exige "postgresql://"
+        url = "postgresql://" + url[len("postgres://"):]
+    if "neon.tech" in url and "sslmode=" not in url:       # Neon solo acepta conexiones cifradas
+        url += ("&" if "?" in url else "?") + "sslmode=require"
+    return url
+
+
+app.config['SQLALCHEMY_DATABASE_URI'] = _url_base_de_datos()
+if not app.config['SQLALCHEMY_DATABASE_URI'].startswith("sqlite"):
+    # Neon suspende el cómputo cuando no hay uso y cierra las conexiones inactivas: se verifican antes de usarlas.
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True, "pool_recycle": 280}
+    print("Base de datos: PostgreSQL (DATABASE_URL)", flush=True)
+else:
+    print("Base de datos: SQLite local", flush=True)
+    if os.environ.get("RENDER"):
+        print("AVISO: en Render sin DATABASE_URL se usa SQLite y los datos se pierden en cada despliegue.", flush=True)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -243,6 +266,17 @@ class Resena(db.Model):
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+@event.listens_for(db.Model, "before_insert", propagate=True)
+@event.listens_for(db.Model, "before_update", propagate=True)
+def _ajustar_longitudes(mapper, connection, target):
+    """PostgreSQL rechaza textos más largos que su VARCHAR(n); aquí se recortan para no perder el registro."""
+    for col in mapper.columns:
+        largo = getattr(col.type, "length", None)
+        valor = getattr(target, col.key, None)
+        if largo and isinstance(valor, str) and len(valor) > largo:
+            setattr(target, col.key, valor[:largo])
+
+
 def registrar(accion, entidad, entidad_id=None, detalle=""):
     usuario_actual = current_user.username if current_user.is_authenticated else "sistema"
     db.session.add(Auditoria(usuario=usuario_actual, accion=accion, entidad=entidad, entidad_id=entidad_id, detalle=detalle))
@@ -280,10 +314,9 @@ def sumar_meses(d, n):
     return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
 
-def migrar_sqlite():
-    """Agrega columnas nuevas a una base SQLite existente sin perder datos."""
-    if db.engine.dialect.name != "sqlite":
-        return
+def migrar_columnas():
+    """Agrega columnas nuevas a una base existente (SQLite o PostgreSQL) sin perder datos."""
+    pg = db.engine.dialect.name == "postgresql"
     nuevas = {
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
         "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
@@ -296,11 +329,16 @@ def migrar_sqlite():
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
     }
+    insp = sa_inspect(db.engine)
     for tabla, cols in nuevas.items():
-        existentes = {r[1] for r in db.session.execute(db.text(f"PRAGMA table_info({tabla})"))}
+        if not insp.has_table(tabla):
+            continue
+        existentes = {c["name"] for c in insp.get_columns(tabla)}
         for nombre, tipo in cols:
             if nombre not in existentes:
-                db.session.execute(db.text(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}"))
+                if pg:
+                    tipo = tipo.replace("DEFAULT 1", "DEFAULT TRUE")
+                db.session.execute(db.text(f'ALTER TABLE "{tabla}" ADD COLUMN {nombre} {tipo}'))
     db.session.commit()
 
 
@@ -460,7 +498,7 @@ def aplicar_fichas():
 def sembrar_usuario_admin():
     if not Usuario.query.first():
         admin = Usuario(username="admin", nombre="Administrador Principal")
-        admin.set_password("ZedythAdmin2026")  # Cambia esto en el primer login
+        admin.set_password(os.environ.get("ADMIN_PASSWORD", "ZedythAdmin2026"))  # define ADMIN_PASSWORD en Render; cámbiala en el primer login
         db.session.add(admin)
         db.session.commit()
 
@@ -482,7 +520,7 @@ def proyecto_general():
 # Inicialización de la DB
 with app.app_context():
     db.create_all()
-    migrar_sqlite()
+    migrar_columnas()
     sembrar_planes()
     aplicar_fichas()
     sembrar_usuario_admin()
@@ -495,7 +533,9 @@ def load_user(user_id):
     return db.session.get(Usuario, int(user_id))
 
 def respaldo_automatico_db():
-    db_path = 'zedyth.db'
+    if db.engine.dialect.name != "sqlite":   # con Neon los respaldos los hace el propio servicio (ver historial de restauración)
+        return
+    db_path = db.engine.url.database          # ruta real del archivo (puede estar en instance/)
     backup_dir = 'respaldos_panel'
     
     if not os.path.exists(backup_dir):
