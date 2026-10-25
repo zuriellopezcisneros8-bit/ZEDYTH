@@ -7,6 +7,8 @@
     <p>Administración de membresías y suscripciones.</p>
 </section>
 
+<style>.per{display:flex;gap:6px;justify-content:center;margin:0 0 22px}.per button{padding:8px 18px;border-radius:999px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);font:inherit;cursor:pointer}.per button.on{background:var(--accent-purple);border-color:var(--accent-purple);color:#fff}.plan-save{display:block;font-size:12px;color:var(--text-muted);margin-top:2px}</style>
+<div class="per" role="group" aria-label="Periodo de pago"><button type="button" class="on" data-p="m">Mensual</button><button type="button" data-p="a">Anual</button></div>
 <div class="plans-grid">
     {% for plan in planes %}
     <!-- El borde y el botón toman sus colores de app.py (blanco para el plan destacado) -->
@@ -18,7 +20,7 @@
             {% if plan.color == 'var(--accent-purple)' %}<span class="plan-tag">Recomendado</span>{% endif %}
         </div>
 
-        <div class="plan-price">{{ plan.precio }}{% if plan.precio.startswith('$') %}<small>/mes</small>{% endif %}</div>
+        <div class="plan-price"><span class="pm">{{ plan.precio }}{% if plan.precio.startswith('$') %}<small>/mes</small>{% endif %}</span><span class="pa" hidden>{{ plan.anual }}{% if plan.anual.startswith('$') %}<small>/año</small>{% endif %}{% if plan.ahorro %}<span class="plan-save">Ahorras {{ plan.ahorro }} al año</span>{% endif %}</span></div>
         <div class="plan-desc">{{ plan.desc }}</div>
 
         <ul class="plan-list">
@@ -34,4 +36,5 @@
     </div>
     {% endfor %}
 </div>
+<script>document.querySelectorAll('.per button').forEach(function(b){b.onclick=function(){document.querySelectorAll('.per button').forEach(function(x){x.classList.toggle('on',x===b)});var a=b.dataset.p==='a';document.querySelectorAll('.pm').forEach(function(e){e.hidden=a});document.querySelectorAll('.pa').forEach(function(e){e.hidden=!a})}});</script>
 {% endblock %}

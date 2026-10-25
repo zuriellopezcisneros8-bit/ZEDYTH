@@ -54,6 +54,7 @@ class Plan(db.Model):
     destacado = db.Column(db.Boolean, default=False)
     categoria = db.Column(db.String(20), default="tamano")   # tamano | ciber
     bd_incluida = db.Column(db.String(60))                    # ej. "5 GB"
+    precio_anual = db.Column(Dinero, nullable=True)           # None = mensual x ANUAL_MESES_PAGADOS
     activo = db.Column(db.Boolean, default=True)              # False = plan retirado (se conserva por clientes ya suscritos)
     orden = db.Column(db.Integer, default=0)
     semilla = db.Column(db.String(40))                        # clave del plan inicial; no cambia aunque lo renombres
@@ -245,6 +246,24 @@ def dinero(v):
 
 
 MESES = {"Mensual": 1, "Trimestral": 3, "Anual": 12}
+
+# --- Precios del configurador y de las membresías (edítalos aquí) ---------------
+DESDE_BOUTIQUE = 1500      # MXN, pago único de configuración e ingeniería (más la membresía)
+DESDE_ENTERPRISE = 3000    # MXN, desarrollo desde cero; se paga por hitos
+ANUAL_MESES_PAGADOS = 10   # pago anual = 10 meses (2 gratis), salvo que el plan tenga precio anual propio
+
+
+def precio_anual(p):
+    """Precio por año de un plan: el propio si lo fijaste, o mensual x ANUAL_MESES_PAGADOS."""
+    if p.precio_anual:
+        return float(p.precio_anual)
+    return round(float(p.precio) * ANUAL_MESES_PAGADOS, 2) if p.precio else None
+
+
+def descuento_anual_pct(p):
+    """% de descuento que equivale pagar el año completo frente a 12 mensualidades."""
+    a = precio_anual(p)
+    return round((1 - a / (float(p.precio) * 12)) * 100, 1) if a and p.precio else 0
 DIAS_AVISO = 7   # cuántos días antes de la fecha empieza a avisarte
 
 
@@ -260,7 +279,7 @@ def migrar_sqlite():
         return
     nuevas = {
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
-        "plan": [("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"),
+        "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"),
                  ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
                  ("semilla", "VARCHAR(40)")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
@@ -464,12 +483,13 @@ def _valores_plan(plan=None):
     """Valores para mostrar en el formulario de un plan (nuevo si plan es None)."""
     if plan is None:
         return {"nombre": "", "precio": "", "a_medida": False, "descripcion": "", "incluye": "",
-                "destacado": False, "categoria": "tamano", "bd_incluida": "", "orden": 0, "activo": True}
+                "destacado": False, "categoria": "tamano", "bd_incluida": "", "orden": 0, "activo": True, "precio_anual": ""}
     return {"nombre": plan.nombre, "precio": "" if plan.precio is None else f"{plan.precio:g}",
             "a_medida": bool(plan.a_medida), "descripcion": plan.descripcion or "",
             "incluye": (plan.incluye or "").replace("|", "\n"), "destacado": bool(plan.destacado),
             "categoria": plan.categoria or "tamano", "bd_incluida": plan.bd_incluida or "",
-            "orden": plan.orden or 0, "activo": plan.activo is not False}
+            "orden": plan.orden or 0, "activo": plan.activo is not False,
+            "precio_anual": "" if plan.precio_anual is None else f"{plan.precio_anual:g}"}
 
 
 def _leer_form_plan(plan):
@@ -477,7 +497,8 @@ def _leer_form_plan(plan):
     v = {"nombre": campo("nombre"), "precio": campo("precio"), "a_medida": "a_medida" in request.form,
          "descripcion": campo("descripcion"), "incluye": request.form.get("incluye") or "",
          "destacado": "destacado" in request.form, "categoria": campo("categoria"),
-         "bd_incluida": campo("bd_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form}
+         "bd_incluida": campo("bd_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form,
+         "precio_anual": campo("precio_anual")}
     if not v["nombre"]:
         return "Escribe un nombre para el plan.", v
     if len(v["nombre"]) > 60:
@@ -493,6 +514,13 @@ def _leer_form_plan(plan):
         return "El precio debe ser un número, por ejemplo 2500. Déjalo vacío si se cotiza a la medida.", v
     if precio is not None and precio < 0:
         return "El precio no puede ser negativo.", v
+    crudo_a = v["precio_anual"].replace("$", "").replace(",", "").replace("MXN", "").strip()
+    try:
+        anual = float(crudo_a) if crudo_a else None
+    except ValueError:
+        return "El precio anual debe ser un número. Déjalo vacío para cobrar 10 de 12 meses.", v
+    if anual is not None and anual < 0:
+        return "El precio anual no puede ser negativo.", v
     try:
         orden = int(v["orden"])
     except ValueError:
@@ -503,6 +531,8 @@ def _leer_form_plan(plan):
     plan.nombre, plan.precio, plan.a_medida, plan.descripcion = v["nombre"], precio, v["a_medida"], v["descripcion"]
     plan.incluye, plan.destacado, plan.categoria = "|".join(lineas), v["destacado"], v["categoria"]
     plan.bd_incluida, plan.orden, plan.activo = v["bd_incluida"] or None, orden, v["activo"]
+    if "precio_anual" in request.form:        # si el formulario aún no trae el campo, se conserva el valor actual
+        plan.precio_anual = anual
     return None, v
 
 
@@ -512,6 +542,7 @@ def membresias():
     planes = Plan.query.order_by(Plan.categoria, Plan.orden, Plan.id).all()
     suscritos = {p.id: Suscripcion.query.filter_by(plan_id=p.id).count() for p in planes}
     return render_template('planes_admin.html', planes=planes, suscritos=suscritos, dinero=dinero,
+                           anual=precio_anual, meses_anual=ANUAL_MESES_PAGADOS,
                            msg=request.args.get('msg'))
 
 
@@ -528,7 +559,8 @@ def plan_nuevo():
             db.session.commit()
             return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» creado."))
         db.session.rollback()
-    return render_template('plan_form.html', f=valores, plan=None, error=error, suscritos=0)
+    return render_template('plan_form.html', f=valores, plan=None, error=error, suscritos=0,
+                           meses_anual=ANUAL_MESES_PAGADOS)
 
 
 @app.route('/membresias/<int:plan_id>/editar', methods=['GET', 'POST'])
@@ -543,7 +575,8 @@ def plan_editar(plan_id):
             return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» actualizado."))
         db.session.rollback()
     suscritos = Suscripcion.query.filter_by(plan_id=plan.id).count()
-    return render_template('plan_form.html', f=valores, plan=plan, error=error, suscritos=suscritos)
+    return render_template('plan_form.html', f=valores, plan=plan, error=error, suscritos=suscritos,
+                           meses_anual=ANUAL_MESES_PAGADOS)
 
 
 @app.route('/membresias/<int:plan_id>/activo', methods=['POST'])
@@ -570,6 +603,10 @@ def membresias_vista():
             "nombre": p.nombre,
             "precio": (f"Desde {dinero(p.precio)}" if p.a_medida and p.precio else "A medida" if p.a_medida
                        else dinero(p.precio) if p.precio else "Por definir"),
+            "anual": (f"Desde {dinero(precio_anual(p))}" if p.a_medida and precio_anual(p) else "A medida" if p.a_medida
+                      else dinero(precio_anual(p)) if precio_anual(p) else "Por definir"),
+            "ahorro": (dinero(p.precio * 12 - precio_anual(p)) if p.precio and not p.a_medida and precio_anual(p)
+                       and p.precio * 12 > precio_anual(p) else ""),
             "desc": p.descripcion,
             "incluye": [i for i in (p.incluye or "").split("|") if i],
             "color": color,
@@ -627,7 +664,9 @@ def cliente_form(cid=None):
             sus.proxima_fecha_pago = campo_fecha('proxima_fecha_pago')
             sus.estado_cobro = campo('estado_cobro') or "Al corriente"
             sus.periodicidad = campo('periodicidad') or "Mensual"
-            sus.descuento_pct = float(campo('descuento_pct') or 0)
+            # Si eligen pago anual y no capturan descuento, se aplica el del plan (precio anual vs 12 mensualidades)
+            d = campo('descuento_pct')
+            sus.descuento_pct = float(d) if d and float(d) else (descuento_anual_pct(plan) if sus.periodicidad == "Anual" else 0)
             db.session.add(sus)
         registrar("crear" if nuevo else "editar", "Cliente", cliente.id, cliente.nombre_comercial)
         db.session.commit()
@@ -1184,7 +1223,9 @@ def hechos_zedith():
     """Datos reales del negocio que Zedith puede citar como prueba social. Nada inventado."""
     prom = db.session.query(db.func.avg(Resena.calificacion)).filter(Resena.aprobada.is_(True)).scalar()
     return {
-        "planes": [(p.nombre, p.precio, p.a_medida, p.descripcion) for p in planes_visibles()],
+        "planes": [(p.nombre, p.precio, p.a_medida,
+                    (p.descripcion or "") + (f" · pago anual {dinero(precio_anual(p))}" if p.precio and not p.a_medida else ""))
+                   for p in planes_visibles()],
         "niveles_bd": NIVELES_BD,
         "resenas": Resena.query.filter_by(aprobada=True).count(),
         "promedio": round(prom, 1) if prom else None,
@@ -1284,9 +1325,10 @@ def zedith_analisis():
 def configurador():
     """Configurador de software: el cliente arma su sistema y recibe un estimado aproximado.
     Los planes salen de tu base de datos, así que los precios siempre son los vigentes."""
-    planes = [{"nombre": p.nombre, "precio": float(p.precio), "bd": p.bd_incluida or ""}
+    planes = [{"nombre": p.nombre, "precio": float(p.precio), "anual": precio_anual(p), "bd": p.bd_incluida or ""}
               for p in planes_visibles('tamano') if p.precio and not p.a_medida]
     return render_template('configurador.html', planes=planes, niveles_bd=NIVELES_BD, contacto=CONTACTO,
+                           desde={"boutique": DESDE_BOUTIQUE, "enterprise": DESDE_ENTERPRISE},
                            año=date.today().year, **_ajustes_publicos())
 
 

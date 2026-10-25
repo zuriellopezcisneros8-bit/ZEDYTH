@@ -177,7 +177,7 @@ input[type=color]{width:44px;height:34px;padding:0;border:1px solid var(--bd);bo
   <template id="tpl"><div class="dev"><div class="app"><div class="sb"><span>9:41</span><span class="si"></span></div><div class="ah"><span class="lg pLogo">Z</span><b><span class="pNombre">Tu negocio</span><small class="pTipo"></small></b><button class="scan pScan" type="button" hidden>▮▯▮ Escanear</button></div><div class="fs pFs"></div><div class="kpi pKpi" hidden><div><small>Ventas hoy</small><b class="pr">$4,860</b></div><div class="chb"><small>Semana</small><span class="bars"><i style="height:35%"></i><i style="height:55%"></i><i style="height:42%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:76%"></i></span></div></div><div class="pg pProds"></div><div class="cart"><div class="lines pLines"></div><div class="tot"><span>Total</span><b class="pTot pr">$0</b></div><div class="opt pOpt"></div><div class="pSt"></div><div class="pays pPays"></div></div><div class="sheet pSheet" hidden></div><i class="hb"></i></div></div></template>
  </div>
 </main>
-<script>window.CFG={planes:{{ planes|tojson }},niveles:{{ niveles_bd|tojson }},wa:{{ contacto.whatsapp|tojson }},url:{{ url_for('configurador_enviar')|tojson }},analisis:{{ url_for('zedith_analisis')|tojson }}};</script>
+<script>window.CFG={planes:{{ planes|tojson }},niveles:{{ niveles_bd|tojson }},wa:{{ contacto.whatsapp|tojson }},url:{{ url_for('configurador_enviar')|tojson }},desde:{{ desde|tojson }},analisis:{{ url_for('zedith_analisis')|tojson }}};</script>
 {% raw %}<script>
 (function(){
 'use strict';
@@ -283,19 +283,21 @@ function calcular(s){
  return {tier,plan,sig,complejidad,mods,ing,custom,base,exc,apto,rec:apto?'cloud':(tier>=4||pts>12?'enterprise':'boutique')};
 }
 function estimado(s,c){
- const p=c.plan,suscr=p?'desde '+money(p.precio)+' MXN/mes':'por cotizar';
- const rango=p?(c.sig?money(p.precio)+' a '+money(c.sig.precio)+' MXN/mes':'desde '+money(p.precio)+' MXN/mes'):'por cotizar';
- const plan=p?'Plan '+p.nombre+(p.bd?' · base de datos de '+p.bd:''):'Plan por definir';
- if(s.modelo==='cloud')return {big:p?'Desde '+money(p.precio)+'/mes':'Por cotizar',l:['Sin costos de desarrollo de software','Suscripción sugerida: '+plan,'Rango estimado: '+rango],corto:p?'Plan '+p.nombre+' '+suscr:'Por cotizar'};
- if(s.modelo==='boutique')return {big:p?'Desde '+money(p.precio)+'/mes':'Por cotizar',l:['Más una tarifa de configuración e ingeniería, que se cotiza según tus funciones (complejidad '+c.complejidad.toLowerCase()+')','Suscripción sugerida: '+plan,'Rango estimado: '+rango],corto:(p?'Plan '+p.nombre+' '+suscr:'Por cotizar')+' + setup'};
- return {big:'Por hitos',l:['Proyecto desde cero: se cotiza al definir el alcance y se paga por hitos (30-30-20-20)','Pólizas de mantenimiento y ciberseguridad: opcionales si tú alojas y administras tu sistema; obligatorias si ZEDYTH lo aloja o lo protege','Referencia de infraestructura: '+plan],corto:'Enterprise por hitos (cotización)'};
+ const p=c.plan,an=s.fact==='anual',pm=q=>an?money(q.anual)+'/año':money(q.precio)+'/mes',
+  eq=q=>an?' (equivale a '+money(q.anual/12)+'/mes'+(q.precio*12>q.anual?'; ahorras '+money(q.precio*12-q.anual)+' al año':'')+')':'',
+  ds=D.desde||{boutique:1500,enterprise:3000},plan=p?'Plan '+p.nombre+(p.bd?' · base de datos de '+p.bd:''):'Plan por definir',
+  rango=p?(c.sig?pm(p)+' a '+pm(c.sig):'desde '+pm(p)):'por cotizar',
+  mem=p?'Membresía '+(an?'anual':'mensual')+': desde '+pm(p)+eq(p):'Membresía por cotizar';
+ if(s.modelo==='cloud')return {big:p?'Desde '+pm(p):'Por cotizar',l:['Sin costos de desarrollo de software',mem,'Rango estimado: '+rango],corto:p?plan+' '+pm(p):'Por cotizar'};
+ if(s.modelo==='boutique')return {big:'Desde '+money(ds.boutique)+' + membresía',l:['Configuración e ingeniería desde '+money(ds.boutique)+' MXN (pago único); se ajusta a tus funciones (complejidad '+c.complejidad.toLowerCase()+')',mem,'Rango de membresía: '+rango],corto:'Desde '+money(ds.boutique)+' de configuración + '+(p?plan+' '+pm(p):'membresía por cotizar')};
+ return {big:'Desde '+money(ds.enterprise),l:['Desarrollo desde cero desde '+money(ds.enterprise)+' MXN, pagado por hitos (30-30-20-20) según el alcance','Pólizas de mantenimiento y ciberseguridad: opcionales si tú alojas y administras tu sistema; obligatorias si ZEDYTH lo aloja o lo protege','Referencia de infraestructura: '+plan+(p?' ('+pm(p)+')':'')],corto:'Enterprise desde '+money(ds.enterprise)+' por hitos'};
 }
 function resumenTexto(s,c,e){
  const t=tipoActual(),nom=(s.nombre||'').trim();
  const giro=(t?(t.id==='otro'&&s.otro?s.otro:t.n):'-')+(nom?' "'+nom+'"':'');
  const mod=MODELOS.find(m=>m.id===s.modelo).n;
  return ['Negocio: '+giro+' · Sucursales: '+R.sucursales[s.sucursales],
-  'Modelo: '+mod+' · '+(c.plan?'Plan sugerido: '+c.plan.nombre:'Plan por definir')+' · Complejidad: '+c.complejidad,
+  'Modelo: '+mod+' · Facturación '+(s.fact==='anual'?'anual':'mensual')+' · '+(c.plan?'Plan sugerido: '+c.plan.nombre:'Plan por definir')+' · Complejidad: '+c.complejidad,
   'Capacidad: personas '+R.usuarios[s.usuarios]+' · clientes/día '+R.clientes[s.clientes]+' · productos '+R.productos[s.productos]+' · ventas/mes '+R.ventas[s.ventas],
   'Funciones: '+c.mods.map(m=>m.n).join(', '),
   'Diseño: '+s.pc+' / '+s.ac+', estilo '+s.tema+', esquinas '+(s.esq==='redonda'?'redondeadas':'rectas')+', logo: '+(s.logo?'sí (lo enviará por chat)':'no'),
@@ -412,7 +414,8 @@ function pintar(){
  if(S.ai)z.append(el('p',{text:'🤖 '+S.ai,style:'white-space:pre-wrap;color:var(--tx)'}));
  const ab=el('button',{type:'button',class:'btn',style:'padding:7px 12px;font-size:12px;margin-top:6px',text:S.aiBusy?'ZEDITH analizando…':(S.ai?'Actualizar análisis de ZEDITH':'Pedir análisis de ZEDITH (IA)')});ab.onclick=analizar;z.append(ab);dx.append(z);
  const est=$('#est');est.textContent='';
- est.append(el('small',{text:'Estimado aproximado'}),el('b',{text:e.big}));
+ const tg=el('div',{class:'chips',style:'margin-bottom:10px'});[['mensual','Pago mensual'],['anual','Pago anual (ahorras)']].forEach(([v,n])=>{const b=el('button',{type:'button',class:'chip','aria-pressed':String((S.fact||'mensual')===v),text:n});b.onclick=()=>{S.fact=v;pintar()};tg.append(b)});
+ est.append(tg,el('small',{text:'Estimado aproximado'}),el('b',{text:e.big}));
  e.l.forEach(x=>est.append(el('p',{text:x})));
  const bd=el('div',{class:'badges'});c.mods.slice(0,8).forEach(m=>bd.append(el('span',{text:m.n})));if(c.mods.length>8)bd.append(el('span',{text:'+'+(c.mods.length-8)+' más'}));est.append(bd);
  if(c.ing.length&&S.modelo==='cloud'){const h=$('#hm');h.hidden=false;h.textContent='Con '+c.ing.slice(0,2).join(' y ')+', normalmente conviene Zedyth Boutique.'}else $('#hm').hidden=true;
