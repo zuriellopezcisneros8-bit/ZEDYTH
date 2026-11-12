@@ -5,10 +5,13 @@
 <meta name="google-site-verification" content="mGwvLT5Tg_76YcKL1UvUb_hrv85cehRQZpLJH1WUxmc" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e0d0c">
-<meta name="description" content="ZEDYTH Technologies: aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos proyectos sencillos.">
+<meta name="description" content="ZEDYTH Technologies, una empresa de Zmarth: software especializado en SaaS. Operamos Zmarthket, punto de venta y comercio electrónico en la nube, y preparamos una app de escritura con IA. Dirección general: {{ empresa.ceo }}.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="author" content="ZEDYTH Technologies Corporation, una empresa de Zmarth">
+<meta name="keywords" content="ZEDYTH, SaaS, software como servicio, Zmarthket, punto de venta, app de escritura, inteligencia artificial, ciberseguridad, Zmarth, {{ empresa.ceo }}">
 <link rel="icon" type="image/png" href="/static/img/zedyth/favicon.png">
 <link rel="apple-touch-icon" href="/static/img/zedyth/apple-touch-icon.png">
-<title>ZEDYTH Technologies | Aplicaciones complejas, IA y ciberseguridad</title>
+<title>ZEDYTH Technologies | Software SaaS, IA y ciberseguridad · Una empresa de Zmarth</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#050505;--tx:#fff;--mu:#9a9a9a;--gl:rgba(255,255,255,.04);--bd:rgba(255,255,255,.1);--ok:#4ade80;--st:#f5c542}
@@ -450,6 +453,9 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
 @media(prefers-reduced-motion:reduce){.himg:before{animation:none}}
 </style>
 {% set faq = [
+ ("¿Qué es ZEDYTH?", "ZEDYTH Technologies es una empresa de software especializada en proyectos SaaS (software como servicio): plataformas en la nube, multi-cliente y con inteligencia artificial. Hoy operamos Zmarthket, nuestro punto de venta y comercio electrónico, y preparamos el lanzamiento de una app de escritura con IA. Además seguimos desarrollando aplicaciones complejas a la medida, ciberseguridad e infraestructura."),
+ ("¿Quién dirige ZEDYTH y a qué grupo pertenece?", "ZEDYTH Technologies Corporation es una empresa de Zmarth y forma parte de " ~ empresa.grupo ~ ". Su " ~ empresa.cargo ~ " es " ~ empresa.ceo ~ "."),
+ ("¿Qué es Zmarthket y qué viene después?", "Zmarthket es nuestro SaaS de punto de venta y comercio electrónico: se usa desde el celular, la tableta o la computadora, funciona sin internet y no cobra comisión por tus ventas. Después viene una app de escritura con línea de tiempo, personajes, world building avanzado e inteligencia artificial para escritores y creadores de mundos."),
  ("¿Qué diferencia hay entre Zedyth Cloud, Boutique y Enterprise?", "Cloud es una plataforma lista para operar, con suscripción y sin costos de desarrollo. Boutique suma ingeniería a la medida (funciones, flujos e integraciones exclusivas) sobre nuestra Arquitectura Base, con una tarifa de configuración y una suscripción. Enterprise es desarrollo desde cero, financiado por hitos, con transferencia total de la propiedad intelectual."),
  ("¿De quién es el código y qué pasa si cancelo?", "En Cloud, la arquitectura, la infraestructura y el código son de ZEDYTH, y tus datos operativos son tuyos: al cancelar te entregamos un respaldo total y el acceso se suspende de forma definitiva. En Boutique, la Arquitectura Base sigue siendo de ZEDYTH; conservas tu información y, si el contrato lo estipula, recibes el código fuente de los módulos desarrollados para ti. En Enterprise, la propiedad intelectual se transfiere por completo y conservas tu código fuente."),
  ("¿Qué incluyen los planes de suscripción?", "Todos incluyen dominio, hosting y base de datos. La seguridad y el soporte crecen con cada nivel, y el precio refleja la complejidad, la arquitectura de servidores y el nivel de ciberseguridad de tu operación."),
@@ -462,7 +468,18 @@ nav .lg-nav{display:block;width:min(210px,46vw);height:auto;border-radius:0;mix-
  ("¿Las opiniones de la página son reales?", "Cualquier persona puede calificarnos de 1 a 5 estrellas. Revisamos cada opinión para filtrar spam y contenido ofensivo antes de publicarla, y no modificamos ni la calificación ni el comentario."),
 ] %}
 <link rel="canonical" href="{{ site_url }}/">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"ZEDYTH Technologies","url":{{ site_url|tojson }},"logo":{{ (site_url ~ "/static/img/zedyth/apple-touch-icon.png")|tojson }},"email":{{ contacto.email|tojson }},"telephone":{{ contacto.tel_link|tojson }},"parentOrganization":{"@type":"Organization","name":"THE ZMARTH ORGANIZATION"}}</script>
+<meta property="og:type" content="website"><meta property="og:site_name" content="ZEDYTH Technologies"><meta property="og:locale" content="es_MX">
+<meta property="og:title" content="ZEDYTH Technologies · Software SaaS, IA y ciberseguridad">
+<meta property="og:description" content="Empresa de software especializada en SaaS, de Zmarth. Zmarthket ya está en producción y una app de escritura con IA viene en camino.">
+<meta property="og:url" content="{{ site_url }}/"><meta property="og:image" content="{{ site_url }}/static/img/zedyth/hero-banner.jpg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="ZEDYTH Technologies · Software SaaS, IA y ciberseguridad"><meta name="twitter:image" content="{{ site_url }}/static/img/zedyth/hero-banner.jpg">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":{{ (site_url ~ "/#web")|tojson }},"name":"ZEDYTH Technologies","alternateName":["ZEDYTH","Zedyth by Zmarth"],"url":{{ site_url|tojson }},"inLanguage":"es-MX","publisher":{"@id":{{ (site_url ~ "/#org")|tojson }} } },
+{"@type":"Organization","@id":{{ (site_url ~ "/#org")|tojson }},"name":"ZEDYTH Technologies Corporation","legalName":"ZEDYTH TECHNOLOGIES CORPORATION, A ZMARTH COMPANY","alternateName":["ZEDYTH","ZEDYTH Technologies","Zmarth"],"url":{{ site_url|tojson }},"logo":{{ (site_url ~ "/static/img/zedyth/apple-touch-icon.png")|tojson }},"email":{{ contacto.email|tojson }},"telephone":{{ contacto.tel_link|tojson }},"description":"Empresa de software especializada en proyectos SaaS, con inteligencia artificial, ciberseguridad e infraestructura en la nube.","knowsAbout":["SaaS","Software como servicio","Punto de venta","Comercio electrónico","Inteligencia artificial","Ciberseguridad","Infraestructura en la nube"],"parentOrganization":{"@type":"Organization","name":{{ empresa.grupo|tojson }},"alternateName":"Zmarth"},"employee":{"@id":{{ (site_url ~ "/#ceo")|tojson }} },"sameAs":[{{ empresa.zmarthket|tojson }}]},
+{"@type":"Person","@id":{{ (site_url ~ "/#ceo")|tojson }},"name":{{ empresa.ceo|tojson }},"jobTitle":{{ empresa.cargo|tojson }},"worksFor":{"@id":{{ (site_url ~ "/#org")|tojson }} } },
+{"@type":"SoftwareApplication","name":"Zmarthket","url":{{ empresa.zmarthket|tojson }},"applicationCategory":"BusinessApplication","applicationSubCategory":"SaaS · Punto de venta","operatingSystem":"Web, Android, iOS","description":"SaaS de punto de venta y comercio electrónico: ventas, inventario, cajeros, crédito y reportes desde cualquier dispositivo, con asistente de IA 24/7 y sin comisión por venta.","offers":{"@type":"Offer","price":"59","priceCurrency":"MXN"},"author":{"@id":{{ (site_url ~ "/#org")|tojson }} },"publisher":{"@id":{{ (site_url ~ "/#org")|tojson }} } },
+{"@type":"SoftwareApplication","name":{{ empresa.app_escritura|tojson }},"applicationCategory":"ProductivityApplication","applicationSubCategory":"SaaS · Escritura creativa","description":"Próximamente. App de escritura con línea de tiempo, personajes, world building avanzado e inteligencia artificial.","author":{"@id":{{ (site_url ~ "/#org")|tojson }} },"publisher":{"@id":{{ (site_url ~ "/#org")|tojson }} } }
+]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{% for q, a in faq %}{"@type":"Question","name":{{ q|tojson }},"acceptedAnswer":{"@type":"Answer","text":{{ a|tojson }} } }{% if not loop.last %},{% endif %}{% endfor %}]}</script>
 {% if ga_id %}<script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_id }}"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','{{ ga_id }}');
@@ -476,6 +493,71 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
 .legal-l{display:inline-flex;gap:14px;flex-wrap:wrap}.legal-l a{text-decoration:underline;text-underline-offset:3px}
 </style>
 <style>:root{--bg:#000000}html,body{background:#000000!important;background-image:none!important}.hero,.why{background-color:#000000}</style>
+<style>
+/* ZEDYTH v6 · SaaS */
+.hgrid{position:absolute;inset:0;z-index:1;pointer-events:none;background-image:linear-gradient(rgba(226,203,165,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(226,203,165,.07) 1px,transparent 1px);background-size:64px 64px;-webkit-mask-image:radial-gradient(ellipse 70% 80% at 72% 40%,#000,transparent 72%);mask-image:radial-gradient(ellipse 70% 80% at 72% 40%,#000,transparent 72%);animation:gm 40s linear infinite}
+@keyframes gm{to{background-position:64px 64px,64px 64px}}
+.pdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#7fd99a;margin-right:9px;vertical-align:1px;animation:pd 2s infinite}
+@keyframes pd{0%{box-shadow:0 0 0 0 rgba(127,217,154,.55)}70%,100%{box-shadow:0 0 0 9px rgba(127,217,154,0)}}
+.hero h1 em{font-style:normal;color:#fff}
+.rot{display:inline-block;color:var(--g);transition:opacity .35s,transform .35s}.rot.out{opacity:0;transform:translateY(-10px)}
+.hk{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
+.hk span{display:inline-flex;align-items:center;font-size:13px;border:1px solid var(--bd);border-radius:999px;padding:7px 15px;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);color:#fff}
+.hk span.nx{color:var(--g2)}.hk span.nx:before{content:"";width:8px;height:8px;border-radius:50%;border:1.5px solid var(--g);margin-right:9px}
+#saas{position:relative}
+.sx-head{max-width:780px;margin:0 auto 46px;text-align:center}.sx-head .sub{margin-bottom:0}
+.sx-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.sx-card{padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:18px}
+.sx-card.hl{background:linear-gradient(180deg,#1c1812,#12110f)}
+.sx-vis{position:relative;height:262px;border-bottom:1px solid var(--bd);background:radial-gradient(440px 220px at 72% 0,rgba(226,203,165,.14),transparent 70%),#0b0a09;overflow:hidden}
+.sx-body{padding:26px 28px 30px;display:flex;flex-direction:column;gap:12px;flex:1}
+.sx-chip{align-self:flex-start;display:inline-flex;align-items:center;font:600 11px Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;border:1px solid var(--bd);border-radius:999px;padding:5px 13px;color:var(--g)}
+.sx-chip.live{color:#9be7b2;border-color:rgba(127,217,154,.45)}
+.sx-body h3{font-size:36px;margin:2px 0 0;line-height:1.05}.sx-body .tl{color:var(--g2);font-size:16px;margin:0}.sx-body ul{margin:6px 0 0}
+.sx-act{display:flex;gap:10px;flex-wrap:wrap;margin-top:auto;padding-top:18px}
+/* mock POS */
+.pos{position:absolute;inset:18px;display:grid;grid-template-columns:1.25fr 1fr;gap:12px;font-size:12px}
+.pos-l{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:8px}
+.pos-l i{font-style:normal;display:grid;place-items:center;text-align:center;border:1px solid var(--bd);border-radius:10px;background:rgba(255,255,255,.03);color:#ddd5c6;padding:4px;animation:tp 9s infinite}
+.pos-l i:nth-child(1){animation-delay:.4s}.pos-l i:nth-child(2){animation-delay:1.6s}.pos-l i:nth-child(3){animation-delay:2.8s}.pos-l i:nth-child(4){animation-delay:4s}
+@keyframes tp{0%,8%{border-color:var(--bd);background:rgba(255,255,255,.03)}12%,22%{border-color:var(--g);background:rgba(226,203,165,.16)}28%,100%{border-color:var(--bd);background:rgba(255,255,255,.03)}}
+.pos-r{border:1px solid var(--bd);border-radius:12px;padding:12px 14px;background:rgba(0,0,0,.45);display:flex;flex-direction:column;gap:7px;min-width:0}
+.pos-r small{color:var(--g);letter-spacing:.18em;text-transform:uppercase;font-size:10px}
+.pos-r p{margin:0;display:flex;justify-content:space-between;gap:8px;color:#ddd5c6;opacity:0;animation:sxl 9s infinite}
+.pos-r p span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pos-r p:nth-of-type(1){animation-delay:.8s}.pos-r p:nth-of-type(2){animation-delay:2s}.pos-r p:nth-of-type(3){animation-delay:3.2s}.pos-r p:nth-of-type(4){animation-delay:4.4s}
+.pos-r .tot{margin-top:auto;border-top:1px solid var(--bd);padding-top:8px;color:#fff;font:600 15px Inter,sans-serif;animation-delay:5.2s}
+.pos-r .cb{text-align:center;border-radius:8px;background:var(--g);color:#16120b;font-weight:700;padding:7px;opacity:0;animation:sxl 9s 5.8s infinite}
+@keyframes sxl{0%{opacity:0;transform:translateY(8px)}6%,82%{opacity:1;transform:none}92%,100%{opacity:0}}
+/* mock escritura */
+.wr svg{position:absolute;inset:0;width:100%;height:100%}
+.wr text{font:500 9px Inter,sans-serif;fill:#ddd5c6}.wr .ac{fill:var(--g2)}
+.wr .tlx{stroke:rgba(226,203,165,.28);stroke-width:1.5}
+.wr .tlp{stroke:var(--g);stroke-width:2;stroke-dasharray:472;stroke-dashoffset:472;animation:dr2 7s ease-in-out infinite alternate}
+@keyframes dr2{to{stroke-dashoffset:0}}
+.wr .nd{fill:#0b0a09;stroke:var(--g);stroke-width:1.6;transform-box:fill-box;transform-origin:center;animation:np 3.2s ease-in-out infinite}
+.wr .nd:nth-of-type(2){animation-delay:.5s}.wr .nd:nth-of-type(3){animation-delay:1s}.wr .nd:nth-of-type(4){animation-delay:1.5s}.wr .nd:nth-of-type(5){animation-delay:2s}
+@keyframes np{50%{transform:scale(1.5);fill:var(--g)}}
+.wr .ed{stroke:rgba(226,203,165,.4);stroke-width:1;stroke-dasharray:3 4;animation:fl2 3s linear infinite}
+@keyframes fl2{to{stroke-dashoffset:-14}}
+.wr .pl{fill:rgba(226,203,165,.12);stroke:var(--g);stroke-width:1}.wr .ch{fill:#201c15;stroke:var(--g2);stroke-width:1.2}
+.wr .ln{fill:rgba(226,203,165,.5);transform-box:fill-box;transform-origin:left;animation:ty 6s infinite}
+.wr .ln:nth-of-type(2){animation-delay:.6s}.wr .ln:nth-of-type(3){animation-delay:1.2s}.wr .ln:nth-of-type(4){animation-delay:1.8s}
+@keyframes ty{0%{transform:scaleX(0)}35%,88%{transform:scaleX(1)}100%{transform:scaleX(0)}}
+.wr .cu{fill:var(--g2);animation:bk 1s steps(1) infinite}@keyframes bk{50%{opacity:0}}
+.wr .ai{fill:rgba(226,203,165,.14);stroke:var(--g);stroke-width:1;animation:ap 6s infinite}@keyframes ap{0%,50%{opacity:0}62%,90%{opacity:1}100%{opacity:0}}
+.wr .ait{animation:ap 6s infinite}
+.sx-lead{display:flex;gap:18px;align-items:center;margin-top:20px;padding:22px 26px;border:1px solid var(--bd);border-radius:16px;background:linear-gradient(90deg,rgba(226,203,165,.07),transparent)}
+.sx-lead .av{flex:none;width:58px;height:58px;border-radius:50%;display:grid;place-items:center;font:500 22px 'Playfair Display',serif;color:var(--g2);border:1px solid rgba(226,203,165,.5);box-shadow:0 0 0 6px rgba(226,203,165,.06)}
+.sx-lead b{display:block;font:500 24px 'Playfair Display',serif;color:var(--g2);line-height:1.2}.sx-lead span.t{display:block;color:var(--mu);font-size:14px}
+.sx-ideas{margin-top:20px;display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:center;padding:34px}
+.sx-ideas h3{font-size:30px}.sx-ideas p{margin:8px 0 0}
+.sx-tags{display:flex;flex-wrap:wrap;gap:8px}.sx-tags span{border:1px solid var(--bd);border-radius:999px;padding:6px 14px;font-size:13px;color:#f4efe5}
+.sx-ideas .sx-act{grid-column:1/-1;padding-top:0}
+@media(max-width:900px){.sx-grid,.sx-ideas{grid-template-columns:minmax(0,1fr)}.sx-ideas{gap:18px;padding:26px}.sx-body h3{font-size:30px}}
+@media(max-width:560px){.sx-vis{height:232px}.pos{inset:12px;font-size:11px;gap:8px}.sx-body{padding:22px 20px 26px}.sx-lead{flex-direction:column;align-items:flex-start;gap:12px}.sx-act .btn{flex:1 1 100%}.hk span{font-size:12px}}
+@media(prefers-reduced-motion:reduce){.hgrid,.pdot,.pos-l i,.wr .tlp,.wr .nd,.wr .ed,.wr .ln,.wr .cu,.wr .ai,.wr .ait{animation:none}.pos-r p,.pos-r .cb{opacity:1;animation:none}.wr .tlp{stroke-dashoffset:0}.wr .ln{transform:none}.wr .ai,.wr .ait{opacity:1}}
+</style>
 </head>
 <body>
 <nav><div class="wrap">
@@ -483,8 +565,8 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
     <!-- EL NUEVO BOTÓN DE MENÚ HAMBURGUESA -->
     <div class="menu-toggle" onclick="document.querySelector('.links').classList.toggle('active')">☰</div>
     <div class="links">
-       <a href="#reservas" onclick="document.querySelector('.links').classList.remove('active')">Demo reservas</a>
-       <a href="#pizzeria" onclick="document.querySelector('.links').classList.remove('active')">Demo pizzería</a>
+       <a href="#saas" onclick="document.querySelector('.links').classList.remove('active')">Nuestros SaaS</a>
+       <a href="#reservas" onclick="document.querySelector('.links').classList.remove('active')">Demos</a>
        <a href="#zedith" onclick="document.querySelector('.links').classList.remove('active')">Zedith IA</a>
        <a href="#servicios" onclick="document.querySelector('.links').classList.remove('active')">Servicios</a>
        <a href="#precios" onclick="document.querySelector('.links').classList.remove('active')">Modelos</a>
@@ -494,10 +576,11 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
     </div>
 </div></nav>
 
-<header class="hero" id="inicio"><div class="himg" aria-hidden="true"></div><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><span class="eyebrow">Inteligencia artificial · Aplicaciones complejas · Ciberseguridad</span>
- <h1>Tecnología compleja, resuelta a fondo.</h1>
- <p class="sub">ZEDYTH Technologies diseña aplicaciones de alta complejidad, inteligencia artificial, ciberseguridad e infraestructura en la nube. No hacemos páginas estáticas ni proyectos sencillos: nuestra capacidad está enfocada en lo más difícil.</p>
- <div class="cta"><a class="btn w" href="#servicios">Explorar soluciones →</a><a class="btn" href="#proyectos-demo">Ver proyectos</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar un proyecto</a></div>
+<header class="hero" id="inicio"><div class="himg" aria-hidden="true"></div><div class="hgrid" aria-hidden="true"></div><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><span class="eyebrow"><i class="pdot"></i>Empresa de software especializada en SaaS · Una empresa de Zmarth</span>
+ <h1>Construimos <em>SaaS</em> para <span class="rot" id="rot">tu negocio</span>.</h1>
+ <p class="sub">ZEDYTH Technologies es una empresa de software especializada en plataformas SaaS: sistemas en la nube, multi-cliente, con inteligencia artificial y ciberseguridad integradas. Hoy operamos Zmarthket, nuestro punto de venta, y muy pronto lanzamos una app de escritura con IA. Y seguimos construyendo aplicaciones complejas a la medida.</p>
+ <div class="cta"><a class="btn w" href="#saas">Ver nuestros SaaS →</a><a class="btn" href="{{ empresa.zmarthket }}" target="_blank" rel="noopener">Probar Zmarthket</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar un proyecto</a></div>
+ <div class="hk"><span><i class="pdot"></i>Zmarthket · en producción</span><span class="nx">{{ empresa.app_escritura }} · próximamente</span><span>ZEDITH · IA integrada</span></div>
  <div class="feats"><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Ingeniería<br>a la medida</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad<br>avanzada</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Soporte<br>24/7</div></div>
  </div></header>
 <div class="wrap dashw"><div class="dash" aria-hidden="true">
@@ -506,8 +589,55 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
   <div class="dp"><small>Ocupación semanal</small><svg viewBox="0 0 200 118"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#e2cfa3"/><stop offset="1" stop-color="#c8a96a"/></linearGradient></defs><path d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="#2a2620" stroke-width="16" stroke-linecap="round"/><path class="gp" d="M20 105A80 80 0 0 1 180 105" fill="none" stroke="url(#gg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="191 252"/><text x="100" y="92" text-anchor="middle" fill="#fff" font-size="30" font-weight="700">76%</text><text x="100" y="110" text-anchor="middle" fill="#a39a8b" font-size="10">de turnos llenos</text></svg></div>
   <div class="dp"><small>Reservas por día: reales y pronosticadas</small><svg viewBox="0 0 320 130"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8a96a" stop-opacity=".35"/><stop offset="1" stop-color="#c8a96a" stop-opacity="0"/></linearGradient></defs><path d="M0 30H320M0 65H320M0 100H320" stroke="#2a2620" fill="none"/><path d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20V130H0Z" fill="url(#cg)"/><path class="ln" pathLength="1" d="M0 100L45 80 90 88 135 48 180 60 225 34 270 46 320 20" fill="none" stroke="#c8a96a" stroke-width="2.5"/><path d="M0 108L45 95 90 98 135 70 180 74 225 56 270 62 320 44" fill="none" stroke="#8c8374" stroke-width="2" stroke-dasharray="5 5"/></svg></div>
  </div><small>Datos de ejemplo</small></div></div>
-<div class="marq" aria-hidden="true"><div><span>Inteligencia artificial</span><span>Aplicaciones complejas</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>PWA y Google Play</span><span>Comercio electrónico</span><span>Sistemas a la medida</span><span>Inteligencia artificial</span><span>Aplicaciones complejas</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>PWA y Google Play</span><span>Comercio electrónico</span><span>Sistemas a la medida</span></div></div>
+<div class="marq" aria-hidden="true"><div><span>Plataformas SaaS</span><span>Zmarthket</span><span>Inteligencia artificial</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>Apps de escritura con IA</span><span>Aplicaciones complejas</span><span>PWA y Google Play</span><span>Plataformas SaaS</span><span>Zmarthket</span><span>Inteligencia artificial</span><span>Ciberseguridad</span><span>Infraestructura en la nube</span><span>Apps de escritura con IA</span><span>Aplicaciones complejas</span><span>PWA y Google Play</span></div></div>
 
+
+<section id="saas"><div class="wrap">
+ <div class="sx-head"><span class="eyebrow">Nuestros SaaS</span>
+  <h2>Plataformas en la nube que crecen con cada cliente.</h2>
+  <p class="sub">Un SaaS bien hecho es software que cada cliente usa como suyo, en la nube, por suscripción y siempre actualizado. Es lo que mejor sabemos construir, y esto es lo que ya tenemos y lo que viene.</p></div>
+ <div class="sx-grid">
+  <article class="card hl sx-card">
+   <div class="sx-vis" aria-hidden="true"><div class="pos">
+    <div class="pos-l"><i>Pintura</i><i>Cemento</i><i>Tubo PVC</i><i>Cable</i><i>Brochas</i><i>Taquetes</i></div>
+    <div class="pos-r"><small>Ticket</small><p><span>Taquete 1/4″ × 20</span><b>$38</b></p><p><span>Brocha 4″</span><b>$85</b></p><p><span>Pintura vinílica 4 L</span><b>$169</b></p><p><span>Cable cal. 12 · 3.5 m</span><b>$120</b></p><p class="tot"><span>Total</span><b>$412</b></p><div class="cb">Cobrar</div></div>
+   </div></div>
+   <div class="sx-body"><span class="sx-chip live"><i class="pdot" style="margin-right:8px"></i>Disponible hoy</span>
+    <h3>Zmarthket</h3>
+    <p class="tl">Punto de venta y comercio electrónico en una sola plataforma.</p>
+    <p style="font-size:15px">Para tlapalerías, ferreterías, tiendas, cremerías, carnicerías, cafeterías, salones, ropa y papelerías. Cada giro ve solo las herramientas que usa.</p>
+    <ul><li>Venta por medida, granel, variantes y presentaciones</li><li>Cajeros con PIN, turnos, cortes de caja y crédito a clientes</li><li>Vende sin internet y se sincroniza solo, desde cualquier dispositivo</li><li>ZEDITH, tu asistente de IA 24/7, y soporte humano a distancia</li><li>Una sola mensualidad desde $59 MXN, sin comisión por venta</li></ul>
+    <div class="sx-act"><a class="btn w" href="{{ empresa.zmarthket }}" target="_blank" rel="noopener">Conocer Zmarthket →</a><a class="btn" href="{{ url_for('demo_pos') }}">Probar la demo POS</a></div></div>
+  </article>
+  <article class="card sx-card">
+   <div class="sx-vis wr" aria-hidden="true">
+    <svg viewBox="0 0 520 262" preserveAspectRatio="xMidYMid meet">
+     <line class="tlx" x1="24" y1="46" x2="496" y2="46"/><line class="tlp" x1="24" y1="46" x2="496" y2="46"/>
+     <circle class="nd" cx="64" cy="46" r="5"/><circle class="nd" cx="164" cy="46" r="5"/><circle class="nd" cx="264" cy="46" r="5"/><circle class="nd" cx="364" cy="46" r="5"/><circle class="nd" cx="464" cy="46" r="5"/>
+     <text x="64" y="28" text-anchor="middle">Prólogo</text><text x="164" y="28" text-anchor="middle">El pacto</text><text x="264" y="28" text-anchor="middle">La caída</text><text x="364" y="28" text-anchor="middle">El regreso</text><text x="464" y="28" text-anchor="middle">Epílogo</text>
+     <text x="24" y="86" class="ac">LÍNEA DE TIEMPO · PERSONAJES · MUNDO</text>
+     <g><line class="ed" x1="60" y1="130" x2="130" y2="122"/><line class="ed" x1="130" y1="122" x2="104" y2="196"/><line class="ed" x1="130" y1="122" x2="196" y2="168"/><line class="ed" x1="104" y1="196" x2="196" y2="168"/><line class="ed" x1="196" y1="168" x2="256" y2="132"/><line class="ed" x1="196" y1="168" x2="262" y2="204"/><line class="ed" x1="256" y1="132" x2="262" y2="204"/></g>
+     <g><rect class="pl" x="46" y="122" width="28" height="16" rx="4"/><rect class="pl" x="116" y="114" width="28" height="16" rx="4"/><rect class="pl" x="90" y="188" width="28" height="16" rx="4"/><rect class="pl" x="182" y="160" width="28" height="16" rx="4"/>
+      <circle class="ch" cx="256" cy="132" r="13"/><circle class="ch" cx="262" cy="204" r="13"/></g>
+     <text x="60" y="152" text-anchor="middle">Reino</text><text x="130" y="144" text-anchor="middle">Capital</text><text x="104" y="218" text-anchor="middle">Bosque</text><text x="196" y="190" text-anchor="middle">Puerto</text>
+     <text x="256" y="135" text-anchor="middle" class="ac">E</text><text x="262" y="207" text-anchor="middle" class="ac">K</text><text x="282" y="136">Elara</text><text x="288" y="208">Kael</text>
+     <rect x="344" y="104" width="156" height="118" rx="10" fill="#14120f" stroke="rgba(226,203,165,.35)"/>
+     <rect class="ln" x="358" y="122" width="128" height="5" rx="2"/><rect class="ln" x="358" y="138" width="100" height="5" rx="2"/><rect class="ln" x="358" y="154" width="120" height="5" rx="2"/><rect class="ln" x="358" y="170" width="70" height="5" rx="2"/><rect class="cu" x="432" y="168" width="2" height="9"/>
+     <rect class="ai" x="358" y="190" width="128" height="22" rx="11"/><text class="ait ac" x="422" y="204" text-anchor="middle">IA · sugiere el siguiente giro</text>
+    </svg></div>
+   <div class="sx-body"><span class="sx-chip">Próximamente</span>
+    <h3>{{ empresa.app_escritura }}</h3>
+    <p class="tl">La app de escritura más completa, con IA, para quienes crean mundos.</p>
+    <p style="font-size:15px">Una sola plataforma para planear, escribir y mantener coherente toda tu obra: novelas, sagas, guiones y universos enteros.</p>
+    <ul><li>Línea de tiempo para ordenar tu historia y sus eventos</li><li>Personajes con sus fichas y sus relaciones</li><li>World building avanzado para construir tu mundo a fondo</li><li>Inteligencia artificial integrada que escribe contigo</li><li>Y mucho más, todo conectado en un solo lugar</li></ul>
+    <div class="sx-act"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20acceso%20anticipado%20a%20la%20app%20de%20escritura%20de%20ZEDYTH" target="_blank" rel="noopener">Quiero acceso anticipado</a></div></div>
+  </article>
+ </div>
+ <div class="card hl sx-ideas"><div><span class="tag">Tu idea, nuestro SaaS</span><h3>¿Tienes un SaaS en la cabeza?</h3><p>Lo diseñamos, lo construimos y lo operamos de punta a punta, con la misma ingeniería con la que hacemos los nuestros.</p></div>
+  <div class="sx-tags"><span>Multi-cliente</span><span>Suscripciones</span><span>Base de datos en la nube</span><span>IA integrada</span><span>Ciberseguridad</span><span>Infraestructura</span></div>
+  <div class="sx-act"><a class="btn w" href="{{ url_for('configurador') }}">Configurar mi sistema →</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20construir%20un%20SaaS%20con%20ZEDYTH" target="_blank" rel="noopener">Hablar por WhatsApp</a></div></div>
+ <div class="sx-lead"><span class="av" aria-hidden="true">{{ empresa.ceo[:1] }}{{ empresa.ceo.split()[-1][:1] }}</span><div><small class="tag">Dirección general</small><b>{{ empresa.ceo }}</b><span class="t">{{ empresa.cargo }} · ZEDYTH Technologies Corporation, una empresa de Zmarth · {{ empresa.grupo }}</span></div></div>
+</div></section>
 
 <section id="configurador"><div class="wrap">
  <div class="card hl" style="text-align:center;padding:48px 24px">
@@ -525,6 +655,7 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
  <p class="sub" style="text-align:left;margin-left:0">Nuestra capacidad está reservada para proyectos de alta complejidad. Por eso no tomamos trabajos sencillos: cada proyecto recibe la ingeniería y el criterio que un sistema serio exige.</p>
  <div class="two">
   <div class="card hl"><h3>Lo que sí construimos</h3><ul>
+   <li>Plataformas SaaS multi-cliente con suscripciones, base de datos en la nube e IA integrada</li>
    <li>Aplicaciones complejas con base de datos en la nube y lógica de negocio a la medida</li>
    <li>Inteligencia artificial integrada a tu operación: asistentes, automatización y análisis</li>
    <li>Apps web progresivas (PWA), instalables y publicables en Google Play</li>
@@ -639,7 +770,7 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
 </div></section>
 
 <section id="servicios"><div class="wrap split">
- <div><span class="eyebrow">Nuestras soluciones</span><h2>Resolvemos lo difícil, de punta a punta.</h2><p class="sub">Una sola empresa de software, inteligencia artificial, ciberseguridad e infraestructura. Tomamos proyectos de alta complejidad y los entregamos completos.</p><a class="btn" href="#contacto">Conocer más →</a></div>
+ <div><span class="eyebrow">Nuestras soluciones</span><h2>Resolvemos lo difícil, de punta a punta.</h2><p class="sub">Somos una empresa de software especializada en SaaS. Alrededor de cada plataforma tenemos inteligencia artificial, ciberseguridad e infraestructura, para entregarla completa y mantenerla viva.</p><a class="btn" href="#contacto">Conocer más →</a></div>
  <div class="sol"><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span><h3>Aplicaciones y software</h3><p>Apps web progresivas, sistemas y tiendas en línea de alta complejidad, publicables en Google Play.</p><ul><li>Puntos de venta en la nube</li><li>Comercio electrónico</li><li>Reservas y gestión</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><h3>Inteligencia artificial</h3><p>Asistentes y automatización integrados a tu operación, como nuestra propia IA ZEDITH.</p><ul><li>Asistentes conversacionales</li><li>Automatización de procesos</li><li>Análisis y pronósticos</li></ul><a class="more" href="#zedith">Conocer ZEDITH →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Ciberseguridad</h3><p>Protegemos tu información, tus aplicaciones y tu operación.</p><ul><li>Endurecimiento de sistemas</li><li>Respaldos y vencimientos</li><li>Atención de incidentes</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span><h3>Infraestructura</h3><p>Hosting, bases de datos PostgreSQL en la nube, dominios y administración de servidores.</p><ul><li>Hosting y dominios</li><li>Bases de datos</li><li>Migración a la nube</li></ul><a class="more" href="#contacto">Ver servicios →</a></div><div class="card"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><h3>Gestión y soporte</h3><p>Monitoreo, mantenimiento y administración de tus sistemas.</p><ul><li>Soporte técnico</li><li>Redes y equipos</li><li>Asesoría tecnológica</li></ul><a class="more" href="#contacto">Ver servicios →</a></div></div>
 </div></section>
 
@@ -647,7 +778,7 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
  <div class="zvis"><img class="zimg" src="/static/img/zedyth/zedith.jpg" alt="ZEDITH, asistente de IA de ZEDYTH" loading="lazy"></div></div><div class="wrap"><div style="height:30px"></div><ul class="zfe zrow"><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>Gestión de sistemas</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/></svg></span>Armado de tu app</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Seguridad en tiempo real</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/></svg></span>Integración de servicios</li><li><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg></span>Asistencia 24/7</li></ul></div></section>
 
 <section class="why" id="confianza"><div class="wrap whyg"><div><span class="eyebrow">Por qué elegir ZEDYTH</span><h2>Tecnología que inspira confianza.</h2><p>No solo desarrollamos software: protegemos lo que más importa, tu información, tus operaciones y tu futuro digital.</p></div>
-<div class="stats"><div class="stat"><b data-n="3">0</b><small>Demos en vivo que puedes probar</small></div><div class="stat"><b data-n="24" data-s="/7">0</b><small>Asistente de IA ZEDITH</small></div><div class="stat"><b data-n="3">0</b><small>Modelos: Cloud, Boutique y Enterprise</small></div><div class="stat"><b data-n="5">0</b><small>Áreas: software, IA, seguridad, infraestructura y soporte</small></div></div></div></section>
+<div class="stats"><div class="stat"><b data-n="2">0</b><small>SaaS propios: uno en producción y otro en camino</small></div><div class="stat"><b data-n="24" data-s="/7">0</b><small>Asistente de IA ZEDITH</small></div><div class="stat"><b data-n="3">0</b><small>Modelos: Cloud, Boutique y Enterprise</small></div><div class="stat"><b data-n="5">0</b><small>Áreas: software, IA, seguridad, infraestructura y soporte</small></div></div></div></section>
 <section id="plataforma"><div class="wrap plg"><div><span class="eyebrow">Plataforma ZEDYTH</span><h2 style="text-align:left">Control total en una sola plataforma.</h2><p class="sub" style="text-align:left;margin:0 0 26px">Reservas, pedidos, clientes y reportes en un solo panel. Pruébalo en vivo, sin registrarte.</p><div class="cta" style="display:flex;gap:12px;flex-wrap:wrap"><a class="btn w" href="#reservas">Probar reservas →</a><a class="btn" href="#pizzeria">Ver pizzería en vivo</a></div></div><img class="pimg" src="/static/img/zedyth/plataforma.jpg" alt="Panel de control ZEDYTH" loading="lazy"></div></section>
 <section id="proyectos-demo"><div class="wrap">
  <span class="eyebrow">Proyectos destacados</span><h2 style="text-align:left">Tecnología que genera resultados.</h2><p class="sub" style="text-align:left;margin-left:0">Prueba nuestras demos en vivo o visita una de nuestras tiendas.</p>
@@ -678,12 +809,9 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
  <p class="pr-note" style="text-align:center;max-width:760px;margin:20px auto 0">La transferencia de propiedad intelectual y la entrega de accesos se realizan al liquidar el último hito. Los plazos de cada hito se acuerdan por contrato, a partir de la aprobación del hito anterior. Después del despliegue, la póliza de mantenimiento y ciberseguridad (mensual o anual) cubre la gestión de servidores, los respaldos de la base de datos y las actualizaciones de seguridad. Es opcional si tú alojas y administras tu sistema, y obligatoria si ZEDYTH lo aloja, administra o protege.</p>
 
  <h2 style="margin-top:70px">Punto de venta</h2>
- <p class="sub">El punto de venta local se compra una sola vez y es tuyo. El punto de venta en la nube vivirá en una plataforma SaaS independiente de ZEDYTH.</p>
+ <p class="sub">El punto de venta local se compra una sola vez y es tuyo. Si lo quieres en la nube, por suscripción y desde cualquier dispositivo, eso es <a href="#saas" style="text-decoration:underline">Zmarthket</a>.</p>
  <div class="two">
-  <div class="card hl"><span class="tag">Punto de venta en la nube · plataforma SaaS</span><div class="price" style="font-size:30px">Próximamente</div><p class="pr-note" style="margin:0 0 14px">Como una tienda en línea, pero para puntos de venta</p>
-   <p>Ya contamos con el sistema de punto de venta en la nube funcionando dentro de nuestra aplicación. Estará disponible como una plataforma independiente de la compañía, donde cada negocio abre y personaliza su propio punto de venta por suscripción.</p>
-   <ul><li>Funciona en cualquier dispositivo con internet, sin instalar nada</li><li>Base de datos en la nube incluida como parte del servicio</li><li>Tu información es tuya: puedes exportarla cuando quieras</li><li>Operado por ZEDYTH: tú te ocupas de tu negocio, nosotros de la infraestructura</li></ul><a class="btn w" style="margin-top:20px" href="{{ url_for('demo_pos') }}">Probar la demo en vivo</a> <a class="btn" style="margin-top:20px" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20que%20me%20avisen%20cuando%20est%C3%A9%20la%20plataforma%20de%20punto%20de%20venta" target="_blank" rel="noopener">Avísame cuando esté lista</a></div>
-  <div class="card"><span class="tag">Punto de venta local · sin conexión</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
+  <div class="card pr-wide"><span class="tag">Punto de venta local · sin conexión</span><div class="price">$1,500 <small>MXN</small></div><p class="pr-note" style="margin:0 0 14px">Pago único · sin importar el giro</p>
    <p>Funciona de forma local, en tu propio equipo, sin depender de internet. No está interconectado con otros dispositivos ni sucursales.</p>
    <ul><li>Sistema local: tus ventas se guardan en tu equipo</li><li>No necesita conexión a internet para vender</li><li>Ideal para un solo mostrador o una sola caja</li><li>Se entrega directamente a ti</li><li>Mantenimiento opcional con membresía</li></ul></div>
  </div>
@@ -802,7 +930,7 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
 
 <section id="grupo"><div class="wrap">
  <h2>Parte de THE ZMARTH ORGANIZATION</h2>
- <p class="sub">ZEDYTH pertenece a THE ZMARTH ORGANIZATION, holding e inversora que reúne a las compañías del grupo en telecomunicaciones, tecnología, inteligencia, biotecnología, alimentos e investigación.</p>
+ <p class="sub">ZEDYTH pertenece a THE ZMARTH ORGANIZATION, holding e inversora que reúne a las compañías del grupo en telecomunicaciones, tecnología, inteligencia, biotecnología, alimentos e investigación. Su Director General es {{ empresa.ceo }}.</p>
  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTHNET Telecommunications</h3><p style="font-size:13px">Telecomunicaciones</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Zelecte</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Reserve</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZIECREATO</h3><p style="font-size:13px">Agencia de inteligencia de ZEDYTH</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Technologies</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Golden Flame Meat</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Yarifalet Coro</h3><p style="font-size:13px">Biotecnología y bioingeniería</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Varezza</h3><p style="font-size:13px">Fast food</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Delicious Bread</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">Delicious Pizzas</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZMARTH Industries</h3><p style="font-size:13px">&nbsp;</p></div><div class="card" style="padding:18px 20px"><h3 style="font-size:16px;margin:0 0 4px">ZERO</h3><p style="font-size:13px">Zmarth Experimental Research Organization</p></div></div>
 </div></section>
 
@@ -811,7 +939,7 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
  <div class="cta" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a class="btn w" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Escribir por WhatsApp</a>{% if agenda_url %}<a class="btn" href="{{ agenda_url }}" target="_blank" rel="noopener">Agendar una llamada</a>{% endif %}<a class="btn" href="tel:{{ contacto.tel_link }}">{{ contacto.telefono }}</a><a class="btn" href="mailto:{{ contacto.email }}">{{ contacto.email }}</a></div>
 </div></div></section>
 
-<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/zedyth-aguila-completo.webp" alt="ZEDYTH Technologies" width="190" height="114" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="{{ url_for('configurador') }}">Configurador</a><a href="#opiniones">Opiniones</a><a href="#faq">FAQ</a><a href="#grupo">Grupo</a><a href="#contacto">Contacto</a></div></div>
+<footer><div class="wrap"><div class="fg"><img class="lg-ft" src="/static/img/zedyth/zedyth-aguila-completo.webp" alt="ZEDYTH Technologies" width="190" height="114" loading="lazy"><div class="fl"><a href="#inicio">Inicio</a><a href="#saas">SaaS</a><a href="#servicios">Soluciones</a><a href="#zedith">Zedith IA</a><a href="#precios">Precios</a><a href="#proyectos">Proyectos</a><a href="{{ url_for('configurador') }}">Configurador</a><a href="#opiniones">Opiniones</a><a href="#faq">FAQ</a><a href="#grupo">Grupo</a><a href="#contacto">Contacto</a></div></div>
 <details class="aviso" style="margin-top:26px;font-size:12px;line-height:1.65;color:var(--mu)"><summary style="cursor:pointer;font-weight:600;color:var(--tx)">Aviso de la División de Inteligencia y Seguridad ZEDYTH</summary>
 <p style="margin:12px 0 6px">ZEDYTH opera bajo los más altos estándares de seguridad informática e inteligencia corporativa. Nuestra infraestructura y propiedad intelectual están protegidas por una división táctica internacional conformada por especialistas de élite de Israel, México, Rusia, Japón y Suiza.</p>
 <p style="margin:0 0 6px"><b>Cero tolerancia a actos ilícitos.</b> ZEDYTH monitorea activamente la clear, deep y dark web. Cualquier intento de vulnerar nuestra infraestructura será detectado inmediatamente. Queda estrictamente prohibido y será considerado un delito grave:</p>
@@ -855,9 +983,11 @@ const fab=$('#fab'),pnl=$('#pnl'),msgs=$('#msgs');let first=1;
 const A=(h,me)=>{const d=document.createElement('div');d.className='m'+(me?' me':'');me?d.textContent=h:d.innerHTML=h;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight};
 const wa=t=>'<a href="'+WA+'?text='+encodeURIComponent(t)+'" target="_blank" rel="noopener">Escríbenos por WhatsApp</a>';
 const KB=[
+[/zmarthket|escritur|novela|escritor|world ?building|linea de tiempo|personajes/,'Nuestros SaaS: <b>Zmarthket</b>, punto de venta y comercio electronico en la nube (disponible hoy, desde $59 MXN al mes, sin comision por venta), y una <b>app de escritura con IA</b> con linea de tiempo, personajes y world building avanzado, que llega pronto. <a href="#saas">Ver nuestros SaaS</a>'],
+[/que es zedyth|a que se dedican|especializ|quien dirige|director|ceo|dueno/,'ZEDYTH es una empresa de software especializada en SaaS, parte de Zmarth. Su Director General es Zuriel Zmarth. Ademas hacemos aplicaciones complejas, IA, ciberseguridad e infraestructura. <a href="#saas">Conocer mas</a>'],
 [/membres|mensualidad|suscripcion|cloud|boutique|enterprise|saas|licencia|codigo fuente|propiedad|marca blanca|\bplan(es)?\b/,'Trabajamos con tres modelos. <b>Zedyth Cloud:</b> plataforma lista para operar, con suscripción y sin costos de desarrollo; el código es de ZEDYTH y tus datos son tuyos. <b>Zedyth Boutique:</b> Cloud más ingeniería a la medida; pagas una tarifa de configuración y una suscripción, y el código de los módulos hechos para ti se puede entregar aparte de nuestra Arquitectura Base. <b>Zedyth Enterprise:</b> desarrollo desde cero, pagado por hitos (30-30-20-20), con transferencia total de la propiedad intelectual. Los planes de suscripción van por nivel de complejidad: Esencial, Ascenso, Scales, Insignia y X Prime. Además, <b>Zenith</b> es un plan exclusivo de ciberseguridad avanzada e inteligencia que se contrata aparte. Lo que quede fuera del alcance inicial se cotiza como proyecto de implementación, con pago único. <a href="#precios">Ver modelos y precios</a>'],
 [/configurador|configurar|personaliza|disena tu|armar mi sistema|simul|estimado/,'Prueba el <a href="/configurador">configurador</a>: eliges tu giro, colores y logo, cuántos clientes y productos manejas, y ves tu sistema funcionando con un estimado aproximado. Después lo afinamos por chat.'],
-[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta local (sin conexión) cuesta <b>$1,500 MXN</b>, pago único. El punto de venta en la nube ya funciona dentro de nuestra aplicación y llegará como una plataforma SaaS independiente de ZEDYTH; puedes probar la demo. Comercio electrónico y aplicaciones web (PWA) van <b>desde $3,000 MXN</b>. Las aplicaciones complejas, la IA y la ciberseguridad se cotizan a la medida. Los planes de suscripción se eligen por nivel de complejidad; Zedyth Enterprise se cotiza por hitos de desarrollo. '+wa('Hola, quiero una cotización')],
+[/precio|costo|cuanto|cotiz|barato|pagar/,'El punto de venta local (sin conexión) cuesta <b>$1,500 MXN</b>, pago único. Si lo quieres en la nube, por suscripción, es <b>Zmarthket</b>, desde $59 MXN al mes: <a href="#saas">ver Zmarthket</a>. Comercio electrónico y aplicaciones web (PWA) van <b>desde $3,000 MXN</b>. Las aplicaciones complejas, la IA y la ciberseguridad se cotizan a la medida. Los planes de suscripción se eligen por nivel de complejidad; Zedyth Enterprise se cotiza por hitos de desarrollo. '+wa('Hola, quiero una cotización')],
 [/play store|google play|pwa|app movil|aplicacion movil/,'Hacemos aplicaciones web progresivas (PWA): se instalan en el teléfono y se pueden publicar en Google Play, con dominio, hosting y base de datos en la nube. La publicación depende de las políticas de Google.'],
 [/pagina web|sitio web|estatica|landing|sencill|simple/,'Nos enfocamos en proyectos de alta complejidad: aplicaciones, inteligencia artificial, ciberseguridad e infraestructura. No hacemos páginas estáticas ni sitios sencillos. Si tu proyecto es complejo, cuéntame. '+wa('Hola, tengo un proyecto complejo')],
 [/pizza|pizzeria|horno/,'Puedes probar una <b>pizzería en vivo</b>: pides como cliente y del otro lado ves la cocina con hornos, cola de pedidos, inventario y ventas. <a href="#pizzeria">Ir a la demo</a>. Se adapta a tu menú y a tu forma de trabajar.'],
@@ -1114,5 +1244,13 @@ d.addEventListener('pointermove',e=>{const t=e.target.closest&&e.target.closest(
 d.querySelectorAll('.links a').forEach(a=>a.addEventListener('click',()=>d.querySelector('.links').classList.remove('active')));
 })();
 </script>
+{% raw %}<script>
+(()=>{const r=document.getElementById('rot');if(!r)return;
+const rm=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const W=['tu negocio','tu tienda','tu historia','tu equipo','tu mundo'];let i=0;
+if(!rm)setInterval(()=>{r.classList.add('out');setTimeout(()=>{i=(i+1)%W.length;r.textContent=W[i];r.classList.remove('out')},360)},2800);
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('show');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.sx-card,.sx-ideas,.sx-lead,.sx-head').forEach((e,k)=>{e.classList.add('rv');e.style.setProperty('--d',(k%3)*.1+'s');io.observe(e)})})();
+</script>{% endraw %}
 </body>
 </html>

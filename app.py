@@ -1237,6 +1237,11 @@ RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar'
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
+# Datos de la empresa que usa la web pública (SEO, encabezado y pie). Cámbialos aquí y se actualizan en toda la página.
+EMPRESA = {"ceo": "Zuriel Zmarth", "cargo": "Director General",
+           "grupo": "THE ZMARTH ORGANIZATION",
+           "zmarthket": "https://zmarthket.onrender.com",
+           "app_escritura": "App de escritura ZEDYTH"}   # nombre provisional: cámbialo cuando lo definas
 _intentos_resena = {}   # ip -> [fechas]; límite simple anti-spam
 _intentos_config = {}   # ip -> [fechas]; límite del configurador
 # Datos del responsable para el aviso de privacidad y los términos. Complétalos con variables de entorno
@@ -1281,7 +1286,7 @@ def inicio():
                            niveles_bd=NIVELES_BD, vitrina=vitrina,
                            opiniones=ok_gen[:9], op_n=op_n, op_prom=op_prom, op_dist=op_dist,
                            gracias_op=request.args.get('gracias_op'), op_error=request.args.get('op_error'),
-                           contacto=CONTACTO, gracias=request.args.get('gracias'), año=date.today().year,
+                           contacto=CONTACTO, empresa=EMPRESA, gracias=request.args.get('gracias'), año=date.today().year,
                            **_ajustes_publicos())
 
 
