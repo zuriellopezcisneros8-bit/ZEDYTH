@@ -4,6 +4,8 @@ import secrets
 import shutil
 import calendar
 import re
+import threading
+import time
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 from flask import Flask, render_template, request, redirect, url_for, Response
@@ -262,6 +264,35 @@ class Lead(db.Model):
     resumen = db.Column(db.Text)
     estado = db.Column(db.String(20), default="Nuevo")     # Nuevo, Contactado, Cerrado, Descartado
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PushDispositivo(db.Model):
+    """Celular o navegador que activó las alertas push."""
+    id = db.Column(db.Integer, primary_key=True)
+    endpoint = db.Column(db.Text, nullable=False, unique=True)
+    p256dh = db.Column(db.String(200), nullable=False)
+    auth = db.Column(db.String(100), nullable=False)
+    usuario = db.Column(db.String(80))
+    agente = db.Column(db.String(300))
+    activo = db.Column(db.Boolean, default=True)
+    fallos = db.Column(db.Integer, default=0)        # fallos seguidos; al llegar a 10 se desactiva
+    ultimo_ok = db.Column(db.DateTime)
+    creado = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Notificacion(db.Model):
+    """Historial de avisos. 'entregada' = al menos un dispositivo aceptó el push."""
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(30), default="Aviso")
+    titulo = db.Column(db.String(200), nullable=False)
+    cuerpo = db.Column(db.String(500))
+    url = db.Column(db.String(300), default="/panel")
+    urgente = db.Column(db.Boolean, default=True)
+    leida = db.Column(db.Boolean, default=False)
+    entregada = db.Column(db.Boolean, default=False)
+    intentos = db.Column(db.Integer, default=0)
+    clave = db.Column(db.String(120), index=True)    # evita avisar dos veces lo mismo
+    hora = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # --- FUNCIONES DE SOPORTE Y CONFIGURACIÓN GLOBAL ---------------------------
@@ -648,6 +679,8 @@ def inicializacion_y_seguridad():
         respaldo_automatico_db()
         app.respaldo_hoy = date.today()
         
+    iniciar_vigilante()
+
     # 2. Proteger todo el panel, excepto el login y los estáticos
     if not current_user.is_authenticated and request.endpoint not in RUTAS_PUBLICAS:
         return redirect(url_for('login', next=request.url))
@@ -982,6 +1015,9 @@ def pago_nuevo(cid):
     db.session.flush()
     registrar("crear", "Pago", pago.id, f"{dinero(pago.monto)} · {c.nombre_comercial}")
     db.session.commit()
+    if pago.estado == "Pagado":
+        crear_notificacion("Pago", f"Pago recibido: {dinero(pago.monto)}", c.nombre_comercial, f"/clientes/{c.id}",
+                           urgente=False, clave=f"pago-{pago.id}", externo=False)
     return redirect(url_for('cliente_detalle', cid=c.id))
 
 
@@ -999,6 +1035,8 @@ def cobrar(cid):
         db.session.flush()
         registrar("cobro", "Pago", pago.id, f"{dinero(pago.monto)} · {c.nombre_comercial}")
         db.session.commit()
+        crear_notificacion("Pago", f"Cobro registrado: {dinero(pago.monto)}", c.nombre_comercial, f"/clientes/{c.id}",
+                           urgente=False, clave=f"pago-{pago.id}", externo=False)
     return redirect(request.referrer or url_for('cliente_detalle', cid=c.id))
 
 
@@ -1059,7 +1097,8 @@ def inyectar_avisos():
          + CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.isnot(None),
                                       CostoServicio.proxima_fecha_pago <= _limite()).count()
          + len(alertas_seguridad()))
-    return {"n_avisos": n, "n_leads": Lead.query.filter_by(estado="Nuevo").count()}
+    return {"n_avisos": n, "n_leads": Lead.query.filter_by(estado="Nuevo").count(),
+            "n_notif": Notificacion.query.filter_by(leida=False).count(), "vapid_public": _vapid()[0]}
 
 
 @app.route('/avisos')
@@ -1289,6 +1328,9 @@ def incidente_nuevo(pid):
     db.session.flush()
     registrar("crear", "Incidente", i.id, f"{i.gravedad} · {i.titulo} · {p.nombre}")
     db.session.commit()
+    if i.gravedad in ("Alta", "Crítica"):
+        crear_notificacion("Incidente", f"Incidente {i.gravedad.lower()}: {i.titulo}", f"Proyecto: {p.nombre}",
+                           f"/proyectos/{p.id}/seguridad", clave=f"inc-{i.id}")
     return _volver(pid)
 
 
@@ -1365,7 +1407,7 @@ def finanzas():
 # Únicas rutas que se pueden abrir sin iniciar sesión.
 RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
                   'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis',
-                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline'}
+                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -1456,8 +1498,11 @@ def _guardar_resena(proyecto):
     if request.form.get('web') or len(recientes) >= 3 or not nombre or not 1 <= cal <= 5 or len(comentario) < 5:
         return False
     _intentos_resena[ip] = recientes + [ahora]
-    db.session.add(Resena(proyecto_id=proyecto.id, nombre=nombre, calificacion=cal, comentario=comentario))
+    r = Resena(proyecto_id=proyecto.id, nombre=nombre, calificacion=cal, comentario=comentario)
+    db.session.add(r)
     db.session.commit()
+    crear_notificacion("Reseña", f"Nueva reseña de {cal} ★ de {nombre}", comentario[:200], "/resenas",
+                       urgente=False, clave=f"resena-{r.id}", externo=False)
     return True
 
 
@@ -1616,6 +1661,7 @@ def zedith_chat():
     if r["pedido"]:
         lead, es_nuevo = guardar_pedido(r["pedido"])
         if es_nuevo:   # un solo aviso por pedido, aunque la conversación siga
+            _push_pedido(lead)
             notificar.avisar(
                 f"Nuevo pedido en ZEDYTH: {lead.nombre}",
                 f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
@@ -1691,6 +1737,7 @@ def configurador_enviar():
         "funciones": txt('funciones', 1000), "presupuesto": txt('estimado', 100),
         "plazo": txt('plazo', 100), "resumen": txt('resumen', 1500)})
     if es_nuevo:
+        _push_pedido(lead)
         try:
             notificar.avisar(
                 f"Nueva configuración en ZEDYTH: {lead.nombre}",
@@ -1873,7 +1920,7 @@ def manifest_admin():
     })
 
 
-_SW_JS = """/* ZEDYTH service worker: instalable + aviso sin conexión. No guarda páginas ni datos privados. */
+_SW_JS = """/* ZEDYTH service worker: instalable + aviso sin conexión + alertas push. No guarda páginas ni datos privados. */
 const V = 'zedyth-v1', OFFLINE = '/offline';
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.add(OFFLINE)).then(() => self.skipWaiting()));
@@ -1897,6 +1944,43 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(r)));
   }
+});
+/* ALERTAS PUSH: siempre se muestra una notificación; las urgentes no se cierran solas. */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { titulo: 'ZEDYTH', cuerpo: e.data ? e.data.text() : '' }; }
+  const urgente = d.urgente !== false;
+  e.waitUntil(self.registration.showNotification(d.titulo || 'ZEDYTH', {
+    body: d.cuerpo || '',
+    icon: '/static/img/zedyth/favicon.png',
+    badge: '/static/img/zedyth/favicon.png',
+    tag: d.tag || ('zedyth-' + Date.now()),
+    renotify: true,
+    requireInteraction: urgente,
+    vibrate: urgente ? [300, 120, 300, 120, 600] : [150],
+    timestamp: Date.now(),
+    data: { url: d.url || '/panel' }
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || '/panel', self.location.origin).href;
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
+    for (const w of ws) {
+      if (w.url.startsWith(self.location.origin) && 'focus' in w) { w.navigate(url).catch(() => {}); return w.focus(); }
+    }
+    return clients.openWindow(url);
+  }));
+});
+/* Si el navegador renueva la suscripción, se vuelve a registrar sola en el servidor. */
+self.addEventListener('pushsubscriptionchange', e => {
+  e.waitUntil(fetch('/api/push/clave').then(r => r.json()).then(k => {
+    const raw = atob((k.clave + '='.repeat((4 - k.clave.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+    const key = Uint8Array.from(raw, c => c.charCodeAt(0));
+    return self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }).then(sub => fetch('/api/push/suscribir', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON())
+  })).catch(() => {}));
 });
 """
 
@@ -1926,7 +2010,224 @@ def pwa_offline():
         mimetype='text/html')
 
 
+# --- ALERTAS PUSH (urgentes) --------------------------------------------------
+# Capas para que no falle: 1) envío con reintentos a cada dispositivo, 2) si ninguno lo recibe, se manda por
+# Telegram/correo (notificar.py), 3) un vigilante reintenta lo no entregado y revisa vencimientos/cobros/
+# respaldos, 4) la página se re-registra sola en cada visita. Llaves: python generar_vapid.py -> Render.
+def _vapid():
+    return ((os.environ.get("VAPID_PUBLIC_KEY") or "").strip(), (os.environ.get("VAPID_PRIVATE_KEY") or "").strip(),
+            (os.environ.get("VAPID_CONTACT") or "").strip() or "mailto:" + CONTACTO["email"])
+
+
+def push_configurado():
+    try:
+        import pywebpush  # noqa: F401
+    except ImportError:
+        return False
+    pub, priv, _ = _vapid()
+    return bool(pub and priv)
+
+
+def _enviar_push(n):
+    """Envía la notificación a todos los dispositivos activos. Devuelve cuántos la aceptaron."""
+    from pywebpush import webpush, WebPushException
+    _, priv, contacto = _vapid()
+    carga = json.dumps({"titulo": n.titulo, "cuerpo": n.cuerpo or "", "url": n.url or "/panel",
+                        "urgente": bool(n.urgente), "tag": f"zedyth-{n.id}"}, ensure_ascii=False)
+    aceptados = 0
+    for d in PushDispositivo.query.filter_by(activo=True).all():
+        info = {"endpoint": d.endpoint, "keys": {"p256dh": d.p256dh, "auth": d.auth}}
+        for intento in range(3):
+            try:
+                webpush(subscription_info=info, data=carga, vapid_private_key=priv, vapid_claims={"sub": contacto},
+                        ttl=86400, headers={"Urgency": "high"}, timeout=10)
+                d.fallos, d.ultimo_ok = 0, datetime.utcnow()
+                aceptados += 1
+                break
+            except WebPushException as e:
+                codigo = getattr(e.response, "status_code", None)
+                if codigo in (404, 410):          # el dispositivo canceló o ya no existe
+                    d.activo = False
+                    break
+                app.logger.warning("Push falló (%s) intento %s: %s", codigo, intento + 1, e)
+            except Exception as e:                # red caída, tiempo agotado, etc.
+                app.logger.warning("Push falló intento %s: %s", intento + 1, e)
+            time.sleep(2 ** intento)
+        else:
+            d.fallos = (d.fallos or 0) + 1
+            if d.fallos >= 10:
+                d.activo = False
+    db.session.commit()
+    return aceptados
+
+
+def _entregar(nid, externo=True):
+    """Corre en segundo plano: push y, si nadie lo recibió y es urgente, Telegram/correo como respaldo."""
+    try:
+        with app.app_context():
+            n = db.session.get(Notificacion, nid)
+            if n is None:
+                return
+            ok = _enviar_push(n) if push_configurado() else 0
+            n.entregada, n.intentos = ok > 0, (n.intentos or 0) + 1
+            db.session.commit()
+            if not ok and externo and n.urgente and n.intentos == 1:
+                notificar.avisar(n.titulo, f"{n.cuerpo or ''}\n\nVer en el panel: {SITE_URL_PUSH()}{n.url or '/panel'}")
+    except Exception as e:
+        app.logger.error("No se pudo entregar la notificación %s: %s", nid, e)
+
+
+def SITE_URL_PUSH():
+    return (os.environ.get("SITE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
+
+def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clave=None, externo=True):
+    """Guarda el aviso y lo manda al celular. Nunca lanza error: un fallo aquí no debe romper la acción original."""
+    try:
+        if clave and Notificacion.query.filter_by(clave=clave).first():
+            return None
+        n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave)
+        db.session.add(n)
+        db.session.commit()
+        threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
+        return n
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error("No se pudo crear la notificación: %s", e)
+        return None
+
+
+def _push_pedido(lead):
+    crear_notificacion("Pedido", f"Nuevo pedido: {lead.nombre}",
+                       f"{lead.sistema or lead.negocio or 'Pedido nuevo'} · {lead.contacto}", "/leads",
+                       clave=f"lead-{lead.id}", externo=False)   # notificar.avisar ya lo manda por Telegram/correo
+
+
+def reintentar_pendientes():
+    """Reintenta los avisos urgentes de las últimas 24 h que ningún dispositivo recibió."""
+    if not push_configurado() or not PushDispositivo.query.filter_by(activo=True).first():
+        return 0
+    desde = datetime.utcnow() - timedelta(hours=24)
+    pend = Notificacion.query.filter(Notificacion.urgente.is_(True), Notificacion.entregada.is_(False),
+                                     Notificacion.intentos < 10, Notificacion.hora >= desde).all()
+    for n in pend:
+        ok = _enviar_push(n)
+        n.entregada, n.intentos = ok > 0, (n.intentos or 0) + 1
+        db.session.commit()
+    return len(pend)
+
+
+def revisar_alertas():
+    """Avisa (una vez al día por cada tema) de cobros, pagos, vencimientos, respaldos e incidentes graves."""
+    hoy = date.today()
+    por_cobrar, por_pagar = calcular_avisos()
+    for a in por_cobrar:
+        if a["dias"] <= 3:
+            crear_notificacion("Cobro", f"Cobro {'vencido' if a['dias'] < 0 else 'próximo'}: {a['cliente'].nombre_comercial}",
+                               f"{dinero(a['monto'])} · {a['plan']} · {a['fecha']:%d/%m/%Y}", f"/clientes/{a['cliente'].id}",
+                               clave=f"cobrar-{a['cliente'].id}-{hoy}")
+    for a in por_pagar:
+        if a["dias"] <= 3:
+            crear_notificacion("Pago", f"Pago {'vencido' if a['dias'] < 0 else 'próximo'}: {a['proveedor']}",
+                               f"{a['concepto'] or ''} · {dinero(a['monto'])} · {a['fecha']:%d/%m/%Y}", "/avisos",
+                               clave=f"pagar-{a['id']}-{hoy}")
+    for a in alertas_seguridad():
+        if a["tipo"] == "Vencimiento" and a["dias"] <= 7:
+            crear_notificacion("Vencimiento", f"{'Venció' if a['dias'] < 0 else 'Vence pronto'}: {a['detalle']}",
+                               a["proyecto"].nombre, f"/proyectos/{a['proyecto'].id}/seguridad", clave=f"venc-{a['vid']}-{hoy}")
+        elif a["tipo"] == "Respaldo":
+            crear_notificacion("Respaldo", f"Respaldo pendiente: {a['proyecto'].nombre}", a["detalle"],
+                               f"/proyectos/{a['proyecto'].id}/seguridad", clave=f"resp-{a['proyecto'].id}-{hoy}")
+    for i in Incidente.query.filter_by(estado="Abierto", gravedad="Crítica").all():
+        crear_notificacion("Incidente", f"Incidente crítico sin resolver: {i.titulo}", i.proyecto.nombre,
+                           f"/proyectos/{i.proyecto_id}/seguridad", clave=f"inc-abierto-{i.id}-{hoy}")
+
+
+def _hora_de_avisar():
+    return 8 <= (datetime.utcnow() - timedelta(hours=6)).hour < 22   # hora de México: no te despierta de madrugada
+
+
+def _vigilante():
+    ultima_revision = 0
+    while True:
+        time.sleep(60)
+        try:
+            with app.app_context():
+                reintentar_pendientes()
+                if time.time() - ultima_revision > 1800 and _hora_de_avisar():
+                    ultima_revision = time.time()
+                    revisar_alertas()
+        except Exception as e:
+            app.logger.error("Vigilante de alertas: %s", e)
+
+
+def iniciar_vigilante():
+    if not getattr(app, "_vigilante_activo", False):
+        app._vigilante_activo = True
+        threading.Thread(target=_vigilante, daemon=True, name="vigilante-alertas").start()
+
+
+@app.route('/notificaciones')
+def notificaciones():
+    filas = Notificacion.query.order_by(Notificacion.hora.desc()).limit(100).all()
+    dispositivos = PushDispositivo.query.filter_by(activo=True).order_by(PushDispositivo.creado.desc()).all()
+    return render_template('notificaciones.html', filas=filas, dispositivos=dispositivos, configurado=push_configurado())
+
+
+@app.route('/notificaciones/leer', methods=['POST'])
+def notificaciones_leer():
+    Notificacion.query.filter_by(leida=False).update({"leida": True})
+    db.session.commit()
+    return redirect(url_for('notificaciones'))
+
+
+@app.route('/api/push/clave')
+def push_clave():
+    return {"clave": _vapid()[0]}
+
+
+@app.route('/api/push/suscribir', methods=['POST'])
+def push_suscribir():
+    d = request.get_json(silent=True) or {}
+    k = d.get('keys') if isinstance(d.get('keys'), dict) else {}
+    endpoint, p256dh, auth = str(d.get('endpoint') or ''), str(k.get('p256dh') or ''), str(k.get('auth') or '')
+    if not endpoint.startswith('https://') or not p256dh or not auth:
+        return {"ok": False}, 400
+    disp = PushDispositivo.query.filter_by(endpoint=endpoint).first() or PushDispositivo(endpoint=endpoint)
+    disp.p256dh, disp.auth, disp.activo, disp.fallos = p256dh[:200], auth[:100], True, 0
+    disp.usuario = current_user.username if current_user.is_authenticated else None
+    disp.agente = (request.headers.get('User-Agent') or '')[:300]
+    db.session.add(disp)
+    db.session.commit()
+    return {"ok": True}
+
+
+@app.route('/api/push/prueba', methods=['POST'])
+def push_prueba():
+    n = Notificacion(tipo="Prueba", titulo="Prueba de alerta ZEDYTH", cuerpo="Si ves esto, las alertas urgentes funcionan.",
+                     url="/notificaciones", urgente=True)
+    db.session.add(n)
+    db.session.commit()
+    ok = _enviar_push(n) if push_configurado() else 0
+    n.entregada, n.intentos, n.leida = ok > 0, 1, True
+    db.session.commit()
+    return {"dispositivos": ok, "total": PushDispositivo.query.filter_by(activo=True).count(), "configurado": push_configurado()}
+
+
+@app.route('/api/push/revisar', methods=['GET', 'POST'])
+def push_revisar():
+    """Para un cron externo (p. ej. cron-job.org cada 5 min): despierta el servidor, reintenta y revisa alertas.
+    Requiere la variable CRON_TOKEN: /api/push/revisar?token=..."""
+    token = (os.environ.get("CRON_TOKEN") or "").strip()
+    if not token or not secrets.compare_digest(request.args.get('token', ''), token):
+        return {"ok": False}, 404
+    reintentados = reintentar_pendientes()
+    if _hora_de_avisar():
+        revisar_alertas()
+    return {"ok": True, "reintentados": reintentados}
+
+
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otros dispositivos en tu WiFi accedan a la PC
     # ssl_context='adhoc' genera un HTTPS temporal (necesario para usar la cámara en móviles)
-    app.run(host='0.0.0.0', port=5000, debug=True, ssl_context='adhoc')
+    app.run(host='0.0.0.0', port=5000, debug=True, ssl_context='adhoc')

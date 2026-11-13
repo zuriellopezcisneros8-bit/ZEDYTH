@@ -236,6 +236,9 @@
             <a href="/leads" class="nav-item {% if request.path.startswith('/leads') %}active{% endif %}">
                 <i class="ph ph-chat-circle-dots"></i> Pedidos{% if n_leads %}<span style="background:#c8a96a;color:#14110b;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;margin-left:2px">{{ n_leads }}</span>{% endif %}
             </a>
+            <a href="/notificaciones" class="nav-item {% if request.path.startswith('/notificaciones') %}active{% endif %}">
+                <i class="ph ph-bell-ringing"></i> Alertas{% if n_notif %}<span style="background:#f87171;color:#14110b;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;margin-left:2px">{{ n_notif }}</span>{% endif %}
+            </a>
             <a href="/inteligencia" class="nav-item {% if request.path.startswith('/inteligencia') %}active{% endif %}">
                 <i class="ph ph-detective"></i> Inteligencia
             </a>
@@ -247,7 +250,7 @@
                 <input type="text" placeholder="Buscar en ZEDYTH...">
             </div>
             <button type="button" class="install-btn" id="installApp" title="Instalar como aplicación" aria-label="Instalar como aplicación" hidden><i class="ph ph-download-simple"></i></button>
-            <a href="/avisos" class="bell" title="Avisos de pagos"><i class="ph ph-bell"></i>{% if n_avisos %}<span class="bell-n">{{ n_avisos }}</span>{% endif %}</a>
+            <a href="/notificaciones" class="bell" title="Alertas y avisos"><i class="ph ph-bell"></i>{% if n_avisos %}<span class="bell-n">{{ n_avisos }}</span>{% endif %}</a>
             <span class="role-badge">Control Supremo</span>
             <div class="avatar"><i class="ph ph-user"></i></div>
         </div>
@@ -336,6 +339,60 @@
     </script>
 
     <script>
+        // Alertas push: estado, activación y auto-reparación de la suscripción en cada visita.
+        window.zPush = (function () {
+            var KEY = {{ (vapid_public or '')|tojson }};
+            function soporta() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+            function bytes(s) {
+                var r = (s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'), raw = atob(r), o = new Uint8Array(raw.length);
+                for (var i = 0; i < raw.length; i++) o[i] = raw.charCodeAt(i);
+                return o;
+            }
+            function igual(a, b) {
+                if (!a || a.byteLength !== b.length) return false;
+                var x = new Uint8Array(a);
+                for (var i = 0; i < b.length; i++) if (x[i] !== b[i]) return false;
+                return true;
+            }
+            function reg() { return navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function () { return navigator.serviceWorker.ready; }); }
+            function enviar(sub) {
+                return fetch('/api/push/suscribir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON()) })
+                    .then(function (r) { if (!r.ok) throw new Error('servidor'); });
+            }
+            function suscribir(r) {
+                var k = bytes(KEY);
+                return r.pushManager.getSubscription().then(function (s) {
+                    if (s && igual(s.options && s.options.applicationServerKey, k)) return s;
+                    return (s ? s.unsubscribe() : Promise.resolve()).then(function () {
+                        return r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: k });
+                    });
+                });
+            }
+            function estado() {
+                if (!soporta()) return Promise.resolve('no-soportado');
+                if (Notification.permission === 'denied') return Promise.resolve('bloqueado');
+                if (Notification.permission !== 'granted') return Promise.resolve('inactivo');
+                return reg().then(function (r) { return r.pushManager.getSubscription(); }).then(function (s) { return s ? 'activo' : 'inactivo'; });
+            }
+            function activar() {
+                if (!soporta()) return Promise.reject(new Error('no-soportado'));
+                if (!KEY) return Promise.reject(new Error('sin-clave'));
+                return Notification.requestPermission().then(function (p) {
+                    if (p !== 'granted') throw new Error('permiso');
+                    return reg();
+                }).then(suscribir).then(enviar);
+            }
+            function sincronizar() {   // si ya hay permiso, deja la suscripción viva y registrada en el servidor
+                if (!soporta() || !KEY || Notification.permission !== 'granted') return;
+                reg().then(suscribir).then(enviar).catch(function () {});
+            }
+            window.addEventListener('load', sincronizar);
+            document.addEventListener('visibilitychange', function () { if (!document.hidden) sincronizar(); });
+            return { estado: estado, activar: activar };
+        })();
+    </script>
+
+    <script>
         // Service worker + botón "Instalar como aplicación" (solo aparece si el navegador permite instalar)
         (function () {
             if ('serviceWorker' in navigator) {
@@ -371,4 +428,4 @@
     </script>
 
 </body>
-</html>
+</html>

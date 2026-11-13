@@ -3,3 +3,5 @@ Flask-SQLAlchemy
 Flask-Login
 gunicorn
 psycopg[binary]
+pywebpush
+cryptography

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>Notificaciones</h1>
+    <p>Alertas urgentes en tu celular: pedidos nuevos, incidentes graves, vencimientos y pagos.</p>
+</section>
+{% if not configurado %}
+<div class="luxury-card" style="border-color:#f87171; margin-bottom:20px;">
+    <h3 class="stat-label" style="color:#f87171;">Falta configurar el servidor</h3>
+    <p style="margin:0; font-size:14px; color:var(--text-muted);">Instala <span class="mono">pywebpush</span>, corre <span class="mono">python generar_vapid.py</span> y pega las dos llaves en las variables <span class="mono">VAPID_PUBLIC_KEY</span> y <span class="mono">VAPID_PRIVATE_KEY</span> de Render. Mientras tanto, los avisos siguen apareciendo aquí y en el panel.</p>
+</div>
+{% endif %}
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card">
+        <h3 class="stat-label">Este dispositivo</h3>
+        <div class="stat-value" style="font-size:22px;" id="zEstado">Revisando…</div>
+        <p id="zAyuda" style="color:var(--text-muted); font-size:13px; margin:8px 0 14px;"></p>
+        <div class="toolbar"><button class="btn btn-primary" id="zActivar" type="button">Activar alertas</button><button class="btn" id="zPrueba" type="button">Enviar prueba</button></div>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Dispositivos registrados</h3>
+        <div class="stat-value" style="font-size:22px;">{{ dispositivos|length }}</div>
+        {% for d in dispositivos[:4] %}<p class="mono" style="margin:6px 0 0; font-size:12px;">{{ (d.agente or 'Dispositivo')[:70] }}{% if d.ultimo_ok %} · último aviso recibido {{ d.ultimo_ok.strftime('%d/%m %H:%M') }} UTC{% endif %}</p>{% endfor %}
+        <p style="color:var(--text-muted); font-size:13px; margin:12px 0 0;">En iPhone: abre el panel desde su icono en la pantalla de inicio (Compartir → Agregar a inicio) y luego activa las alertas.</p>
+    </div>
+</div>
+<div class="section-title">Historial</div>
+<form method="post" action="/notificaciones/leer" style="margin-bottom:12px;"><button class="btn btn-sm" type="submit">Marcar todo como leído</button></form>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Aviso</th><th>Tipo</th><th>Recibido en el celular</th><th>Fecha</th></tr></thead><tbody>
+    {% for n in filas %}
+    <tr style="{{ 'background:rgba(255,255,255,.04);' if not n.leida }}">
+        <td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 600 if not n.leida else 400 }};">{{ n.titulo }}</a><div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div></td>
+        <td><span class="badge {{ 'badge-red' if n.urgente else 'badge-amber' }}">{{ 'Urgente' if n.urgente else n.tipo }}</span></td>
+        <td>{% if n.entregada %}<span class="badge badge-green">Sí</span>{% else %}<span class="badge badge-red">No</span>{% endif %}</td>
+        <td class="mono">{{ n.hora.strftime('%d/%m/%Y %H:%M') }}</td>
+    </tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">Todavía no hay notificaciones.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% raw %}
+<script>
+(function () {
+  var est = document.getElementById('zEstado'), ay = document.getElementById('zAyuda'), bt = document.getElementById('zActivar');
+  var tx = { 'activo': ['Alertas activadas', 'Este dispositivo recibirá los avisos urgentes.'], 'inactivo': ['Alertas desactivadas', 'Pulsa «Activar alertas» y acepta el permiso.'],
+             'bloqueado': ['Permiso bloqueado', 'Actívalo en los ajustes del navegador o de la app para este sitio.'], 'no-soportado': ['No compatible', 'Este navegador no admite alertas push.'] };
+  function ver() { window.zPush.estado().then(function (e) { est.textContent = tx[e][0]; ay.textContent = tx[e][1]; bt.hidden = e === 'activo' || e === 'no-soportado'; }); }
+  bt.onclick = function () { window.zPush.activar().then(ver).catch(function (e) { ay.textContent = e.message === 'sin-clave' ? 'El servidor aún no tiene las llaves VAPID.' : 'No se pudo activar. Revisa el permiso.'; }); };
+  document.getElementById('zPrueba').onclick = function () { fetch('/api/push/prueba', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (d) { ay.textContent = d.dispositivos ? 'Prueba enviada a ' + d.dispositivos + ' dispositivo(s).' : (d.total ? 'El envío falló: revisa las llaves VAPID en Render.' : 'No hay dispositivos registrados todavía.'); }); };
+  ver();
+})();
+</script>
+{% endraw %}
+{% endblock %}
