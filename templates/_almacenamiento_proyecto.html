@@ -1,9 +1,12 @@
-<!-- templates/_almacenamiento_proyecto.html : panel de almacenamiento vinculado a un proyecto -->
+<!-- templates/_almacenamiento_proyecto.html : base de datos y archivos vinculados a ESTE proyecto, con gestión -->
 {% if p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo %}
 <div class="luxury-card alm-proy" data-pid="{{ p.id }}" style="margin-top:16px;">
-  <h3 class="stat-label">Base de datos y almacenamiento vinculados</h3>
-  <div class="alm-proy-cuerpo" style="font-size:14px; display:grid; gap:6px;"><span style="color:var(--text-muted);">Consultando…</span></div>
-  <a class="mono" href="/almacenamiento" style="font-size:13px;">Ver detalle en Almacenamiento</a>
+  <h3 class="stat-label">Base de datos y almacenamiento de este proyecto</h3>
+  <div class="alm-proy-cuerpo" style="font-size:14px; display:grid; gap:10px;"><span style="color:var(--text-muted);">Consultando…</span></div>
+  <div style="display:flex; gap:14px; align-items:center; margin-top:8px;">
+    <a class="mono alm-proy-refrescar" href="#" style="font-size:13px;">Actualizar ahora</a>
+    <a class="mono" href="/almacenamiento" style="font-size:13px;">Ver todo en Almacenamiento</a>
+  </div>
 </div>
 {% raw %}
 <script>
@@ -23,7 +26,11 @@
   const problema = (tit, x) =>
     x.estado === "sin_conectar" ? linea(tit, mut("conecta la llave en Almacenamiento → Conexiones.")) :
     x.estado === "error" ? linea(tit, mut("error: " + esc(x.error))) :
-    x.estado === "no_encontrado" ? linea(tit, mut("no encontré «" + esc(x.buscado || x.entrada) + "». Revisa el nombre en «Editar proyecto».")) : null;
+    x.estado === "no_encontrado" ? linea(tit, mut("no encontré «" + esc(x.buscado || x.entrada) + "». Revisa el vínculo en «Editar proyecto».")) : null;
+  const btn = (attrs) => '<button type="button" class="btn alm-del" ' + attrs + ' style="padding:2px 10px;font-size:12px;">Eliminar</button>';
+  const archivos = (lista, fila) => lista.length
+    ? '<div style="margin:4px 0 0 12px;display:grid;gap:4px;">' + lista.map(fila).join("") + "</div>"
+    : "";
   const pintar = (el, r) => {
     const out = [];
     if (r.neon) {
@@ -31,29 +38,61 @@
       out.push(problema("Neon", x) || linea("Neon · " + x.nombre,
         fmt(x.bytes) + (x.pct != null ? " (" + x.pct + "% del límite)" : "") + " · " + x.ramas + " rama(s)" +
         ((x.bases || []).length ? " · bases: " + x.bases.map(esc).join(", ") : "") +
-        (x.aviso ? "<div>" + mut(esc(x.aviso)) + "</div>" : "")));
+        (x.aviso ? "<div>" + mut(esc(x.aviso)) + "</div>" : "") +
+        ((x.detalle_ramas || []).length ? '<div style="margin:4px 0 0 12px;">' + x.detalle_ramas.map(b =>
+          "<div>" + esc(b.nombre) + (b.principal ? " ★" : "") + " · " + fmt(b.bytes) + "</div>").join("") + "</div>" : "")));
     }
     (r.r2 || []).forEach(x => out.push(problema("R2", x) ||
-      linea("R2 · " + x.entrada, fmt(x.bytes) + " · " + x.objetos + (x.estimado ? "+" : "") + " objetos" + (x.estimado ? mut(" (conteo parcial)") : ""))));
+      linea("R2 · " + x.entrada, fmt(x.bytes) + " · " + x.objetos + (x.estimado ? "+" : "") + " objetos" + (x.estimado ? mut(" (conteo parcial)") : "")) +
+      archivos(x.grandes || [], g => '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;"><span>' +
+        esc(g.key) + " · " + fmt(g.bytes) + "</span>" +
+        btn('data-tipo="r2" data-bucket="' + esc(x.bucket) + '" data-key="' + esc(g.key) + '"') + "</div>")));
     if (r.cloudinary) {
       const x = r.cloudinary;
-      out.push(problema("Cloudinary", x) || linea("Cloudinary · " + x.carpeta,
+      out.push(problema("Cloudinary", x) || (linea("Cloudinary · " + x.carpeta,
         x.vacia ? mut("no hay archivos en esa carpeta.") :
-        fmt(x.bytes) + " · " + x.archivos + " archivo(s)" + (x.muestra ? mut(" (según una muestra)") : "")));
+        fmt(x.bytes) + " · " + x.archivos + " archivo(s)" + (x.muestra ? mut(" (según una muestra)") : "")) +
+        archivos(x.grandes || [], g => '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;"><span>' +
+          esc(g.public_id) + " · " + fmt(g.bytes) + "</span>" +
+          btn('data-tipo="cld" data-id="' + esc(g.public_id) + '" data-rt="' + esc(g.tipo) + '"') + "</div>")));
     }
     el.querySelector(".alm-proy-cuerpo").innerHTML = out.join("") || mut("Sin vínculos.");
   };
   const fallo = txt => paneles.forEach(el => { el.querySelector(".alm-proy-cuerpo").innerHTML = mut(txt); });
-  fetch("/api/almacenamiento/proyectos", { credentials: "same-origin" })
-    .then(r => r.status === 403 ? { ok: false, error: "Solo administradores." } : r.json())
-    .then(d => {
-      if (!d.ok) throw new Error(d.error || "Error");
-      paneles.forEach(el => {
-        const r = d.proyectos[el.dataset.pid];
-        if (r) pintar(el, r); else el.querySelector(".alm-proy-cuerpo").innerHTML = mut("Sin vínculos.");
-      });
-    })
-    .catch(e => fallo("No se pudo consultar el almacenamiento (" + esc(e.message) + ")."));
+  const cargar = (forzar) =>
+    fetch("/api/almacenamiento/proyectos" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" })
+      .then(r => r.status === 403 ? { ok: false, error: "Solo administradores." } : r.json())
+      .then(d => {
+        if (!d.ok) throw new Error(d.error || "Error");
+        paneles.forEach(el => {
+          const r = d.proyectos[el.dataset.pid];
+          if (r) pintar(el, r); else el.querySelector(".alm-proy-cuerpo").innerHTML = mut("Sin vínculos.");
+        });
+      })
+      .catch(e => fallo("No se pudo consultar el almacenamiento (" + esc(e.message) + ")."));
+  cargar(false);
+
+  paneles.forEach(el => {
+    el.querySelector(".alm-proy-refrescar").addEventListener("click", e => { e.preventDefault(); cargar(true); });
+    el.addEventListener("click", async e => {
+      const b = e.target.closest(".alm-del");
+      if (!b) return;
+      const esR2 = b.dataset.tipo === "r2";
+      const nombre = esR2 ? b.dataset.key : b.dataset.id;
+      if (!confirm("¿Eliminar «" + nombre + "»? No se puede deshacer.")) return;
+      b.disabled = true;
+      const url = "/api/almacenamiento/proyectos/" + el.dataset.pid + (esR2 ? "/r2/eliminar" : "/cloudinary/eliminar");
+      const cuerpo = esR2 ? { bucket: b.dataset.bucket, key: b.dataset.key, confirmar: true }
+                          : { public_id: b.dataset.id, resource_type: b.dataset.rt, confirmar: true };
+      try {
+        const r = await fetch(url, { method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+        const d = await r.json();
+        if (!d.ok) { alert("No se pudo eliminar: " + (d.error || "error")); b.disabled = false; return; }
+        cargar(true);
+      } catch (err) { alert("No se pudo eliminar."); b.disabled = false; }
+    });
+  });
 })();
 </script>
 {% endraw %}

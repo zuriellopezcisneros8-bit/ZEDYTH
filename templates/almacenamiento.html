@@ -240,7 +240,8 @@ function tarjetas(d) {
 
 const proyDe = (d, tipo, nombre) => {
   const l = ((d.vinculos || {})[tipo] || {})[String(nombre || "").toLowerCase()];
-  return l && l.length ? `<div class="alm-mut">Proyecto: ${l.map(esc).join(", ")}</div>` : "";
+  return l && l.length ? `<div class="alm-mut">Proyecto: ${l.map(esc).join(", ")}</div>`
+    : `<div class="alm-mut" style="color:#b45309">Sin proyecto asignado — vincúlalo en «Editar proyecto»</div>`;
 };
 
 function verNeon(d) {

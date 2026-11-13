@@ -374,7 +374,9 @@ def _por_proyecto(d, f):
         else:
             p = next((x for x in n.get("proyectos", []) if str(x.get("nombre", "")).lower() == f["neon"].lower()), None)
             res["neon"] = ({"estado": "ok", "nombre": p["nombre"], "bytes": p["bytes"], "pct": p.get("pct"),
-                            "ramas": len(p["ramas"]), "bases": p["bases"], "aviso": p.get("aviso")}
+                            "ramas": len(p["ramas"]), "bases": p["bases"], "aviso": p.get("aviso"),
+                            "detalle_ramas": [{"nombre": r["nombre"], "bytes": r["bytes"], "principal": r["principal"]}
+                                              for r in p["ramas"]]}
                            if p else {"estado": "no_encontrado", "buscado": f["neon"]})
     entradas = _entradas_r2(f["r2"])
     if entradas:
@@ -391,13 +393,13 @@ def _por_proyecto(d, f):
                     res["r2"].append({"estado": "no_encontrado", "entrada": etiqueta})
                 elif b.get("error"):
                     res["r2"].append({"estado": "error", "entrada": etiqueta, "error": b["error"]})
-                elif not carpeta:
-                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bytes": b["bytes"],
-                                      "objetos": b["objetos"], "estimado": b["estimado"]})
                 else:
-                    c = _busca(b.get("carpetas") or {}, carpeta)
-                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bytes": c["bytes"] if c else 0,
-                                      "objetos": c["objetos"] if c else 0, "estimado": b["estimado"]})
+                    c = None if not carpeta else _busca(b.get("carpetas") or {}, carpeta)
+                    grandes = [g for g in b.get("grandes", []) if not carpeta or g["key"].startswith(carpeta + "/")]
+                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bucket": b["nombre"],
+                                      "bytes": b["bytes"] if not carpeta else (c["bytes"] if c else 0),
+                                      "objetos": b["objetos"] if not carpeta else (c["objetos"] if c else 0),
+                                      "estimado": b["estimado"], "grandes": grandes[:8]})
     if f["cld"]:
         c = d.get("cloudinary") or {}
         if c.get("error"):
@@ -408,7 +410,10 @@ def _por_proyecto(d, f):
             x = _busca(c.get("carpetas") or {}, f["cld"])
             res["cloudinary"] = {"estado": "ok", "carpeta": f["cld"], "bytes": x["bytes"] if x else 0,
                                  "archivos": x["archivos"] if x else 0, "muestra": c.get("muestra", False),
-                                 "vacia": x is None}
+                                 "vacia": x is None,
+                                 "grandes": [{"public_id": g["public_id"], "tipo": g["tipo"], "bytes": g["bytes"]}
+                                             for g in c.get("grandes", [])
+                                             if g["public_id"].startswith(f["cld"] + "/")][:8]}
     return res
 
 
@@ -546,6 +551,95 @@ def crear_blueprint(db, registrar):
         d = datos_cacheados(request.args.get("forzar") == "1")
         return jsonify(ok=True, generado=d["generado"],
                        proyectos={str(f["id"]): _por_proyecto(d, f) for f in _filas_proyectos(db)})
+
+    @bp.route("/api/almacenamiento/opciones")
+    def opciones():
+        """Lo que existe en Neon / R2 / Cloudinary, para elegirlo en 'Editar proyecto' en vez de escribirlo.
+        ?pid=ID excluye al propio proyecto de la lista de 'ya usado por'."""
+        if not es_admin():
+            return negado()
+        try:
+            pid = int(request.args.get("pid", "0"))
+        except ValueError:
+            pid = 0
+        d = datos_cacheados()
+        filas = _filas_proyectos(db)
+
+        def usado(tipo, nombre):
+            r = []
+            for f in filas:
+                if f["id"] == pid:
+                    continue
+                if tipo == "neon" and f["neon"].lower() == nombre.lower():
+                    r.append(f["nombre"])
+                elif tipo == "r2" and any(b.lower() == nombre.lower() for b, _c in _entradas_r2(f["r2"])):
+                    r.append(f["nombre"])
+                elif tipo == "cld" and f["cld"].lower() == nombre.lower():
+                    r.append(f["nombre"])
+            return r
+
+        n, r2, c = d.get("neon") or {}, d.get("r2") or {}, d.get("cloudinary") or {}
+        out = {"neon": {"ok": bool(n.get("configurado")) and not n.get("error"), "items": []},
+               "r2": {"ok": bool(r2.get("configurado")) and not r2.get("error"), "items": []},
+               "cloudinary": {"ok": bool(c.get("configurado")) and not c.get("error"), "items": []}}
+        for p in n.get("proyectos", []):
+            out["neon"]["items"].append({"nombre": p["nombre"], "usado_por": usado("neon", p["nombre"])})
+        for b in r2.get("buckets", []):
+            out["r2"]["items"].append({"nombre": b["nombre"], "usado_por": usado("r2", b["nombre"])})
+            for carp in sorted(k for k in (b.get("carpetas") or {}) if "/" not in k):
+                out["r2"]["items"].append({"nombre": b["nombre"] + "/" + carp, "usado_por": []})
+        for carp in sorted(k for k in (c.get("carpetas") or {}) if "/" not in k):
+            out["cloudinary"]["items"].append({"nombre": carp, "usado_por": usado("cld", carp)})
+        return jsonify(ok=True, **out)
+
+    def _fila_proyecto(pid):
+        return next((f for f in _filas_proyectos(db) if f["id"] == pid), None)
+
+    @bp.route("/api/almacenamiento/proyectos/<int:pid>/r2/eliminar", methods=["POST"])
+    def r2_eliminar_proyecto(pid):
+        """Borra un archivo de R2 SOLO si está dentro del bucket/carpeta vinculado a ese proyecto."""
+        d, fallo = cuerpo_confirmado()
+        if fallo:
+            return fallo
+        f = _fila_proyecto(pid)
+        bucket, key = d.get("bucket"), d.get("key")
+        if not f or not isinstance(bucket, str) or not isinstance(key, str) or not key:
+            return jsonify(ok=False, error="Datos incompletos."), 400
+        if not any(b.lower() == bucket.lower() and (not c or key.startswith(c + "/")) for b, c in _entradas_r2(f["r2"])):
+            return jsonify(ok=False, error="Ese archivo no pertenece a este proyecto."), 403
+        cargar_guardadas()
+        try:
+            _r2().delete_object(Bucket=bucket, Key=key)
+        except Exception as e:
+            return jsonify(ok=False, error=str(e)[:200]), 502
+        registrar("eliminar", "R2", pid, f"{f['nombre']}: {bucket}/{key}"[:300])
+        db.session.commit()
+        _invalidar()
+        return jsonify(ok=True)
+
+    @bp.route("/api/almacenamiento/proyectos/<int:pid>/cloudinary/eliminar", methods=["POST"])
+    def cld_eliminar_proyecto(pid):
+        """Borra un archivo de Cloudinary SOLO si está dentro de la carpeta vinculada a ese proyecto."""
+        d, fallo = cuerpo_confirmado()
+        if fallo:
+            return fallo
+        f = _fila_proyecto(pid)
+        pub, tipo = d.get("public_id"), d.get("resource_type")
+        if not f or not f["cld"] or not isinstance(pub, str) or tipo not in ("image", "video", "raw"):
+            return jsonify(ok=False, error="Datos incompletos."), 400
+        if not pub.startswith(f["cld"] + "/"):
+            return jsonify(ok=False, error="Ese archivo no pertenece a este proyecto."), 403
+        cargar_guardadas()
+        try:
+            r = _cld(f"/resources/{tipo}/upload", "DELETE", {"public_ids[]": [pub], "invalidate": "true"})
+        except Exception as e:
+            return jsonify(ok=False, error=str(e)[:200]), 502
+        if (r.get("deleted") or {}).get(pub) != "deleted":
+            return jsonify(ok=False, error="Cloudinary no confirmó el borrado."), 502
+        registrar("eliminar", "Cloudinary", pid, f"{f['nombre']}: {tipo}/{pub}"[:300])
+        db.session.commit()
+        _invalidar()
+        return jsonify(ok=True)
 
     @bp.route("/api/almacenamiento/r2/eliminar", methods=["POST"])
     def r2_eliminar():

@@ -40,4 +40,42 @@
         <button class="btn btn-primary" type="submit">Guardar proyecto</button>
     </div>
 </form>
+{% raw %}
+<script>
+/* Los vínculos se eligen de lo que realmente existe en Neon / R2 / Cloudinary (sin escribir nombres a mano).
+   Si no se pueden leer, los campos de texto siguen funcionando igual. */
+(function () {
+  const campo = n => document.querySelector('[name="' + n + '"]');
+  const neon = campo("neon_proyecto"), r2 = campo("r2_buckets"), cld = campo("cloudinary_prefijo");
+  if (!neon) return;
+  const pid = location.pathname.split("/").filter(Boolean)[1] || "0";
+  const nota = (el, txt) => { let n = el.parentNode.querySelector(".alm-nota");
+    if (!n) { n = document.createElement("div"); n.className = "alm-nota"; n.style.cssText = "font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400"; el.parentNode.appendChild(n); }
+    n.textContent = txt; };
+  const etiqueta = i => i.nombre + (i.usado_por.length ? " — ya lo usa: " + i.usado_por.join(", ") : "");
+  fetch("/api/almacenamiento/opciones?pid=" + encodeURIComponent(pid), { credentials: "same-origin" })
+    .then(r => r.json()).then(d => {
+      if (!d.ok) return;
+      // Neon: lista desplegable
+      if (d.neon.ok && d.neon.items.length) {
+        const sel = document.createElement("select"); sel.className = "field";
+        const ops = [["", "— Sin vincular —"]].concat(d.neon.items.map(i => [i.nombre, etiqueta(i)]));
+        const actual = neon.value.trim();
+        if (actual && !d.neon.items.some(i => i.nombre.toLowerCase() === actual.toLowerCase())) ops.push([actual, actual + " (no existe en Neon)"]);
+        ops.forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t;
+          if (v.toLowerCase() === actual.toLowerCase()) o.selected = true; sel.appendChild(o); });
+        sel.addEventListener("change", () => { neon.value = sel.value; });
+        neon.style.display = "none"; neon.parentNode.insertBefore(sel, neon);
+      } else nota(neon, "No se pudo leer la lista de Neon; escribe el nombre exacto.");
+      // R2 y Cloudinary: sugerencias (R2 admite varios, separados por coma)
+      const sugerir = (inp, id, items) => { if (!inp || !items.length) return;
+        const dl = document.createElement("datalist"); dl.id = id;
+        items.forEach(i => { const o = document.createElement("option"); o.value = i.nombre; o.label = etiqueta(i); dl.appendChild(o); });
+        inp.setAttribute("list", id); inp.parentNode.appendChild(dl); };
+      if (d.r2.ok) sugerir(r2, "dl-r2", d.r2.items);
+      if (d.cloudinary.ok) sugerir(cld, "dl-cld", d.cloudinary.items);
+    }).catch(() => {});
+})();
+</script>
+{% endraw %}
 {% endblock %}
