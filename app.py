@@ -1572,7 +1572,7 @@ def inteligencia_desvincular(vid):
 # Únicas rutas que se pueden abrir sin iniciar sesión.
 RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
                   'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis',
-                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar'}
+                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar', 'healthz'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -2286,6 +2286,8 @@ def _entregar(nid, externo=True):
             ok = _enviar_push(n) if push_configurado() else 0
             n.entregada, n.intentos = ok > 0, (n.intentos or 0) + 1
             db.session.commit()
+            if not ok:
+                _pendientes["hay"] = True        # que el vigilante lo reintente
             if not ok and externo and n.urgente and n.intentos == 1:
                 notificar.avisar(n.titulo, f"{n.cuerpo or ''}\n\nVer en el panel: {SITE_URL_PUSH()}{n.url or '/panel'}")
     except Exception as e:
@@ -2316,6 +2318,9 @@ def _push_pedido(lead):
     crear_notificacion("Pedido", f"Nuevo pedido: {lead.nombre}",
                        f"{lead.sistema or lead.negocio or 'Pedido nuevo'} · {lead.contacto}", "/leads",
                        clave=f"lead-{lead.id}", externo=False)   # notificar.avisar ya lo manda por Telegram/correo
+
+
+_pendientes = {"hay": True}      # True = puede haber avisos sin entregar. Evita consultar la base cada minuto (Neon se duerme)
 
 
 def reintentar_pendientes():
@@ -2362,17 +2367,23 @@ def _hora_de_avisar():
     return 8 <= (datetime.utcnow() - timedelta(hours=6)).hour < 22   # hora de México: no te despierta de madrugada
 
 
+INTERVALO_ALERTAS = 2 * 3600     # cada revisión consulta la base y despierta a Neon ~5 min: cada 2 h basta (los avisos son de días)
+
+
 def _vigilante():
+    """Corre en segundo plano. IMPORTANTE: no debe consultar la base en cada vuelta, o Neon nunca se duerme
+    y se gastan las horas de cómputo gratis. Solo toca la base si hay avisos pendientes o toca la revisión periódica."""
     ultima_revision = 0
     while True:
         time.sleep(60)
         try:
             with app.app_context():
-                reintentar_pendientes()
-                if time.time() - ultima_revision > 1800 and _hora_de_avisar():
+                if _pendientes["hay"]:
+                    _pendientes["hay"] = reintentar_pendientes() > 0
+                if time.time() - ultima_revision > INTERVALO_ALERTAS and _hora_de_avisar():
                     ultima_revision = time.time()
                     revisar_alertas()
-                almacenamiento.instantanea_diaria()      # una lectura al día del historial de almacenamiento
+                    almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
         except Exception as e:
             app.logger.error("Vigilante de alertas: %s", e)
 
@@ -2430,6 +2441,13 @@ def push_prueba():
     db.session.commit()
     return {"dispositivos": ok, "total": PushDispositivo.query.filter_by(activo=True).count(), "configurado": push_configurado(),
             "problema": vapid_diagnostico()}
+
+
+@app.route('/healthz')
+def healthz():
+    """Para el bot que mantiene despierto a Render (y el Health Check de Render). NO toca la base de datos:
+    así Neon puede dormirse y no gasta horas de cómputo. Apunta ahí tu bot, no a /api/push/revisar ni a la portada."""
+    return "ok", 200, {"Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8"}
 
 
 @app.route('/api/push/revisar', methods=['GET', 'POST'])
