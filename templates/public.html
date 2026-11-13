@@ -796,6 +796,29 @@ footer{padding:40px 0 28px!important;font-size:12.5px!important}
 }
 @media(prefers-reduced-motion:reduce){nav:after{animation:none}.menu-toggle:before,.menu-toggle:after{transition:none}}
 </style>
+
+<style id="hero-chronicle">
+/* HERO · estilo Chronicle en blanco y negro */
+header.hero#inicio{padding:128px 0 72px!important;background:#000!important;overflow:hidden!important}
+header.hero#inicio:before{content:""!important;display:block!important;position:absolute!important;inset:0!important;z-index:0!important;background:radial-gradient(55% 60% at 50% -5%,rgba(255,255,255,.17),rgba(255,255,255,.04) 45%,transparent 72%)!important}
+header.hero#inicio:after{content:""!important;display:block!important;position:absolute!important;inset:0!important;height:auto!important;z-index:0!important;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px)!important;background-size:64px 64px!important;-webkit-mask-image:radial-gradient(70% 75% at 50% 0,#000,transparent 78%);mask-image:radial-gradient(70% 75% at 50% 0,#000,transparent 78%)}
+header.hero#inicio .eyebrow{display:inline-flex!important;align-items:center;padding:7px 16px 7px 12px;margin:0 0 30px!important;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.04);backdrop-filter:blur(10px);color:#d4d4d4!important;font-size:13px!important}
+header.hero#inicio h1{font-size:clamp(38px,7.6vw,80px)!important;line-height:1.04!important;letter-spacing:-.045em!important;font-weight:600!important;max-width:980px!important;margin:0 auto 26px!important;text-wrap:balance;color:#fff!important}
+header.hero#inicio h1 .rot{background:linear-gradient(100deg,#fff 20%,#8f8f8f);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;padding:0 .04em .1em}
+header.hero#inicio .sub{color:#a1a1a1!important;font-size:clamp(16px,2.1vw,19px)!important;line-height:1.65;max-width:700px!important}
+header.hero#inicio .cta{gap:12px!important}
+header.hero#inicio .btn{padding:14px 28px!important;font-size:15px!important;border-radius:999px!important;background:rgba(255,255,255,.04)!important;border:1px solid rgba(255,255,255,.18)!important;color:#fff!important;backdrop-filter:blur(8px);transition:transform .25s,box-shadow .25s,background .25s}
+header.hero#inicio .btn:hover{background:rgba(255,255,255,.1)!important;transform:translateY(-2px);opacity:1}
+header.hero#inicio .btn.w{background:#fff!important;color:#000!important;border-color:#fff!important;box-shadow:0 0 0 5px rgba(255,255,255,.08),0 12px 44px rgba(255,255,255,.22)}
+header.hero#inicio .btn.w:hover{background:#fff!important;box-shadow:0 0 0 7px rgba(255,255,255,.12),0 16px 54px rgba(255,255,255,.34)}
+header.hero#inicio .hk{margin-top:36px!important}
+header.hero#inicio .hk span{background:rgba(255,255,255,.03)!important;border-color:rgba(255,255,255,.12)!important}
+header.hero#inicio .feats{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px!important;max-width:900px!important;margin:40px auto 0!important;border:0!important}
+header.hero#inicio .feats div{border:1px solid rgba(255,255,255,.1)!important;border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.015));padding:18px 12px!important;transition:border-color .25s,transform .25s}
+header.hero#inicio .feats div:hover{border-color:rgba(255,255,255,.3)!important;transform:translateY(-3px)}
+.dashw .dash{border:1px solid rgba(255,255,255,.14)!important;border-radius:22px!important;box-shadow:0 0 0 1px rgba(0,0,0,.8),0 50px 120px -30px rgba(255,255,255,.16)!important}
+@media(max-width:560px){header.hero#inicio{padding:76px 0 44px!important}header.hero#inicio .btn.w{box-shadow:0 8px 30px rgba(255,255,255,.2)}}
+</style>
 </head>
 <body>
 <nav><div class="wrap">
@@ -815,7 +838,7 @@ footer{padding:40px 0 28px!important;font-size:12.5px!important}
     </div>
 </div></nav>
 
-<header class="hero" id="inicio"><div class="himg" aria-hidden="true"></div><div class="hgrid" aria-hidden="true"></div><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><div class="hlogo"><img src="/static/img/zedyth/zedyth-aguila.webp" alt="" width="112" height="61"><img src="/static/img/zedyth/zedyth-wordmark.webp" alt="ZEDYTH Technologies" width="340" height="26"></div><span class="eyebrow"><i class="pdot"></i>Ciberseguridad · SaaS · Software a la medida</span>
+<header class="hero" id="inicio"><div class="himg" aria-hidden="true"></div><div class="hgrid" aria-hidden="true"></div><div class="hero-bg" style="background-image:url(/static/img/zedyth/hero.jpg)" aria-hidden="true"></div><div class="wrap hero-in"><span class="eyebrow"><i class="pdot"></i>Ciberseguridad · SaaS · Software a la medida</span>
  <h1>Ciberseguridad y software para <span class="rot" id="rot">tu equipo</span>.</h1>
  <p class="sub">Somos una empresa de ciberseguridad y desarrollo de software. Protegemos sistemas, creamos software a la medida y construimos nuestros propios SaaS: hoy operamos Zmarthket, plataforma de comercio electrónico y punto de venta en la nube para tu negocio, y el supermercado en línea Zelecte; nuestra app de escritura para universos cinematográficos, {{ empresa.app_escritura }}, avanza en fase intermedia. Ya trabajamos en las siguientes, como ZMARTH MUSIC.</p>
  <div class="cta"><a class="btn w" href="#saas">Ver nuestros SaaS →</a><a class="btn" href="{{ empresa.zmarthket }}" target="_blank" rel="noopener">Probar Zmarthket</a><a class="btn" href="https://wa.me/{{ contacto.whatsapp }}?text=Hola%2C%20quiero%20cotizar%20un%20proyecto" target="_blank" rel="noopener">Cotizar un proyecto</a></div>
