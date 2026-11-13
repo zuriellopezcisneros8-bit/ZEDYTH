@@ -86,60 +86,97 @@
     .catch(e => { $(".up-propio").innerHTML = aviso("No se pudo consultar el bot propio (" + e.message + ")."); });
 
   // ---- UptimeRobot ----
-  const formulario = conAviso => (conAviso || "") +
-    '<div class="up-form"><p class="up-nota" style="margin:0;">En uptimerobot.com entra a <strong>Integrations &amp; API → API</strong> y copia la ' +
-    '<strong>Read-only API key</strong> (solo lectura: no puede pausar ni borrar monitores). Se guarda cifrada y sirve para todos los proyectos.</p>' +
-    '<input class="field up-key" type="password" autocomplete="off" placeholder="Read-only API key de UptimeRobot">' +
+  let llaveActual = null;                     // "proyecto" | "general" | null, según lo último que dijo el servidor
+  const formulario = (conAviso, alcance) => (conAviso || "") +
+    '<div class="up-form"><p class="up-nota" style="margin:0;">En uptimerobot.com entra a <strong>Integrations &amp; API → API</strong>. ' +
+    'La <strong>Read-only API key</strong> general ve todos tus monitores y sirve para todos los proyectos. ' +
+    'Una llave de <em>un solo monitor</em> solo ve ese monitor: úsala solo para este proyecto. Se guarda cifrada.</p>' +
+    '<label class="up-nota" style="display:block;margin-top:10px;">¿Para qué es esta llave?' +
+    '<select class="field up-alcance"><option value="general"' + (alcance === "general" ? " selected" : "") + '>Todos los proyectos (llave general)</option>' +
+    '<option value="proyecto"' + (alcance === "proyecto" ? " selected" : "") + '>Solo este proyecto (llave de un monitor)</option></select></label>' +
+    '<input class="field up-key" type="password" autocomplete="off" placeholder="API key de UptimeRobot">' +
     '<div class="up-fila"><button class="btn btn-primary up-conectar" type="button">Conectar</button></div></div>';
+  const pie = (conCambiar) => '<div class="up-pie">' +
+    (llaveActual === "general" ? '<a href="#" class="up-probar">Probar conexión</a>' : "") +
+    '<a href="#" class="up-refrescar">Actualizar ahora</a>' +
+    (conCambiar ? '<a href="#" class="up-cambiar">Cambiar API key</a>' : "") +
+    (llaveActual === "general" ? '<a href="#" class="up-propia">Usar una llave solo para este proyecto</a>' : "") +
+    (llaveActual === "proyecto" ? '<a href="#" class="up-quitar" style="color:#f87171;">Quitar la llave de este proyecto</a>' : '<a href="#" class="up-desconectar" style="color:#f87171;">Desconectar la general</a>') +
+    "</div>";
+  const origen = () => llaveActual === "proyecto" ? nota("Usando la llave propia de este proyecto.") : llaveActual === "general" ? nota("Usando la llave general.") : "";
   const pintarUR = d => {
-    if (d.estado === "sin_conectar") return formulario(nota("UptimeRobot aún no está conectado."));
-    if (d.estado === "error") return formulario(aviso(d.error));
+    llaveActual = d.llave || null;
+    if (d.estado === "sin_conectar") return formulario(nota("UptimeRobot aún no está conectado."), "general");
+    if (d.estado === "error") return formulario(aviso(d.error), llaveActual === "proyecto" ? "proyecto" : "general") +
+      (llaveActual === "proyecto" ? pie(false) : "");
     let h;
-    if (d.estado === "sin_monitor") h = nota("Este proyecto no tiene un monitor en UptimeRobot" +
-      (d.url ? " para <code>" + esc(d.url) + "</code>" : " (falta la URL de producción en el proyecto)") +
-      ". Crea uno con esa dirección (o con su <code>/healthz</code>) y aparecerá aquí.");
+    if (d.estado === "sin_monitor") h = nota(llaveActual === "proyecto"
+        ? "La llave de este proyecto no ve ningún monitor. Revisa que sea de un monitor existente."
+        : "Este proyecto no tiene un monitor en UptimeRobot" + (d.url ? " para <code>" + esc(d.url) + "</code>" : " (falta la URL de producción en el proyecto)") +
+          ". Crea uno con esa dirección (o con su <code>/healthz</code>) y aparecerá aquí, o usa una llave solo para este proyecto.") +
+      (d.visibles && d.visibles.length
+        ? '<p class="up-nota" style="margin:12px 0 4px;"><strong>Monitores que ve tu API key (' + d.visibles.length + "):</strong></p>" +
+          '<ul class="up-caidas" style="margin-top:0;">' + d.visibles.map(v => "<li>" + esc(v.nombre) + (v.url ? " · <code>" + esc(v.url) + "</code>" : "") + "</li>").join("") + "</ul>" +
+          '<p class="up-nota" style="margin:6px 0 0;">Si el de este proyecto no está en la lista, tu llave no lo ve (¿es de un solo monitor?) o aún no existe en UptimeRobot.</p>'
+        : (llaveActual === "general" ? '<p class="up-nota" style="margin:12px 0 0;"><strong>Tu API key no ve ningún monitor.</strong> Revisa que sea la <em>Read-only API key</em> general de la cuenta y que ya existan monitores en UptimeRobot.</p>' : ""));
     else h = d.monitores.map(m => '<div class="up-mon"><div class="up-cab"><strong>' + esc(m.nombre) + "</strong>" +
       '<span class="up-badge ' + clase(m.caido, m.codigo === 2) + '">' + esc(m.estado) + "</span>" +
       (m.intervalo_s ? '<span class="up-nota">Revisa cada ' + Math.round(m.intervalo_s / 60) + " min</span>" : "") + "</div>" +
       '<div class="up-datos"><div><span>24 h</span><strong>' + pct(m.uptime["24h"]) + "</strong></div>" +
       "<div><span>7 días</span><strong>" + pct(m.uptime["7d"]) + "</strong></div><div><span>30 días</span><strong>" + pct(m.uptime["30d"]) + "</strong></div>" +
       "<div><span>Respuesta prom.</span><strong>" + ms(m.respuesta_ms) + "</strong></div></div>" + lista(m.caidas) + "</div>").join("");
-    return h + '<div class="up-pie"><a href="#" class="up-probar">Probar conexión</a><a href="#" class="up-refrescar">Actualizar ahora</a><a href="#" class="up-cambiar">Cambiar API key</a>' +
-      '<a href="#" class="up-desconectar" style="color:#f87171;">Desconectar</a></div>';
+    return h + '<div style="margin-top:10px;">' + origen() + "</div>" + pie(true);
   };
   const mensaje = (t, ok) => { const e = $(".up-msg-global"); e.className = "up-msg-global up-msg " + (ok ? "ok" : "mal"); e.textContent = t; };
   const cargarUR = forzar => json("/api/almacenamiento/proyectos/" + pid + "/disponibilidad" + (forzar ? "?forzar=1" : ""))
     .then(d => { if (!d.ok) throw new Error(d.error || "Error"); $(".up-ur").innerHTML = pintarUR(d); })
     .catch(e => { $(".up-ur").innerHTML = aviso("No se pudo consultar UptimeRobot (" + e.message + ")."); });
+  const sinRespuesta = () => ({ ok: false, error: "Sin respuesta." });
 
   raiz.addEventListener("click", async e => {
     const a = e.target.closest("a, button"); if (!a) return;
     if (a.classList.contains("up-refrescar")) { e.preventDefault(); mensaje("", true); cargarUR(true); }
-    if (a.classList.contains("up-cambiar")) {
+    if (a.classList.contains("up-cambiar") || a.classList.contains("up-propia")) {
       e.preventDefault(); mensaje("", true);
-      $(".up-ur").innerHTML = formulario(nota("Pega la nueva key: reemplaza a la guardada (usa la Read-only API key general de la cuenta).")) +
+      const alcance = a.classList.contains("up-propia") ? "proyecto" : (llaveActual === "proyecto" ? "proyecto" : "general");
+      $(".up-ur").innerHTML = formulario(nota("Pega la nueva key: reemplaza a la guardada con ese alcance."), alcance) +
         '<div class="up-pie"><a href="#" class="up-refrescar">Cancelar</a></div>';
     }
     if (a.classList.contains("up-probar")) {
       e.preventDefault(); mensaje("Probando…", true);
-      const r = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(() => ({ ok: false, error: "Sin respuesta." }));
+      const r = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(sinRespuesta);
       mensaje(r.ok ? r.mensaje : r.error, r.ok);
     }
     if (a.classList.contains("up-desconectar")) {
       e.preventDefault();
-      if (!confirm("¿Desconectar UptimeRobot? Se borra la API key guardada (afecta a todos los proyectos).")) return;
-      const r = await json("/api/almacenamiento/conexiones/desconectar", { servicio: "uptimerobot", confirmar: true }).catch(() => ({ ok: false, error: "Sin respuesta." }));
+      if (!confirm("¿Desconectar la llave general de UptimeRobot? Se borra la guardada (afecta a los proyectos que no tengan llave propia).")) return;
+      const r = await json("/api/almacenamiento/conexiones/desconectar", { servicio: "uptimerobot", confirmar: true }).catch(sinRespuesta);
+      if (!r.ok) return mensaje(r.error, false);
+      mensaje("", true); cargarUR(true);
+    }
+    if (a.classList.contains("up-quitar")) {
+      e.preventDefault();
+      if (!confirm("¿Quitar la llave propia de este proyecto? Pasará a usar la llave general, si existe.")) return;
+      const r = await json("/api/almacenamiento/proyectos/" + pid + "/uptime/llave", { borrar: true, confirmar: true }).catch(sinRespuesta);
       if (!r.ok) return mensaje(r.error, false);
       mensaje("", true); cargarUR(true);
     }
     if (a.classList.contains("up-conectar")) {
       const llave = $(".up-key").value.trim();
       if (!llave) return mensaje("Pega primero la API key.", false);
+      const propia = $(".up-alcance").value === "proyecto";
       a.disabled = true; mensaje("Guardando…", true);
-      const g = await json("/api/almacenamiento/conexiones/guardar", { servicio: "uptimerobot", valores: { UPTIMEROBOT_API_KEY: llave }, confirmar: true }).catch(() => ({ ok: false, error: "Sin respuesta." }));
-      if (!g.ok) { a.disabled = false; return mensaje(g.error, false); }
-      const p = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(() => ({ ok: false, error: "Sin respuesta." }));
-      mensaje(p.ok ? "Conectado. " + (p.mensaje || "") : "Se guardó, pero la prueba falló: " + p.error, p.ok);
+      let r;
+      if (propia) {
+        r = await json("/api/almacenamiento/proyectos/" + pid + "/uptime/llave", { llave: llave, confirmar: true }).catch(sinRespuesta);
+        if (!r.ok) { a.disabled = false; return mensaje(r.error, false); }
+        mensaje(r.mensaje || "Conectado.", true);
+      } else {
+        const g = await json("/api/almacenamiento/conexiones/guardar", { servicio: "uptimerobot", valores: { UPTIMEROBOT_API_KEY: llave }, confirmar: true }).catch(sinRespuesta);
+        if (!g.ok) { a.disabled = false; return mensaje(g.error, false); }
+        const p = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(sinRespuesta);
+        mensaje(p.ok ? "Conectado. " + (p.mensaje || "") : "Se guardó, pero la prueba falló: " + p.error, p.ok);
+      }
       cargarUR(true);
     }
   });

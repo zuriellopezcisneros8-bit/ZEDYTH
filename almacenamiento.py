@@ -72,6 +72,19 @@ PLANES_CLD = (("Free", 25, 0.0), ("Plus", 225, 99.0), ("Advanced", 600, 249.0))
 FACTORES = (1, 2, 5, 10, 25)
 
 
+_RE_UR_PROY = re.compile(r"^UPTIMEROBOT_KEY_P(\d{1,9})$")   # llave de UptimeRobot propia de UN proyecto (solo por su endpoint)
+_RE_LLAVE_UR = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
+_cache_ur_p = {}                                          # pid -> (instante, datos): evita repetir la consulta cada vistazo
+TTL_UR_PROY = 60
+
+
+def _campo_permitido(nombre):
+    """(servicio, es_secreto) de un campo guardable, o None. Acepta los de CAMPOS y la llave de UptimeRobot por proyecto."""
+    if nombre in CAMPOS:
+        return CAMPOS[nombre]
+    return ("uptimerobot", True) if _RE_UR_PROY.match(nombre or "") else None
+
+
 def _env(nombre, defecto=""):
     return (_guardadas.get(nombre) or os.environ.get(nombre) or defecto).strip()
 
@@ -365,8 +378,8 @@ def _ur_configurado():
     return bool(_env("UPTIMEROBOT_API_KEY"))
 
 
-def _ur(metodo, campos):
-    cuerpo = _uparse.urlencode(dict(campos, api_key=_env("UPTIMEROBOT_API_KEY"), format="json")).encode()
+def _ur(metodo, campos, clave=None):
+    cuerpo = _uparse.urlencode(dict(campos, api_key=clave or _env("UPTIMEROBOT_API_KEY"), format="json")).encode()
     r = _http("https://api.uptimerobot.com/v2/" + metodo, "POST",
               {"Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache"}, datos=cuerpo)
     if r.get("stat") != "ok":
@@ -402,11 +415,12 @@ def _monitor_ur(m):
             "respuesta_ms": None if media is None else round(media), "caidas": caidas}
 
 
-def datos_uptime():
-    if not _ur_configurado():
+def datos_uptime(clave=None):
+    """Monitores de UptimeRobot. Sin `clave` usa la general guardada; con `clave`, la de un proyecto."""
+    if not clave and not _ur_configurado():
         return {"configurado": False}
     r = _ur("getMonitors", {"custom_uptime_ratios": "1-7-30", "response_times": 1, "response_times_limit": 24,
-                            "logs": 1, "log_types": "1", "logs_limit": 5})
+                            "logs": 1, "log_types": "1", "logs_limit": 5}, clave)
     mons = [_monitor_ur(m) for m in (r.get("monitors") or []) if isinstance(m, dict)]
     mons.sort(key=lambda m: (not m["caido"], m["nombre"].lower()))
     return {"configurado": True, "monitores": mons, "total": len(mons), "caidos": sum(1 for m in mons if m["caido"]),
@@ -426,13 +440,17 @@ def _host(u):
         return ""
 
 
-def _uptime_de_proyecto(ur, nombre, url_prod, subdominios):
+def _uptime_de_proyecto(ur, nombre, url_prod, subdominios, todos=False):
     """Monitores de UptimeRobot que pertenecen a UN proyecto: por host (URL de producción o subdominios)
     o, si el monitor apunta a otro host (ej. xxx.onrender.com), porque su nombre contiene el del proyecto."""
     if not ur.get("configurado"):
         return {"estado": "sin_conectar", "monitores": []}
     if ur.get("error"):
         return {"estado": "error", "error": ur["error"], "monitores": []}
+    if todos:                                  # llave propia del proyecto: todo lo que ve es de este proyecto
+        mons = list(ur.get("monitores") or [])
+        return {"estado": "ok" if mons else "sin_monitor", "monitores": mons,
+                "visibles": []}
     hosts = {h for h in [_host(url_prod)] + [_host(x) for x in (subdominios or [])] if h}
     clave = re.sub(r"[^a-z0-9]", "", (nombre or "").lower())
     out = []
@@ -442,7 +460,8 @@ def _uptime_de_proyecto(ur, nombre, url_prod, subdominios):
         por_nombre = len(clave) >= 4 and clave in re.sub(r"[^a-z0-9]", "", str(m.get("nombre") or "").lower())
         if por_host or por_nombre:
             out.append(m)
-    return {"estado": "ok" if out else "sin_monitor", "monitores": out}
+    visibles = [{"nombre": m.get("nombre"), "url": m.get("url")} for m in (ur.get("monitores") or [])][:15]
+    return {"estado": "ok" if out else "sin_monitor", "monitores": out, "visibles": [] if out else visibles}
 
 
 # --- resumen general ----------------------------------------------------------
@@ -1007,7 +1026,7 @@ def crear_blueprint(db, registrar):
         if filas:
             f = fernet()
             for r in filas:
-                if r.nombre not in CAMPOS:
+                if not _campo_permitido(r.nombre):
                     continue
                 try:
                     nuevas[r.nombre] = f.decrypt(r.valor.encode()).decode()
@@ -1198,9 +1217,67 @@ def crear_blueprint(db, registrar):
             return jsonify(ok=False, error="No se pudo leer el proyecto."), 500
         if not fila:
             return jsonify(ok=False, error="Proyecto no encontrado."), 404
-        d = datos_cacheados(request.args.get("forzar") == "1")
+        cargar_guardadas()
+        forzar = request.args.get("forzar") == "1"
+        clave_p = _guardadas.get(f"UPTIMEROBOT_KEY_P{pid}")
+        if clave_p:                                              # este proyecto tiene su propia llave
+            c = _cache_ur_p.get(pid)
+            if forzar or not c or time.time() - c[0] > TTL_UR_PROY:
+                c = (time.time(), _seguro(lambda: datos_uptime(clave_p)))
+                _cache_ur_p[pid] = c
+            res = _uptime_de_proyecto(c[1], fila[0], fila[1], subs, todos=True)
+            return jsonify(ok=True, generado=datetime.utcnow().isoformat() + "Z", url=fila[1] or "", llave="proyecto", **res)
+        d = datos_cacheados(forzar)
+        ur = d.get("uptimerobot") or {}
         return jsonify(ok=True, generado=d["generado"], url=fila[1] or "",
-                       **_uptime_de_proyecto(d.get("uptimerobot") or {}, fila[0], fila[1], subs))
+                       llave="general" if ur.get("configurado") else None,
+                       **_uptime_de_proyecto(ur, fila[0], fila[1], subs))
+
+    @bp.route("/api/almacenamiento/proyectos/<int:pid>/uptime/llave", methods=["POST"])
+    def uptime_llave_proyecto(pid):
+        """Guarda (cifrada) o quita la llave de UptimeRobot propia de UN proyecto, p. ej. una llave de un solo monitor.
+        Antes de guardar se prueba contra UptimeRobot: una llave inválida nunca queda guardada."""
+        d, fallo = cuerpo_confirmado()
+        if fallo:
+            return fallo
+        from sqlalchemy import text
+        try:
+            existe = db.session.execute(text("SELECT 1 FROM proyecto WHERE id = :i"), {"i": pid}).first()
+        except Exception:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo leer el proyecto."), 500
+        if not existe:
+            return jsonify(ok=False, error="Proyecto no encontrado."), 404
+        nombre, borrar = f"UPTIMEROBOT_KEY_P{pid}", d.get("borrar") is True
+        llave = ""
+        if not borrar:
+            llave = d.get("llave")
+            if not isinstance(llave, str) or not _RE_LLAVE_UR.match(llave.strip()):
+                return jsonify(ok=False, error="La API key no tiene un formato válido (letras, números, guion; sin espacios)."), 400
+            llave = llave.strip()
+            try:
+                n = len(_ur("getMonitors", {}, llave).get("monitors") or [])
+            except RuntimeError as e:
+                return jsonify(ok=False, error="UptimeRobot no aceptó esa llave: " + str(e)[:150]), 400
+        cargar_guardadas()
+        try:
+            fila = db.session.get(Conexion, nombre)
+            if borrar:
+                if fila:
+                    db.session.delete(fila)
+            else:
+                cifrado = fernet().encrypt(llave.encode()).decode()
+                if fila:
+                    fila.valor, fila.actualizado = cifrado, datetime.utcnow()
+                else:
+                    db.session.add(Conexion(nombre=nombre, valor=cifrado))
+            registrar("eliminar" if borrar else "guardar", "Conexión", None, f"uptimerobot proyecto {pid}")
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo guardar: " + str(e)[:150]), 500
+        _cache_ur_p.pop(pid, None)
+        return jsonify(ok=True, mensaje="Llave quitada." if borrar else f"Conectado. Esta llave ve {n} monitor(es).")
 
     @bp.route("/api/almacenamiento/opciones")
     def opciones():
