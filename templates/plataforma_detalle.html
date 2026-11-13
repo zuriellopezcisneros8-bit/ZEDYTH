@@ -22,6 +22,7 @@
         {% for t,v in [('Dominio / registrador',p.dominio_registrador),('Stack',p.stack),('Frontend',p.frontend_plataforma),('Backend',p.backend_plataforma),('Base de datos y storage',p.bd_storage),('Cuentas de IA',p.ia_cuentas),('Repositorio',p.repo_url),('Rama de producción',p.rama_produccion),('Bóveda de credenciales',p.boveda_ref)] %}
         <div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v or '—' }}</div></div>{% endfor %}
     </div>
+    {% include '_almacenamiento_proyecto.html' %}
 </div>
 
 <div class="section-title">Finanzas de la plataforma</div>

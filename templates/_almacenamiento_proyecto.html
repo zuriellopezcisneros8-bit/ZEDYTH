@@ -1,0 +1,60 @@
+<!-- templates/_almacenamiento_proyecto.html : panel de almacenamiento vinculado a un proyecto -->
+{% if p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo %}
+<div class="luxury-card alm-proy" data-pid="{{ p.id }}" style="margin-top:16px;">
+  <h3 class="stat-label">Base de datos y almacenamiento vinculados</h3>
+  <div class="alm-proy-cuerpo" style="font-size:14px; display:grid; gap:6px;"><span style="color:var(--text-muted);">Consultando…</span></div>
+  <a class="mono" href="/almacenamiento" style="font-size:13px;">Ver detalle en Almacenamiento</a>
+</div>
+{% raw %}
+<script>
+(function () {
+  const paneles = document.querySelectorAll(".alm-proy");
+  if (!paneles.length || window.__almProyCargado) return;
+  window.__almProyCargado = true;
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const fmt = b => {
+    if (b == null) return "—";
+    const u = ["B","KB","MB","GB","TB"]; let i = 0, n = Number(b);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i ? 1 : 0) + " " + u[i];
+  };
+  const mut = t => '<span style="color:var(--text-muted);">' + t + "</span>";
+  const linea = (tit, txt) => "<div><strong>" + esc(tit) + "</strong> · " + txt + "</div>";
+  const problema = (tit, x) =>
+    x.estado === "sin_conectar" ? linea(tit, mut("conecta la llave en Almacenamiento → Conexiones.")) :
+    x.estado === "error" ? linea(tit, mut("error: " + esc(x.error))) :
+    x.estado === "no_encontrado" ? linea(tit, mut("no encontré «" + esc(x.buscado || x.entrada) + "». Revisa el nombre en «Editar proyecto».")) : null;
+  const pintar = (el, r) => {
+    const out = [];
+    if (r.neon) {
+      const x = r.neon;
+      out.push(problema("Neon", x) || linea("Neon · " + x.nombre,
+        fmt(x.bytes) + (x.pct != null ? " (" + x.pct + "% del límite)" : "") + " · " + x.ramas + " rama(s)" +
+        ((x.bases || []).length ? " · bases: " + x.bases.map(esc).join(", ") : "") +
+        (x.aviso ? "<div>" + mut(esc(x.aviso)) + "</div>" : "")));
+    }
+    (r.r2 || []).forEach(x => out.push(problema("R2", x) ||
+      linea("R2 · " + x.entrada, fmt(x.bytes) + " · " + x.objetos + (x.estimado ? "+" : "") + " objetos" + (x.estimado ? mut(" (conteo parcial)") : ""))));
+    if (r.cloudinary) {
+      const x = r.cloudinary;
+      out.push(problema("Cloudinary", x) || linea("Cloudinary · " + x.carpeta,
+        x.vacia ? mut("no hay archivos en esa carpeta.") :
+        fmt(x.bytes) + " · " + x.archivos + " archivo(s)" + (x.muestra ? mut(" (según una muestra)") : "")));
+    }
+    el.querySelector(".alm-proy-cuerpo").innerHTML = out.join("") || mut("Sin vínculos.");
+  };
+  const fallo = txt => paneles.forEach(el => { el.querySelector(".alm-proy-cuerpo").innerHTML = mut(txt); });
+  fetch("/api/almacenamiento/proyectos", { credentials: "same-origin" })
+    .then(r => r.status === 403 ? { ok: false, error: "Solo administradores." } : r.json())
+    .then(d => {
+      if (!d.ok) throw new Error(d.error || "Error");
+      paneles.forEach(el => {
+        const r = d.proyectos[el.dataset.pid];
+        if (r) pintar(el, r); else el.querySelector(".alm-proy-cuerpo").innerHTML = mut("Sin vínculos.");
+      });
+    })
+    .catch(e => fallo("No se pudo consultar el almacenamiento (" + esc(e.message) + ")."));
+})();
+</script>
+{% endraw %}
+{% endif %}

@@ -61,6 +61,7 @@
             <dt>BD y storage</dt><dd>{{ p.bd_storage or '—' }}</dd>
             <dt>Cuentas de IA</dt><dd>{{ p.ia_cuentas or '—' }}</dd>
         </dl>
+        {% include '_almacenamiento_proyecto.html' %}
         <div class="table-wrap" style="margin-top:20px;">
             <table class="table-luxury">
                 <thead><tr><th>Proveedor</th><th>Concepto</th><th>Periodo</th><th>Monto</th><th>Próximo pago</th><th></th></tr></thead>

@@ -238,11 +238,16 @@ function tarjetas(d) {
   $("#tarjetas").innerHTML = h.join("");
 }
 
+const proyDe = (d, tipo, nombre) => {
+  const l = ((d.vinculos || {})[tipo] || {})[String(nombre || "").toLowerCase()];
+  return l && l.length ? `<div class="alm-mut">Proyecto: ${l.map(esc).join(", ")}</div>` : "";
+};
+
 function verNeon(d) {
   const n = d.neon, e = errorOSinConfig(n, "Neon");
   if (e) { $("#neon").innerHTML = e; return; }
   const filas = n.proyectos.map(p => `<tr>
-    <td><strong>${esc(p.nombre)}</strong><div class="alm-mut">${esc(p.region || "")}</div>${p.aviso ? `<div class="alm-mut">${esc(p.aviso)}</div>` : ""}</td>
+    <td><strong>${esc(p.nombre)}</strong><div class="alm-mut">${esc(p.region || "")}</div>${proyDe(d, "neon", p.nombre)}${p.aviso ? `<div class="alm-mut">${esc(p.aviso)}</div>` : ""}</td>
     <td>${p.bases.map(b => `<span class="alm-tag">${esc(b)}</span>`).join("") || "—"}</td>
     <td>${p.ramas.map(r => `<span class="alm-tag">${esc(r.nombre)}${r.principal ? " ★" : ""} · ${fmt(r.bytes)}</span>`).join("") || "—"}</td>
     <td class="num">${fmt(p.bytes)}${p.pct != null ? `<div class="alm-mut">${p.pct}%</div>` : ""}</td></tr>`);
@@ -265,7 +270,7 @@ function verR2(d) {
     if (b.error) return `<div class="luxury-card" style="margin-bottom:12px"><strong>${esc(b.nombre)}</strong>: ${esc(b.error)}</div>`;
     const filas = b.grandes.map(o => `<tr><td><code>${esc(o.key)}</code></td><td class="num">${fmt(o.bytes)}</td>
       <td class="num"><button class="btn alm-del" data-del="r2" data-bucket="${esc(b.nombre)}" data-key="${esc(o.key)}" data-nombre="${esc(b.nombre + "/" + o.key)}">Eliminar</button></td></tr>`);
-    return `<div style="margin-bottom:14px"><div class="alm-mut" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong> · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
+    return `<div style="margin-bottom:14px"><div class="alm-mut" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong>${(((d.vinculos || {}).r2 || {})[String(b.nombre).toLowerCase()] || []).length ? " (" + d.vinculos.r2[String(b.nombre).toLowerCase()].map(esc).join(", ") + ")" : ""} · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
       <div class="luxury-card alm-tabla" style="padding:0;overflow:hidden"><div class="table-wrap">${tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "Bucket vacío.")}</div></div></div>`;
   }).join("") || `<div class="luxury-card">No hay buckets.</div>`;
 }

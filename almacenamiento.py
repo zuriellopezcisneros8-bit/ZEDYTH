@@ -158,6 +158,7 @@ def _bucket_r2(args):
     cli, nombre = args
     total = cuenta = paginas = 0
     top, truncado, token = [], False, None
+    carp = {}                                    # carpeta -> [bytes, objetos] (hasta 2 niveles)
     try:
         while True:
             kw = {"Bucket": nombre, "MaxKeys": 1000}
@@ -167,6 +168,11 @@ def _bucket_r2(args):
             for o in r.get("Contents", []):
                 total += o["Size"]
                 cuenta += 1
+                partes = o["Key"].split("/")[:-1]
+                for i in range(1, min(len(partes), 2) + 1):
+                    c = carp.setdefault("/".join(partes[:i]), [0, 0])
+                    c[0] += o["Size"]
+                    c[1] += 1
                 item = (o["Size"], o["Key"], o["LastModified"].isoformat())
                 if len(top) < 15:
                     heapq.heappush(top, item)
@@ -182,7 +188,8 @@ def _bucket_r2(args):
     except Exception as e:                      # un bucket con error no tumba a los demás
         return {"nombre": nombre, "error": str(e)[:200]}
     grandes = [{"key": k, "bytes": s, "fecha": f} for s, k, f in sorted(top, reverse=True)]
-    return {"nombre": nombre, "bytes": total, "objetos": cuenta, "estimado": truncado, "grandes": grandes}
+    return {"nombre": nombre, "bytes": total, "objetos": cuenta, "estimado": truncado, "grandes": grandes,
+            "carpetas": {k: {"bytes": v[0], "objetos": v[1]} for k, v in carp.items()}}
 
 
 def datos_r2():
@@ -230,6 +237,7 @@ def datos_cloudinary():
     cred = uso.get("credits") or {}
     usados = almacen.get("usage") or 0
     grandes, muestra = [], False
+    carp = {}                                    # carpeta -> [bytes, archivos] (hasta 3 niveles)
     for tipo in ("image", "video", "raw"):
         cursor = None
         for _ in range(CLD_MAX_PAGINAS):
@@ -241,6 +249,11 @@ def datos_cloudinary():
             except RuntimeError:
                 break
             for x in r.get("resources", []):
+                partes = x["public_id"].split("/")[:-1]
+                for i in range(1, min(len(partes), 3) + 1):
+                    c = carp.setdefault("/".join(partes[:i]), [0, 0])
+                    c[0] += x.get("bytes") or 0
+                    c[1] += 1
                 grandes.append({"public_id": x["public_id"], "tipo": tipo, "formato": x.get("format"),
                                 "bytes": x.get("bytes") or 0, "url": x.get("secure_url")})
             cursor = r.get("next_cursor")
@@ -258,7 +271,8 @@ def datos_cloudinary():
             "recursos": uso.get("resources"), "derivados": uso.get("derived_resources"),
             "ancho_banda": (uso.get("bandwidth") or {}).get("usage"),
             "transformaciones": (uso.get("transformations") or {}).get("usage"),
-            "grandes": grandes[:15], "muestra": muestra}
+            "grandes": grandes[:15], "muestra": muestra,
+            "carpetas": {k: {"bytes": v[0], "archivos": v[1]} for k, v in carp.items()}}
 
 
 # --- resumen general ----------------------------------------------------------
@@ -287,6 +301,115 @@ def _alertas(d):
         if peor is not None and peor >= UMBRAL_ALERTA:
             avisos.append({"nivel": "alerta", "texto": f"{nombre} está al {peor}% de su límite."})
     return avisos
+
+
+# --- vínculo con los proyectos de la app -------------------------------------------
+def _publico(d):
+    """Copia del resumen sin los totales por carpeta (solo sirven para calcular por proyecto)."""
+    o = dict(d)
+    if isinstance(o.get("r2"), dict) and o["r2"].get("buckets"):
+        o["r2"] = dict(o["r2"], buckets=[{k: v for k, v in b.items() if k != "carpetas"} for b in o["r2"]["buckets"]])
+    if isinstance(o.get("cloudinary"), dict):
+        o["cloudinary"] = {k: v for k, v in o["cloudinary"].items() if k != "carpetas"}
+    return o
+
+
+def _filas_proyectos(db):
+    """Proyectos que tienen algo vinculado (columnas neon_proyecto, r2_buckets, cloudinary_prefijo)."""
+    from sqlalchemy import text
+    try:
+        filas = db.session.execute(text(
+            "SELECT id, nombre, neon_proyecto, r2_buckets, cloudinary_prefijo FROM proyecto")).all()
+    except Exception:
+        db.session.rollback()
+        return []
+    out = []
+    for r in filas:
+        f = {"id": r[0], "nombre": r[1], "neon": (r[2] or "").strip(), "r2": (r[3] or "").strip(),
+             "cld": (r[4] or "").strip().strip("/")}
+        if f["neon"] or f["r2"] or f["cld"]:
+            out.append(f)
+    return out
+
+
+def _entradas_r2(texto):
+    """'bucket' o 'bucket/carpeta', separados por coma -> [(bucket, carpeta)]."""
+    res = []
+    for e in (texto or "").split(","):
+        e = e.strip().strip("/")
+        if e:
+            b, _, c = e.partition("/")
+            res.append((b.strip(), c.strip("/")))
+    return res
+
+
+def _vinculos(filas):
+    """Para la página global: qué proyecto usa cada proyecto de Neon / bucket de R2."""
+    v = {"neon": {}, "r2": {}}
+    for f in filas:
+        if f["neon"]:
+            v["neon"].setdefault(f["neon"].lower(), []).append(f["nombre"])
+        for b, _c in _entradas_r2(f["r2"]):
+            if f["nombre"] not in v["r2"].setdefault(b.lower(), []):
+                v["r2"][b.lower()].append(f["nombre"])
+    return v
+
+
+def _busca(dic, clave):
+    if clave in dic:
+        return dic[clave]
+    bajo = clave.lower()
+    return next((v for k, v in dic.items() if k.lower() == bajo), None)
+
+
+def _por_proyecto(d, f):
+    """Lo que ocupa UN proyecto, a partir del resumen completo (con carpetas)."""
+    res = {"nombre": f["nombre"], "neon": None, "r2": [], "cloudinary": None}
+    if f["neon"]:
+        n = d.get("neon") or {}
+        if n.get("error"):
+            res["neon"] = {"estado": "error", "error": n["error"]}
+        elif not n.get("configurado"):
+            res["neon"] = {"estado": "sin_conectar"}
+        else:
+            p = next((x for x in n.get("proyectos", []) if str(x.get("nombre", "")).lower() == f["neon"].lower()), None)
+            res["neon"] = ({"estado": "ok", "nombre": p["nombre"], "bytes": p["bytes"], "pct": p.get("pct"),
+                            "ramas": len(p["ramas"]), "bases": p["bases"], "aviso": p.get("aviso")}
+                           if p else {"estado": "no_encontrado", "buscado": f["neon"]})
+    entradas = _entradas_r2(f["r2"])
+    if entradas:
+        r = d.get("r2") or {}
+        if r.get("error"):
+            res["r2"] = [{"estado": "error", "error": r["error"]}]
+        elif not r.get("configurado"):
+            res["r2"] = [{"estado": "sin_conectar"}]
+        else:
+            for bucket, carpeta in entradas:
+                etiqueta = bucket + ("/" + carpeta if carpeta else "")
+                b = next((x for x in r.get("buckets", []) if str(x.get("nombre", "")).lower() == bucket.lower()), None)
+                if not b:
+                    res["r2"].append({"estado": "no_encontrado", "entrada": etiqueta})
+                elif b.get("error"):
+                    res["r2"].append({"estado": "error", "entrada": etiqueta, "error": b["error"]})
+                elif not carpeta:
+                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bytes": b["bytes"],
+                                      "objetos": b["objetos"], "estimado": b["estimado"]})
+                else:
+                    c = _busca(b.get("carpetas") or {}, carpeta)
+                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bytes": c["bytes"] if c else 0,
+                                      "objetos": c["objetos"] if c else 0, "estimado": b["estimado"]})
+    if f["cld"]:
+        c = d.get("cloudinary") or {}
+        if c.get("error"):
+            res["cloudinary"] = {"estado": "error", "error": c["error"]}
+        elif not c.get("configurado"):
+            res["cloudinary"] = {"estado": "sin_conectar"}
+        else:
+            x = _busca(c.get("carpetas") or {}, f["cld"])
+            res["cloudinary"] = {"estado": "ok", "carpeta": f["cld"], "bytes": x["bytes"] if x else 0,
+                                 "archivos": x["archivos"] if x else 0, "muestra": c.get("muestra", False),
+                                 "vacia": x is None}
+    return res
 
 
 def _armar():
@@ -394,11 +517,7 @@ def crear_blueprint(db, registrar):
             return "Solo administradores.", 403
         return render_template("almacenamiento.html")
 
-    @bp.route("/api/almacenamiento/resumen")
-    def resumen():
-        if not es_admin():
-            return negado()
-        forzar = request.args.get("forzar") == "1"
+    def datos_cacheados(forzar=False):
         cargar_guardadas()
         with _lock:
             if forzar or not _cache["datos"] or time.time() - _cache["t"] > CACHE_SEGUNDOS:
@@ -409,7 +528,24 @@ def crear_blueprint(db, registrar):
                     db.session.rollback()
                     datos["tablas"] = {"error": str(e)[:200]}
                 _cache["datos"], _cache["t"] = datos, time.time()
-            return jsonify(ok=True, **_cache["datos"])
+            return _cache["datos"]
+
+    @bp.route("/api/almacenamiento/resumen")
+    def resumen():
+        if not es_admin():
+            return negado()
+        d = _publico(datos_cacheados(request.args.get("forzar") == "1"))
+        d["vinculos"] = _vinculos(_filas_proyectos(db))
+        return jsonify(ok=True, **d)
+
+    @bp.route("/api/almacenamiento/proyectos")
+    def por_proyecto():
+        """Espacio que ocupa cada proyecto vinculado (Neon, R2, Cloudinary). Usa el mismo caché de 5 min."""
+        if not es_admin():
+            return negado()
+        d = datos_cacheados(request.args.get("forzar") == "1")
+        return jsonify(ok=True, generado=d["generado"],
+                       proyectos={str(f["id"]): _por_proyecto(d, f) for f in _filas_proyectos(db)})
 
     @bp.route("/api/almacenamiento/r2/eliminar", methods=["POST"])
     def r2_eliminar():

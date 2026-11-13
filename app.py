@@ -142,6 +142,9 @@ class Proyecto(db.Model):
     frontend_plataforma = db.Column(db.String(100))
     backend_plataforma = db.Column(db.String(100))
     bd_storage = db.Column(db.String(200))
+    neon_proyecto = db.Column(db.String(150))      # nombre del proyecto en Neon (tal como aparece en Almacenamiento)
+    r2_buckets = db.Column(db.String(300))         # buckets de R2 de este proyecto, separados por coma
+    cloudinary_prefijo = db.Column(db.String(150)) # carpeta/prefijo de Cloudinary de este proyecto
     ia_cuentas = db.Column(db.String(300))   # solo nombre de cuenta/ubicación; no guardar llaves en claro
     tipo = db.Column(db.String(20), default="A medida")      # A medida | Plataforma propia
     url_produccion = db.Column(db.String(300))
@@ -447,6 +450,8 @@ def migrar_columnas():
                  ("nivel", "VARCHAR(30)"), ("cpu", "VARCHAR(30)"), ("ram", "VARCHAR(30)"),
                  ("transferencia", "VARCHAR(40)"), ("respaldos", "VARCHAR(40)"),
                  ("ficha_version", "INTEGER DEFAULT 0")],
+        "proyecto": [("neon_proyecto", "VARCHAR(150)"), ("r2_buckets", "VARCHAR(300)"),
+                     ("cloudinary_prefijo", "VARCHAR(150)")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
@@ -933,7 +938,7 @@ def membresias_vista():
 CAMPOS_CLIENTE = ["nombre_comercial", "razon_social", "rfc", "direccion_fiscal",
                   "contacto", "contacto_nombre", "telefono"]
 CAMPOS_PROYECTO = ["nombre", "estado", "repo_url", "rama_produccion", "stack", "dominio_registrador",
-                   "frontend_plataforma", "backend_plataforma", "bd_storage", "ia_cuentas", "carpeta_local", "boveda_ref",
+                   "frontend_plataforma", "backend_plataforma", "bd_storage", "neon_proyecto", "r2_buckets", "cloudinary_prefijo", "ia_cuentas", "carpeta_local", "boveda_ref",
                    "url_produccion", "version"]
 
 
