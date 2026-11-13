@@ -7,6 +7,7 @@
 {% if not configurado %}
 <div class="luxury-card" style="border-color:#f87171; margin-bottom:20px;">
     <h3 class="stat-label" style="color:#f87171;">Falta configurar el servidor</h3>
+    {% if problema %}<p style="margin:0 0 10px; font-size:14px; color:#fff;"><strong>Qué corregir:</strong> {{ problema }}</p>{% endif %}
     <p style="margin:0; font-size:14px; color:var(--text-muted);">Instala <span class="mono">pywebpush</span>, corre <span class="mono">python generar_vapid.py</span> y pega las dos llaves en las variables <span class="mono">VAPID_PUBLIC_KEY</span> y <span class="mono">VAPID_PRIVATE_KEY</span> de Render. Mientras tanto, los avisos siguen apareciendo aquí y en el panel.</p>
 </div>
 {% endif %}
@@ -45,7 +46,7 @@
              'bloqueado': ['Permiso bloqueado', 'Actívalo en los ajustes del navegador o de la app para este sitio.'], 'no-soportado': ['No compatible', 'Este navegador no admite alertas push.'] };
   function ver() { window.zPush.estado().then(function (e) { est.textContent = tx[e][0]; ay.textContent = tx[e][1]; bt.hidden = e === 'activo' || e === 'no-soportado'; }); }
   bt.onclick = function () { window.zPush.activar().then(ver).catch(function (e) { ay.textContent = e.message === 'sin-clave' ? 'El servidor aún no tiene las llaves VAPID.' : 'No se pudo activar. Revisa el permiso.'; }); };
-  document.getElementById('zPrueba').onclick = function () { fetch('/api/push/prueba', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (d) { ay.textContent = d.dispositivos ? 'Prueba enviada a ' + d.dispositivos + ' dispositivo(s).' : (d.total ? 'El envío falló: revisa las llaves VAPID en Render.' : 'No hay dispositivos registrados todavía.'); }); };
+  document.getElementById('zPrueba').onclick = function () { fetch('/api/push/prueba', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (d) { ay.textContent = d.dispositivos ? 'Prueba enviada a ' + d.dispositivos + ' dispositivo(s).' : (d.configurado === false ? (d.problema || 'El servidor no tiene las llaves VAPID.') : d.total ? 'El envío falló. Revisa el registro (logs) de Render.' : 'No hay dispositivos registrados todavía.'); }); };
   ver();
 })();
 </script>

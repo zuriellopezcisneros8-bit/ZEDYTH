@@ -8,22 +8,26 @@
 <div class="grid-2" style="gap:20px; margin-bottom:20px;">
     <div class="luxury-card"><h3 class="stat-label">Plataformas</h3><div class="stat-value">{{ plataformas|length }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Gasto mensual en servicios</h3><div class="stat-value">{{ '${:,.0f}'.format(total) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Ingresos (últimos 30 días)</h3><div class="stat-value">{{ '${:,.0f}'.format(ingresos) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Ganancia mensual</h3><div class="stat-value {{ 'pos' if ganancia > 0 else 'neg' if ganancia < 0 }}">{{ '${:,.0f}'.format(ganancia) }}</div></div>
 </div>
 <div class="luxury-card" style="padding:0; overflow:hidden;">
     <div class="table-wrap"><table class="table-luxury">
-        <thead><tr><th>Plataforma</th><th>Estado</th><th>Dominio</th><th>Gasto / mes</th><th>Próx. vencimiento</th><th>Último respaldo</th></tr></thead>
+        <thead><tr><th>Plataforma</th><th>Estado</th><th>Dominio</th><th>Ingreso / 30 d</th><th>Gasto / mes</th><th>Ganancia</th><th>Próx. vencimiento</th><th>Último respaldo</th></tr></thead>
         <tbody>
         {% for p in plataformas %}
         <tr>
             <td><a href="/plataformas/{{ p.id }}" style="font-weight:500; text-decoration:underline;">{{ p.nombre }}</a><div class="mono">{{ p.version or '' }}</div></td>
             <td><span class="badge {{ 'badge-green' if p.estado in ['Activo','Mantenido'] else 'badge-amber' if p.estado == 'Desarrollo' else 'badge-red' }}">{{ p.estado }}</span></td>
             <td>{% if p.url_produccion %}<a href="{{ p.url_produccion }}" target="_blank" rel="noopener" class="mono" style="text-decoration:underline;">{{ p.url_produccion|replace('https://','')|replace('http://','') }}</a>{% else %}—{% endif %}</td>
+            <td class="mono">{{ '${:,.0f}'.format(p.fin.ingreso_30d) }}</td>
             <td class="mono">{{ '${:,.0f}'.format(p.gasto) }}</td>
+            <td class="mono {{ 'pos' if p.fin.ganancia > 0 else 'neg' if p.fin.ganancia < 0 }}">{{ '${:,.0f}'.format(p.fin.ganancia) }}{% if p.fin.margen is not none %} · {{ p.fin.margen }}%{% endif %}</td>
             <td class="mono">{% if p.prox_venc %}<span style="{{ 'color:#f87171;' if (p.prox_venc - hoy).days <= 30 }}">{{ p.prox_venc }}</span>{% else %}—{% endif %}</td>
             <td class="mono">{{ p.ult_resp or '—' }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" style="text-align:center; padding:48px; color:var(--text-muted);">Aún no hay plataformas. Crea la primera con «Nueva plataforma».</td></tr>
+        <tr><td colspan="8" style="text-align:center; padding:48px; color:var(--text-muted);">Aún no hay plataformas. Crea la primera con «Nueva plataforma».</td></tr>
         {% endfor %}
         </tbody></table></div>
 </div>

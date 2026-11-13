@@ -12,6 +12,8 @@
 </section>
 <div class="grid-2" style="gap:20px; margin-bottom:20px;">
     <div class="luxury-card"><h3 class="stat-label">Gasto mensual en servicios</h3><div class="stat-value">{{ '${:,.0f}'.format(gasto) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Ingresos (últimos 30 días)</h3><div class="stat-value">{{ '${:,.0f}'.format(fin.ingreso_30d) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Ganancia mensual{% if fin.margen is not none %} · margen {{ fin.margen }}%{% endif %}</h3><div class="stat-value {{ 'pos' if fin.ganancia > 0 else 'neg' if fin.ganancia < 0 }}">{{ '${:,.0f}'.format(fin.ganancia) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Último respaldo correcto</h3><div class="stat-value" style="font-size:24px;">{{ ultimo or 'Sin respaldos' }}</div></div>
 </div>
 <div class="luxury-card">
@@ -21,6 +23,32 @@
         <div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v or '—' }}</div></div>{% endfor %}
     </div>
 </div>
+
+<div class="section-title">Finanzas de la plataforma</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Mes</th><th>Ingresos</th><th>Costo de servicios</th><th>Neto</th><th style="width:30%;"></th></tr></thead><tbody>
+    {% for m in fin.meses %}
+    <tr><td>{{ m.mes }}</td><td class="mono">{{ '${:,.0f}'.format(m.ing) }}</td><td class="mono">{{ '${:,.0f}'.format(m.costo) }}</td>
+        <td class="mono {{ 'pos' if m.neto > 0 else 'neg' if m.neto < 0 }}">{{ '${:,.0f}'.format(m.neto) }}</td>
+        <td><div style="height:8px;border-radius:4px;background:rgba(255,255,255,.7);width:{{ (100 * m.ing / fin.max_mes)|round|int }}%;min-width:{{ 2 if m.ing else 0 }}px;"></div></td></tr>
+    {% endfor %}
+</tbody></table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin:8px 2px 0;">Acumulado histórico: {{ '${:,.0f}'.format(fin.total) }}{% for c, v in fin.por_cat %} · {{ c }}: {{ '${:,.0f}'.format(v) }}{% endfor %}. El costo mensual es el equivalente de los servicios que pagas.</p>
+<div class="luxury-card" style="padding:0; overflow:hidden; margin-top:12px;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th></th></tr></thead><tbody>
+    {% for i in ingresos %}
+    <tr><td class="mono">{{ i.fecha }}</td><td>{{ i.categoria }}</td><td style="color:var(--text-muted);">{{ i.concepto or '' }}</td><td class="mono">{{ '${:,.0f}'.format(i.monto) }}</td>
+        <td style="text-align:right;"><form method="post" action="/ingresos-plataforma/{{ i.id }}/eliminar" onsubmit="return confirm('¿Eliminar este ingreso?')"><button class="btn btn-sm" type="submit">Eliminar</button></form></td></tr>
+    {% else %}<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Sin ingresos registrados.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<details class="luxury-card" style="margin-top:16px;"><summary>+ Registrar ingreso</summary>
+    <form method="post" action="/plataformas/{{ p.id }}/ingreso" class="grid-2">
+        {{ entrada('monto', 'Monto (MXN)', 'number', req=True) }}
+        <label class="lbl">Fecha<input class="field" type="date" name="fecha" value="{{ hoy_iso }}"></label>
+        <label class="lbl">Categoría<select class="field" name="categoria">{% for c in categorias %}<option>{{ c }}</option>{% endfor %}</select></label>
+        {{ entrada('concepto', 'Concepto (ej. 12 suscripciones de noviembre)') }}
+        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form></details>
 
 <div class="section-title">Dominios y subdominios</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">

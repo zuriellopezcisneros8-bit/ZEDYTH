@@ -29,6 +29,34 @@
  </div>
  {% if r.resumen %}<div class="in-box"><h3>Resumen</h3><p>{{ r.resumen }}</p></div>{% endif %}
  {% if r.hallazgos %}<div class="in-box"><h3>Hallazgos</h3><p>{{ r.hallazgos }}</p></div>{% endif %}
+ <div class="in-box"><h3>Registros vinculados ({{ vinculos|length }})</h3>
+  {% for tipo, items in vinculos|groupby('otro.tipo') %}
+  <div class="in-m" style="margin:10px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-size:12px">{{ tipo }}s · {{ items|length }}</div>
+  {% for v in items %}
+  <div class="in-c" style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+   <a href="{{ url_for('inteligencia_detalle', iid=v.otro.id) }}" style="flex:1;color:#fff;text-decoration:none"><b>{{ v.otro.titulo }}</b>
+    <div class="in-m"><span class="in-p">{{ v.etiqueta }}</span>{{ v.otro.estado }}{% if v.otro.referencia %} · {{ v.otro.referencia }}{% endif %}{% if v.nota %} · {{ v.nota }}{% endif %}</div></a>
+   <form method="post" action="{{ url_for('inteligencia_desvincular', vid=v.id) }}" onsubmit="return confirm('¿Quitar este vínculo?')"><input type="hidden" name="volver" value="{{ r.id }}"><button class="in-btn" type="submit">Quitar</button></form>
+  </div>{% endfor %}
+  {% else %}<div class="in-m">Sin vínculos todavía. Relaciona este registro con una empresa, patente, amenaza…</div>{% endfor %}
+  {% if sugeridos %}
+  <div class="in-m" style="margin:16px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-size:12px">Sugeridos (comparten empresa o titular)</div>
+  {% for s in sugeridos %}
+  <form method="post" action="{{ url_for('inteligencia_vincular', iid=r.id) }}" class="in-c" style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+   <input type="hidden" name="otro_id" value="{{ s.r.id }}"><input type="hidden" name="relacion" value="{{ s.relacion }}"><input type="hidden" name="sentido" value="{{ s.sentido }}">
+   <span style="flex:1"><b>{{ s.r.titulo }}</b><span class="in-m"> · {{ s.r.tipo }}{% if s.r.referencia %} · {{ s.r.referencia }}{% endif %}</span></span>
+   <button class="in-btn w" type="submit">Vincular</button></form>{% endfor %}
+  {% endif %}
+  {% if candidatos %}
+  <form class="in-fm" method="post" action="{{ url_for('inteligencia_vincular', iid=r.id) }}" style="margin-top:16px">
+   <div><label>Vincular con</label><select name="otro_id" required><option value="">Elige un registro…</option>
+    {% for tipo, items in candidatos|groupby('tipo') %}<optgroup label="{{ tipo }}">{% for c in items %}<option value="{{ c.id }}">{{ c.titulo }}{% if c.referencia %} · {{ c.referencia }}{% endif %}</option>{% endfor %}</optgroup>{% endfor %}</select></div>
+   <div><label>Relación</label><select name="relacion">{% for x in relaciones %}<option>{{ x }}</option>{% endfor %}</select></div>
+   <div><label>Dirección</label><select name="sentido"><option value="sale">Este registro → el elegido (ej. esta empresa «Titular de» la patente)</option><option value="entra">El elegido → este registro (ej. la empresa elegida «Titular de» esta patente)</option></select></div>
+   <input type="text" name="nota" maxlength="300" placeholder="Nota (opcional)">
+   <div><button class="in-btn w" type="submit">Vincular</button></div>
+  </form>{% endif %}
+ </div>
  <div class="in-box"><h3>Bitácora de la investigación</h3>
   <form class="in-fm" method="post" action="{{ url_for('inteligencia_nota', iid=r.id) }}" style="margin-bottom:14px">
    <textarea name="texto" required placeholder="Nuevo avance o hallazgo"></textarea>

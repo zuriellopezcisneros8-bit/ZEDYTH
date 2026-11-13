@@ -36,6 +36,25 @@
     </table></div>
 </div>
 
+<div class="section-title">Rentabilidad por plataforma</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;">
+    <div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Plataforma</th><th>Ingreso (30 d)</th><th>Costo/mes</th><th>Ganancia</th><th>Margen</th><th>Acumulado</th></tr></thead>
+        <tbody>
+            {% for f in plat_filas %}
+            <tr>
+                <td><a href="/plataformas/{{ f.p.id }}" style="font-weight:500;">{{ f.p.nombre }}</a></td>
+                <td>{{ '${:,.0f}'.format(f.ingreso_30d) }}</td>
+                <td>{{ '${:,.0f}'.format(f.costo_mes) }}</td>
+                <td class="{{ 'pos' if f.ganancia > 0 else 'neg' if f.ganancia < 0 }}">{{ '${:,.0f}'.format(f.ganancia) }}</td>
+                <td>{{ (f.margen ~ '%') if f.margen is not none else '—' }}</td>
+                <td>{{ '${:,.0f}'.format(f.total) }}</td>
+            </tr>
+            {% else %}<tr><td colspan="6" style="text-align:center; padding:28px; color:var(--text-muted);">Aún no hay plataformas propias.</td></tr>{% endfor %}
+        </tbody></table></div>
+</div>
+<p style="color:var(--text-muted); font-size:13px; margin:8px 2px 0;">Estos ingresos ya están sumados en la fila «ZEDYTH Technologies (interno)» de arriba. Regístralos dentro de cada plataforma.</p>
+
 <div class="section-title">Flujo de los próximos 12 meses</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;">
     <div class="table-wrap"><table class="table-luxury">

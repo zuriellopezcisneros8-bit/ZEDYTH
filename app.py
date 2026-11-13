@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import secrets
 import shutil
 import calendar
@@ -293,6 +294,32 @@ class Notificacion(db.Model):
     intentos = db.Column(db.Integer, default=0)
     clave = db.Column(db.String(120), index=True)    # evita avisar dos veces lo mismo
     hora = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class IntelVinculo(db.Model):
+    """Relación entre dos registros de Inteligencia (p. ej. una empresa con sus patentes)."""
+    id = db.Column(db.Integer, primary_key=True)
+    origen_id = db.Column(db.Integer, db.ForeignKey('inteligencia.id'), nullable=False)
+    destino_id = db.Column(db.Integer, db.ForeignKey('inteligencia.id'), nullable=False)
+    relacion = db.Column(db.String(30), default="Relacionado con")   # se lee: origen <relacion> destino
+    nota = db.Column(db.String(300))
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('origen_id', 'destino_id'),)
+    origen = db.relationship('Inteligencia', foreign_keys=[origen_id],
+                             backref=db.backref('vinculos_salida', cascade='all, delete-orphan'))
+    destino = db.relationship('Inteligencia', foreign_keys=[destino_id],
+                              backref=db.backref('vinculos_entrada', cascade='all, delete-orphan'))
+
+
+class IngresoPlataforma(db.Model):
+    """Dinero que entra a una plataforma propia (suscripciones de sus usuarios, ventas, publicidad...)."""
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    fecha = db.Column(db.Date, default=date.today)
+    monto = db.Column(Dinero, nullable=False)
+    categoria = db.Column(db.String(20), default="Suscripciones")
+    concepto = db.Column(db.String(200))
+    proyecto = db.relationship('Proyecto', backref=db.backref('ingresos', cascade='all, delete-orphan'))
 
 
 # --- FUNCIONES DE SOPORTE Y CONFIGURACIÓN GLOBAL ---------------------------
@@ -1117,7 +1144,10 @@ def plataformas():
         venc = [v.fecha for v in p.vencimientos if v.fecha]
         p.prox_venc = min(venc) if venc else None
         p.ult_resp = ultimo_respaldo(p)
-    return render_template('plataformas.html', plataformas=filas, total=sum(p.gasto for p in filas), hoy=date.today())
+        p.fin = finanzas_plataforma(p)
+    ing = sum(p.fin["ingreso_30d"] for p in filas)
+    return render_template('plataformas.html', plataformas=filas, total=sum(p.gasto for p in filas), hoy=date.today(),
+                           ingresos=ing, ganancia=ing - sum(p.gasto for p in filas))
 
 
 @app.route('/plataformas/nueva', methods=['GET', 'POST'])
@@ -1146,7 +1176,9 @@ def plataforma_detalle(pid):
                            subdominios=sorted(p.subdominios, key=lambda x: x.nombre),
                            costos=sorted(p.costos, key=lambda k: k.proxima_fecha_pago or date.max),
                            vencimientos=sorted(p.vencimientos, key=lambda v: v.fecha)[:5],
-                           ultimo=ultimo_respaldo(p))
+                           ultimo=ultimo_respaldo(p), fin=finanzas_plataforma(p), categorias=INGRESO_CATEGORIAS,
+                           ingresos=sorted(p.ingresos, key=lambda i: (i.fecha or date.min, i.id), reverse=True)[:20],
+                           hoy_iso=date.today().isoformat())
 
 
 @app.route('/plataformas/<int:pid>/subdominio', methods=['POST'])
@@ -1371,6 +1403,7 @@ def finanzas():
         s = c.suscripcion
         ingreso = (s.monto_periodo / s.meses) if s else 0
         costo = sum(k.monto_mensual or 0 for p in c.proyectos for k in p.costos)
+        ingreso += sum(finanzas_plataforma(p)["ingreso_30d"] for p in c.proyectos if p.tipo == PLAT)
         vencido = s.monto_periodo if s and s.proxima_fecha_pago and s.proxima_fecha_pago < hoy else 0
         filas.append({"c": c, "s": s, "ingreso": ingreso, "costo": costo, "ganancia": ingreso - costo, "vencido": vencido,
                       "margen": round(100 * (ingreso - costo) / ingreso) if ingreso else None})
@@ -1381,6 +1414,12 @@ def finanzas():
     vencido = sum(f["vencido"] for f in filas)
     cobrado = db.session.query(db.func.coalesce(db.func.sum(Pago.monto), 0)).filter(
         Pago.estado == "Pagado", Pago.fecha >= inicio).scalar()
+    cobrado += db.session.query(db.func.coalesce(db.func.sum(IngresoPlataforma.monto), 0)).filter(
+        IngresoPlataforma.fecha >= inicio).scalar()
+    plat_filas = []
+    for p in Proyecto.query.filter_by(tipo=PLAT).order_by(Proyecto.nombre).all():
+        plat_filas.append({"p": p, **finanzas_plataforma(p)})
+    plat_filas.sort(key=lambda f: f["ganancia"], reverse=True)
 
     entradas = [(x.proxima_fecha_pago, x.meses, x.monto_periodo) for x in Suscripcion.query.all()
                 if x.proxima_fecha_pago and x.monto_periodo]
@@ -1398,9 +1437,130 @@ def finanzas():
     stats = {"ingresos": dinero(ingresos), "costos": dinero(costos), "ganancia": dinero(ingresos - costos),
              "margen": f"{round(100 * (ingresos - costos) / ingresos)}%" if ingresos else "—",
              "vencido": dinero(vencido), "cobrado": dinero(cobrado)}
-    return render_template('finanzas.html', stats=stats, filas=filas, proy=proy, maximo=maximo,
+    return render_template('finanzas.html', stats=stats, filas=filas, plat_filas=plat_filas, proy=proy, maximo=maximo,
                            totales={"ent": sum(ent), "sal": sum(sal)}, sin_fecha=sin_fecha)
 
+
+
+# --- FINANZAS POR PLATAFORMA ---------------------------------------------------
+INGRESO_CATEGORIAS = ("Suscripciones", "Ventas", "Publicidad", "Servicios", "Otro")
+
+
+def finanzas_plataforma(p):
+    """Ingresos contra costos de una plataforma propia.
+    Ingreso mensual = lo que entró en los últimos 30 días; costo mensual = equivalente mensual de sus servicios."""
+    hoy = date.today()
+    inicio = date(hoy.year, hoy.month, 1)
+    costo = sum(float(k.monto_mensual or 0) for k in p.costos)
+    ing30 = sum(float(i.monto or 0) for i in p.ingresos if i.fecha and hoy - timedelta(days=30) < i.fecha <= hoy)
+    meses = []
+    for n in range(5, -1, -1):
+        m = sumar_meses(inicio, -n)
+        ing = sum(float(i.monto or 0) for i in p.ingresos if i.fecha and (i.fecha.year, i.fecha.month) == (m.year, m.month))
+        meses.append({"mes": f"{MES_ES[m.month - 1]} {m.year}", "ing": ing, "costo": costo, "neto": ing - costo})
+    por_cat = {}
+    for i in p.ingresos:
+        por_cat[i.categoria or "Otro"] = por_cat.get(i.categoria or "Otro", 0) + float(i.monto or 0)
+    return {"ingreso_30d": ing30, "costo_mes": costo, "ganancia": ing30 - costo,
+            "margen": round(100 * (ing30 - costo) / ing30) if ing30 else None,
+            "total": sum(float(i.monto or 0) for i in p.ingresos), "meses": meses,
+            "max_mes": max([m["ing"] for m in meses] + [costo, 1]), "por_cat": sorted(por_cat.items(), key=lambda x: -x[1])}
+
+
+@app.route('/plataformas/<int:pid>/ingreso', methods=['POST'])
+def ingreso_plataforma_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    try:
+        monto, fecha = float(campo('monto') or 0), campo_fecha('fecha') or date.today()
+    except ValueError:
+        return redirect(url_for('plataforma_detalle', pid=p.id))
+    if monto > 0:
+        cat = campo('categoria') if campo('categoria') in INGRESO_CATEGORIAS else "Otro"
+        i = IngresoPlataforma(proyecto_id=p.id, fecha=fecha, monto=monto, categoria=cat, concepto=campo('concepto') or None)
+        db.session.add(i)
+        db.session.flush()
+        registrar("crear", "IngresoPlataforma", i.id, f"{dinero(monto)} · {cat} · {p.nombre}")
+        db.session.commit()
+    return redirect(url_for('plataforma_detalle', pid=p.id))
+
+
+@app.route('/ingresos-plataforma/<int:iid>/eliminar', methods=['POST'])
+def ingreso_plataforma_eliminar(iid):
+    i = db.get_or_404(IngresoPlataforma, iid)
+    pid = i.proyecto_id
+    registrar("eliminar", "IngresoPlataforma", i.id, f"{dinero(i.monto)} · {i.proyecto.nombre}")
+    db.session.delete(i)
+    db.session.commit()
+    return redirect(url_for('plataforma_detalle', pid=pid))
+
+
+# --- VÍNCULOS ENTRE REGISTROS DE INTELIGENCIA ----------------------------------
+# relación vista desde el origen -> cómo se lee desde el destino
+INTEL_RELACIONES = {"Relacionado con": "Relacionado con", "Titular de": "Propiedad de", "Filial de": "Matriz de",
+                    "Proveedor de": "Cliente de", "Competidor de": "Competidor de", "Origen de": "Originado por",
+                    "Usa": "Usado por"}
+
+
+def intel_vinculos(r):
+    """Todos los vínculos del registro, leídos desde su punto de vista."""
+    out = [{"id": v.id, "otro": v.destino, "etiqueta": v.relacion, "nota": v.nota} for v in r.vinculos_salida]
+    out += [{"id": v.id, "otro": v.origen, "etiqueta": INTEL_RELACIONES.get(v.relacion, v.relacion), "nota": v.nota}
+            for v in r.vinculos_entrada]
+    out.sort(key=lambda x: (x["otro"].tipo, (x["otro"].titulo or "").lower()))
+    return out
+
+
+def _relacion_sugerida(r, otro):
+    """Devuelve (relacion, sentido): sentido 'sale' = r es el origen, 'entra' = el otro es el origen."""
+    if r.tipo == "Empresa" and otro.tipo != "Empresa":
+        return "Titular de", "sale"
+    if otro.tipo == "Empresa" and r.tipo != "Empresa":
+        return "Titular de", "entra"
+    return "Relacionado con", "sale"
+
+
+def intel_sugeridos(r, ya):
+    """Registros que comparten el nombre de empresa/titular con este, aún sin vincular."""
+    nombres = {x.strip().lower() for x in (r.entidad, r.titulo if r.tipo == "Empresa" else None) if x and x.strip()}
+    if not nombres:
+        return []
+    cond = [db.func.lower(Inteligencia.entidad).in_(nombres)]
+    if r.tipo == "Empresa":
+        cond.append(db.func.lower(Inteligencia.titulo).in_({r.titulo.strip().lower()}))
+    elif r.entidad:
+        cond.append(db.and_(Inteligencia.tipo == "Empresa", db.func.lower(Inteligencia.titulo) == r.entidad.strip().lower()))
+    otros = Inteligencia.query.filter(db.or_(*cond), ~Inteligencia.id.in_(ya)).limit(20).all()
+    return [{"r": o, "relacion": _relacion_sugerida(r, o)[0], "sentido": _relacion_sugerida(r, o)[1]} for o in otros]
+
+
+@app.route('/inteligencia/<int:iid>/vincular', methods=['POST'])
+def inteligencia_vincular(iid):
+    r = db.get_or_404(Inteligencia, iid)
+    try:
+        otro = db.session.get(Inteligencia, int(campo('otro_id')))
+    except ValueError:
+        otro = None
+    relacion = campo('relacion') if campo('relacion') in INTEL_RELACIONES else "Relacionado con"
+    if otro and otro.id != r.id:
+        origen, destino = (otro, r) if campo('sentido') == 'entra' else (r, otro)
+        ya = IntelVinculo.query.filter(db.or_(db.and_(IntelVinculo.origen_id == r.id, IntelVinculo.destino_id == otro.id),
+                                              db.and_(IntelVinculo.origen_id == otro.id, IntelVinculo.destino_id == r.id))).first()
+        if not ya:
+            db.session.add(IntelVinculo(origen_id=origen.id, destino_id=destino.id, relacion=relacion, nota=campo('nota') or None))
+            r.actualizado_en = otro.actualizado_en = datetime.utcnow()
+            registrar("vincular", "Inteligencia", r.id, f"{origen.titulo} · {relacion} · {destino.titulo}")
+            db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=r.id))
+
+
+@app.route('/inteligencia/vinculo/<int:vid>/eliminar', methods=['POST'])
+def inteligencia_desvincular(vid):
+    v = db.get_or_404(IntelVinculo, vid)
+    volver = request.form.get('volver', type=int) or v.origen_id
+    registrar("desvincular", "Inteligencia", v.origen_id, f"{v.origen.titulo} · {v.relacion} · {v.destino.titulo}")
+    db.session.delete(v)
+    db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=volver))
 
 
 # --- WEB PÚBLICA -----------------------------------------------------------
@@ -1806,7 +1966,12 @@ def inteligencia_form(iid=None):
 @app.route('/inteligencia/<int:iid>')
 def inteligencia_detalle(iid):
     r = db.get_or_404(Inteligencia, iid)
-    return render_template('inteligencia_detalle.html', r=r, estados=INTEL_ESTADOS)
+    vinculos = intel_vinculos(r)
+    ya = {v["otro"].id for v in vinculos} | {r.id}
+    candidatos = (Inteligencia.query.filter(~Inteligencia.id.in_(ya))
+                  .order_by(Inteligencia.tipo, Inteligencia.titulo).limit(500).all())
+    return render_template('inteligencia_detalle.html', r=r, estados=INTEL_ESTADOS, vinculos=vinculos,
+                           sugeridos=intel_sugeridos(r, ya), candidatos=candidatos, relaciones=list(INTEL_RELACIONES))
 
 
 @app.route('/inteligencia/<int:iid>/nota', methods=['POST'])
@@ -2014,9 +2179,55 @@ def pwa_offline():
 # Capas para que no falle: 1) envío con reintentos a cada dispositivo, 2) si ninguno lo recibe, se manda por
 # Telegram/correo (notificar.py), 3) un vigilante reintenta lo no entregado y revisa vencimientos/cobros/
 # respaldos, 4) la página se re-registra sola en cada visita. Llaves: python generar_vapid.py -> Render.
+def _limpiar_llave(v):
+    """Quita comillas, espacios, saltos de línea y el prefijo «NOMBRE=» que a veces se pega por error."""
+    v = (v or "").strip().strip("\"'").strip()
+    for pref in ("VAPID_PRIVATE_KEY=", "VAPID_PUBLIC_KEY="):
+        if v.startswith(pref):
+            v = v[len(pref):].strip().strip("\"'")
+    return "".join(v.split())
+
+
 def _vapid():
-    return ((os.environ.get("VAPID_PUBLIC_KEY") or "").strip(), (os.environ.get("VAPID_PRIVATE_KEY") or "").strip(),
+    return (_limpiar_llave(os.environ.get("VAPID_PUBLIC_KEY")), _limpiar_llave(os.environ.get("VAPID_PRIVATE_KEY")),
             (os.environ.get("VAPID_CONTACT") or "").strip() or "mailto:" + CONTACTO["email"])
+
+
+def _b64u(texto):
+    return base64.urlsafe_b64decode(texto + "=" * (-len(texto) % 4))
+
+
+def vapid_diagnostico():
+    """None si las llaves VAPID están bien; si no, un texto que explica qué corregir en Render."""
+    pub, priv, _ = _vapid()
+    if not pub or not priv:
+        return "Faltan VAPID_PUBLIC_KEY y/o VAPID_PRIVATE_KEY en las variables de entorno de Render."
+    try:
+        raw_priv = _b64u(priv)
+    except Exception:
+        return ("VAPID_PRIVATE_KEY no es una llave válida: tiene caracteres de más. Debe ser solo la cadena que imprime "
+                "generar_vapid.py (unos 43 caracteres), sin comillas ni «VAPID_PRIVATE_KEY=».")
+    if len(raw_priv) != 32:
+        return (f"VAPID_PRIVATE_KEY mide {len(raw_priv)} bytes y debe medir 32 (unos 43 caracteres; la tuya tiene {len(priv)}). "
+                "Corre python generar_vapid.py y copia solo el valor de la llave privada en Render.")
+    try:
+        raw_pub = _b64u(pub)
+    except Exception:
+        return "VAPID_PUBLIC_KEY no es válida: debe ser solo la cadena que imprime generar_vapid.py (unos 87 caracteres)."
+    if len(raw_pub) != 65 or raw_pub[0] != 4:
+        return (f"VAPID_PUBLIC_KEY mide {len(raw_pub)} bytes y debe medir 65 (unos 87 caracteres; la tuya tiene {len(pub)}). "
+                "Cópiala completa desde generar_vapid.py.")
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        llave = ec.derive_private_key(int.from_bytes(raw_priv, "big"), ec.SECP256R1())
+        esperada = llave.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    except Exception:
+        return "VAPID_PRIVATE_KEY no es una llave EC P-256 válida. Genera un par nuevo con python generar_vapid.py."
+    if esperada != raw_pub:
+        return ("VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no son pareja (vienen de ejecuciones distintas de generar_vapid.py). "
+                "Pega las dos del mismo par en Render.")
+    return None
 
 
 def push_configurado():
@@ -2024,8 +2235,7 @@ def push_configurado():
         import pywebpush  # noqa: F401
     except ImportError:
         return False
-    pub, priv, _ = _vapid()
-    return bool(pub and priv)
+    return vapid_diagnostico() is None
 
 
 def _enviar_push(n):
@@ -2171,7 +2381,8 @@ def iniciar_vigilante():
 def notificaciones():
     filas = Notificacion.query.order_by(Notificacion.hora.desc()).limit(100).all()
     dispositivos = PushDispositivo.query.filter_by(activo=True).order_by(PushDispositivo.creado.desc()).all()
-    return render_template('notificaciones.html', filas=filas, dispositivos=dispositivos, configurado=push_configurado())
+    return render_template('notificaciones.html', filas=filas, dispositivos=dispositivos, configurado=push_configurado(),
+                           problema=vapid_diagnostico())
 
 
 @app.route('/notificaciones/leer', methods=['POST'])
@@ -2211,7 +2422,8 @@ def push_prueba():
     ok = _enviar_push(n) if push_configurado() else 0
     n.entregada, n.intentos, n.leida = ok > 0, 1, True
     db.session.commit()
-    return {"dispositivos": ok, "total": PushDispositivo.query.filter_by(activo=True).count(), "configurado": push_configurado()}
+    return {"dispositivos": ok, "total": PushDispositivo.query.filter_by(activo=True).count(), "configurado": push_configurado(),
+            "problema": vapid_diagnostico()}
 
 
 @app.route('/api/push/revisar', methods=['GET', 'POST'])
@@ -2230,4 +2442,4 @@ def push_revisar():
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otros dispositivos en tu WiFi accedan a la PC
     # ssl_context='adhoc' genera un HTTPS temporal (necesario para usar la cámara en móviles)
-    app.run(host='0.0.0.0', port=5000, debug=True, ssl_context='adhoc')
+    app.run(host='0.0.0.0', port=5000, debug=True, ssl_context='adhoc')
