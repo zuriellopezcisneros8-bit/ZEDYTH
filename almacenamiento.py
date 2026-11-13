@@ -325,7 +325,7 @@ def _med_texto(texto):
 def _med_neon(n, clave, lim):
     ps = n.get("proyectos") or []
     if clave == "proyectos":
-        return _med(len(ps), lim, "proyectos")
+        return _med(len(n.get("todos") or ps), lim, "proyectos")
     if not ps:
         return None
     if clave == "cu":
@@ -383,11 +383,11 @@ def _med_ur(u, clave, lim):
     return None
 
 
-def _nuestro_plan(d):
+def _nuestro_plan(d, claves=("neon", "r2", "cloudinary", "uptimerobot")):
     """El plan que tenemos en cada servicio: lo que incluye (referencia) junto con lo que se usa hoy (medido)."""
     t = _tarifas()
     servicios = []
-    for clave in ("neon", "r2", "cloudinary", "uptimerobot"):
+    for clave in claves:
         cat = PLANES_INFO[clave]
         s = d.get(clave) or {}
         nota = origen = None
@@ -430,7 +430,7 @@ def _nuestro_plan(d):
                     m = medir(s, mk, lims.get(mk))
                 except Exception:                                    # una medición rara no debe tumbar la página
                     m = None
-            funciones.append({"grupo": grupo, "nombre": nombre, "valor": valor, "detalle": detalle, "medicion": m})
+            funciones.append({"grupo": grupo, "nombre": nombre, "valor": valor, "detalle": detalle, "medicion": m, "clave_med": mk})
         otros = [{"nombre": p["nombre"], "precio": p["precio"], "resumen": p["resumen"]}
                  for k, p in cat["planes"].items() if k != pc]
         servicios.append({"clave": clave, "titulo": cat["titulo"], "estado": estado, "error": s.get("error"),
@@ -1037,6 +1037,7 @@ def _por_proyecto(d, f):
                                "compute_s": p.get("compute_s"), "activo_s": p.get("activo_s"),
                                "escrito": p.get("escrito"), "transferencia": p.get("transferencia"),
                                "ramas": len(p["ramas"]), "bases": p["bases"], "aviso": p.get("aviso"),
+                               "horas": p.get("horas"), "periodo_fin": p.get("periodo_fin"),
                                "detalle_ramas": [{"nombre": r["nombre"], "bytes": r["bytes"], "principal": r["principal"],
                                                   "estado": r.get("estado"), "creada": r.get("creada"),
                                                   "pct": _pct(r["bytes"], lim)} for r in p["ramas"]]}
@@ -1092,7 +1093,54 @@ def _por_proyecto(d, f):
                                               "formato": g.get("formato"), "url": g.get("url")}
                                              for g in c.get("grandes", [])
                                              if g["public_id"].startswith(f["cld"] + "/")][:15]}
+    res["plan"] = _plan_proyecto(d, res)
     return res
+
+
+def _txt_bytes(b):
+    b = float(b or 0)
+    for u in ("B", "KB", "MB", "GB", "TB"):
+        if b < 1024 or u == "TB":
+            return f"{b:.0f} {u}" if u == "B" else f"{b:.1f} {u}"
+        b /= 1024
+
+
+def _plan_proyecto(d, res):
+    """'Nuestro plan' de UN proyecto: solo los servicios que tiene vinculados, con SU uso (la carpeta, el bucket o la base
+    de Neon de ese proyecto) y lo que incluye el plan. `res` es lo que armó _por_proyecto."""
+    claves, d2 = [], {}
+    nres = res.get("neon") or {}
+    n = d.get("neon") or {}
+    if nres.get("estado") == "ok":
+        p = next((x for x in n.get("proyectos", []) if str(x.get("nombre", "")).lower() == str(nres["nombre"]).lower()), None)
+        if p:
+            d2["neon"] = dict(n, proyectos=[p], todos=n.get("proyectos", []))
+            claves.append("neon")
+    if any(e.get("estado") == "ok" for e in res.get("r2") or []) and res.get("r2_cuenta"):
+        d2["r2"] = d.get("r2") or {}
+        claves.append("r2")
+    if (res.get("cloudinary") or {}).get("estado") == "ok" and res.get("cld_cuenta"):
+        d2["cloudinary"] = d.get("cloudinary") or {}
+        claves.append("cloudinary")
+    if not claves:
+        return None
+    plan = _nuestro_plan(d2, tuple(claves))
+    mio_r2 = sum(e.get("bytes", 0) for e in res.get("r2") or [] if e.get("estado") == "ok")
+    for s in plan["servicios"]:
+        for f in s["funciones"]:
+            m = f.get("medicion")
+            if not m:
+                continue
+            if s["clave"] == "r2" and f.get("clave_med") == "almacen":
+                m["texto"] = f"Este proyecto ocupa {_txt_bytes(mio_r2)}; el resto es de toda la cuenta de R2"
+            if s["clave"] == "cloudinary" and f.get("clave_med") in ("creditos", "cld_almacen"):
+                carpeta = (res.get("cloudinary") or {}).get("bytes", 0)
+                m["texto"] = (f"Esta carpeta ocupa {_txt_bytes(carpeta)}; la bolsa es de toda la cuenta. " + m["texto"]).strip()
+            if s["clave"] == "neon" and f.get("clave_med") in ("total", "proyectos"):
+                m["texto"] = "De toda la cuenta de Neon, no solo de este proyecto"
+            elif s["clave"] == "neon" and f.get("clave_med") in ("cu", "almacen", "ramas", "transfer"):
+                m["texto"] = "Este proyecto"
+    return plan
 
 
 def _armar():

@@ -177,13 +177,67 @@
       tabla([{t:"Archivo"},{t:"Tamaño",n:1},{t:""}], arch, "No hay archivos."));
   };
 
+  /* ---------- horas de cómputo del plan (Neon) ---------- */
+  const nh = (x, d = 1) => x == null ? "—" : Number(x).toLocaleString("es-MX", { maximumFractionDigits: d });
+  const dias = x => x == null ? "—" : x < 1 ? "menos de 1 día" : Math.round(x) === 1 ? "1 día" : Math.round(x) + " días";
+  const dia = iso => iso ? fecha(iso + "T12:00:00") : "—";
+  const estadoH = h => ({
+    agotadas: '<b style="color:#f87171">Agotadas</b>: vuelven al reiniciarse el periodo.',
+    riesgo: '<b style="color:#f87171">No alcanzan</b>: al ritmo actual se acaban el ' + dia(h.fecha_agota) + " (en ~" + dias(h.dias_agota) + "), antes del reinicio.",
+    vigilar: '<b style="color:#f5b94c">Vigilar</b>: ya usaste ' + h.pct + "% de las horas.",
+    bien: '<b style="color:#4ade80">Alcanzan</b>' + (h.dias_agota != null ? ": al ritmo actual durarían ~" + dias(h.dias_agota) + "." : ": aún sin ritmo (menos de 1 día del periodo).")
+  }[h.estado] || "");
+  const tileHoras = (h, x) =>
+    '<div class="luxury-card ap-tile"><h3 class="stat-label">Neon · horas del plan</h3><div class="ap-big">' + nh(h.sobran) + ' CU-h</div>' +
+    barra(h.pct, 80) + '<div class="ap-estado">Te sobran de ' + nh(h.plan, 0) + " CU-h (≈ <b>" + nh(h.despierta_sobran) + " h</b> despierta). Llevas <b>" + fpct(h.pct) + "</b>.<br>" + estadoH(h) + "</div></div>";
+  const detalleHoras = (h, x) => tarjeta("Neon · horas de cómputo del plan",
+    '<div class="ap-datos">' +
+      dato("Horas del plan", nh(h.plan, 0) + " CU-h") + dato("Usadas este periodo", nh(h.usadas) + " CU-h") +
+      dato("Te sobran", nh(h.sobran) + " CU-h") + dato("≈ Horas despierta que te quedan", nh(h.despierta_sobran) + " h") +
+      dato("Base despierta hasta hoy", h.despierta_usadas != null ? nh(h.despierta_usadas) + " h" : "—") + dato("Tamaño medio del cómputo", nh(h.cu_medio, 2) + " CU" + (h.cu_medido ? "" : " (supuesto)")) +
+      dato("Ritmo de gasto", h.ritmo_dia != null ? nh(h.ritmo_dia, 2) + " CU-h/día" : "aún sin ritmo") +
+      dato("Para llegar al reinicio", h.presupuesto_dia != null ? "máx. " + nh(h.presupuesto_dia, 2) + " CU-h/día (≈ " + nh(h.presupuesto_despierta) + " h)" : "—") +
+      dato("Se reinicia", x.periodo_fin ? dia(x.periodo_fin.slice(0, 10)) + (h.dias_faltan != null ? " (en " + dias(h.dias_faltan) + ")" : "") : "—") +
+      dato("Si se acaban", h.fecha_agota ? dia(h.fecha_agota) : "—") +
+    "</div>" +
+    '<div class="ap-estado" style="margin-top:10px;">' + estadoH(h) + "</div>" +
+    '<p class="ap-mut" style="margin:10px 0 0;">1 CU-h = 1 hora con la base despierta usando 1 CPU. Cada proyecto de Neon tiene su propia bolsa de horas; la equivalencia en horas despierta usa el tamaño medio real del cómputo cuando Neon lo da.</p>');
+
+  /* ---------- nuestro plan (de este proyecto) ---------- */
+  const medP = (m, estado) => {
+    if (!m) return mut("No se mide desde el panel");
+    if (m.usado == null) return esc(m.texto);
+    const f = v => m.unidad === "bytes" ? fmt(v) : nh(v, 2) + (m.unidad ? " " + m.unidad : "");
+    return "<strong>" + f(m.usado) + "</strong>" + (m.limite ? " de " + f(m.limite) : "") + (m.pct != null ? barra(m.pct, 90, true) + mut(fpct(m.pct) + " usado") : "") +
+      (m.texto ? '<div class="ap-mut">' + esc(m.texto) + "</div>" : "");
+  };
+  const planTarjeta = s => {
+    let ult = null; const filas = [];
+    s.funciones.forEach(f => {
+      if (f.grupo !== ult) { filas.push('<tr><td colspan="3" style="background:rgba(128,128,128,.12);font-weight:600;">' + esc(f.grupo) + "</td></tr>"); ult = f.grupo; }
+      filas.push("<tr><td><strong>" + esc(f.nombre) + "</strong></td><td>" + esc(f.valor) + (f.detalle ? '<div class="ap-mut">' + esc(f.detalle) + "</div>" : "") + "</td><td style='min-width:170px;'>" + medP(f.medicion) + "</td></tr>");
+    });
+    const otros = s.otros_planes.length ? '<div class="ap-sub">Si creces</div>' + s.otros_planes.map(o => '<p class="ap-mut" style="margin:3px 0;"><strong>' + esc(o.nombre) + "</strong> · " + esc(o.precio) + " — " + esc(o.resumen) + "</p>").join("") : "";
+    return tarjeta(esc(s.titulo) + ' <span class="ap-chip">Plan ' + esc(s.plan) + "</span>",
+      '<p class="ap-mut" style="margin:0 0 4px;">' + esc(s.precio) + " · " + esc(s.resumen) + "</p>" +
+      (s.nota ? '<div class="ap-aviso">' + esc(s.nota) + "</div>" : "") +
+      tabla([{t:"Función"},{t:"Lo que incluye"},{t:"Lo que usa este proyecto"}], filas, "Sin datos.") + otros +
+      '<p class="ap-mut" style="margin:10px 0 0;"><a href="' + esc(s.enlace) + '" target="_blank" rel="noopener noreferrer">Ver la página oficial del plan</a></p>');
+  };
+
   /* ---------- pintar todo ---------- */
   const pintar = r => {
     const u = r.umbral || 80, tiles = [], det = [], avisos = [];
     if (r.neon) {
       if (r.neon.estado === "ok") {
         tiles.push(tileNeon(r.neon, u));
+        if (r.neon.horas) {
+          tiles.push(tileHoras(r.neon.horas, r.neon));
+          if (r.neon.horas.estado === "agotadas") avisos.push("A este proyecto de Neon ya no le quedan horas de cómputo del plan este periodo.");
+          else if (r.neon.horas.estado === "riesgo") avisos.push("Las horas de cómputo de Neon no alcanzan: al ritmo actual se acaban el " + dia(r.neon.horas.fecha_agota) + ".");
+        }
         det.push(detalleNeon(r.neon, u));
+        if (r.neon.horas) det.push(detalleHoras(r.neon.horas, r.neon));
         if (r.neon.pct != null && r.neon.pct >= u) avisos.push("Neon está al " + r.neon.pct + "% de su límite: quedan " + fmt(r.neon.restante) + ".");
       } else det.push(problema("Neon · base de datos", r.neon));
     }
@@ -200,6 +254,11 @@
         det.push(detalleCld(r.cloudinary, r.cld_cuenta, u));
         if (r.cld_cuenta.pct != null && r.cld_cuenta.pct >= u) avisos.push("Cloudinary está al " + r.cld_cuenta.pct + "% de su límite.");
       } else det.push(problema("Cloudinary", r.cloudinary));
+    }
+    if (r.plan && r.plan.servicios && r.plan.servicios.length) {
+      det.push('<div class="section-title" style="font-size:16px;margin-top:22px;">Nuestro plan · lo que incluye y lo que usa esta plataforma</div>' +
+        '<p class="ap-mut" style="margin:0 0 12px;">Cifras de referencia revisadas el ' + esc(r.plan.fecha_referencia) + ". El uso es real; lo que incluye cada plan conviene confirmarlo en la página oficial.</p>");
+      r.plan.servicios.forEach(s => det.push(planTarjeta(s)));
     }
     $(".ap-avisos").innerHTML = avisos.map(t => '<div class="ap-aviso">' + esc(t) + "</div>").join("");
     $(".ap-tiles").innerHTML = tiles.join("");
