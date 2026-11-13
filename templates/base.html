@@ -5,6 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="{{ url_for('manifest_admin') }}">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="ZEDYTH Admin">
+    <meta name="application-name" content="ZEDYTH Admin">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/zedyth/favicon.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/zedyth/favicon.png') }}">
     <title>ZEDYTH Tech Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
@@ -167,6 +175,21 @@
         @media (max-width: 360px) {
             .top-header .sidebar-brand img { height: 28px; }
         }
+
+        /* ===== Modo aplicación (PWA) ===== */
+        html { -webkit-tap-highlight-color: transparent; }
+        @media (display-mode: standalone) {
+            html, body { overscroll-behavior-y: none; }
+        }
+        .install-btn {
+            display: none; align-items: center; justify-content: center;
+            width: 36px; height: 36px; padding: 0; flex: none; cursor: pointer;
+            color: #fff; background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 50%;
+            font-size: 18px; line-height: 1;
+        }
+        .install-btn.show { display: inline-flex; }
+        .install-btn:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.06); }
     </style>
 </head>
 <body>
@@ -217,6 +240,7 @@
                 <i class="ph ph-magnifying-glass"></i>
                 <input type="text" placeholder="Buscar en ZEDYTH...">
             </div>
+            <button type="button" class="install-btn" id="installApp" title="Instalar como aplicación" aria-label="Instalar como aplicación" hidden><i class="ph ph-download-simple"></i></button>
             <a href="/avisos" class="bell" title="Avisos de pagos"><i class="ph ph-bell"></i>{% if n_avisos %}<span class="bell-n">{{ n_avisos }}</span>{% endif %}</a>
             <span class="role-badge">Control Supremo</span>
             <div class="avatar"><i class="ph ph-user"></i></div>
@@ -302,6 +326,41 @@
             window.addEventListener('load', schedule);
             if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
             fit();
+        })();
+    </script>
+
+    <script>
+        // Service worker + botón "Instalar como aplicación" (solo aparece si el navegador permite instalar)
+        (function () {
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function () {
+                    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+                });
+            }
+            var btn = document.getElementById('installApp');
+            var ev = null;
+            window.addEventListener('beforeinstallprompt', function (e) {
+                e.preventDefault();
+                ev = e;
+                if (btn) {
+                    btn.hidden = false;
+                    btn.classList.add('show');
+                    window.dispatchEvent(new Event('resize')); // el encabezado se reacomoda
+                }
+            });
+            if (btn) btn.addEventListener('click', function () {
+                if (!ev) return;
+                ev.prompt();
+                ev.userChoice.finally(function () {
+                    ev = null;
+                    btn.classList.remove('show');
+                    btn.hidden = true;
+                    window.dispatchEvent(new Event('resize'));
+                });
+            });
+            window.addEventListener('appinstalled', function () {
+                if (btn) { btn.classList.remove('show'); btn.hidden = true; }
+            });
         })();
     </script>
 

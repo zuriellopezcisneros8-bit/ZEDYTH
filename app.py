@@ -1,11 +1,12 @@
 import os
+import json
 import secrets
 import shutil
 import calendar
 import re
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import event, inspect as sa_inspect
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -1233,7 +1234,8 @@ def finanzas():
 # --- WEB PÚBLICA -----------------------------------------------------------
 # Únicas rutas que se pueden abrir sin iniciar sesión.
 RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
-                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis'}
+                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis',
+                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -1595,6 +1597,123 @@ def lead_estado(lid):
         registrar("estado", "Lead", l.id, nuevo)
         db.session.commit()
     return redirect(url_for('leads'))
+
+
+# --- APP INSTALABLE (PWA): sin barra del navegador -------------------------
+# Para que Chrome instale la web como app de verdad (y no como un simple acceso directo que abre
+# una pestaña con el dominio arriba) hacen falta: manifest con display "standalone", íconos PNG de
+# 192 y 512 px, y un service worker con "fetch". Estas rutas son públicas porque el navegador las
+# pide sin sesión.
+_ICONOS_PWA = [
+    {"src": "/static/img/zedyth/favicon.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/img/zedyth/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+]
+
+
+def _respuesta_manifest(datos):
+    r = Response(json.dumps(datos, ensure_ascii=False), mimetype='application/manifest+json')
+    r.headers['Cache-Control'] = 'public, max-age=3600'
+    return r
+
+
+@app.route('/manifest.webmanifest')
+def manifest_publico():
+    """App pública: ZEDYTH Technologies."""
+    return _respuesta_manifest({
+        "id": "/",
+        "name": "ZEDYTH Technologies",
+        "short_name": "ZEDYTH",
+        "description": "Ciberseguridad, software a la medida y SaaS: Zmarthket, Zedith IA y más.",
+        "lang": "es-MX",
+        "dir": "ltr",
+        "start_url": "/?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["standalone", "minimal-ui"],
+        "background_color": "#000000",
+        "theme_color": "#000000",
+        "categories": ["business", "productivity", "security"],
+        "icons": _ICONOS_PWA,
+    })
+
+
+@app.route('/admin.webmanifest')
+def manifest_admin():
+    """App del panel de administración (acceso directo como aplicación)."""
+    return _respuesta_manifest({
+        "id": "/panel",
+        "name": "ZEDYTH Admin",
+        "short_name": "ZEDYTH Admin",
+        "description": "Panel de administración de ZEDYTH Technologies.",
+        "lang": "es-MX",
+        "dir": "ltr",
+        "start_url": "/panel?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["standalone", "minimal-ui"],
+        "background_color": "#000000",
+        "theme_color": "#000000",
+        "categories": ["business", "productivity"],
+        "icons": _ICONOS_PWA,
+        "shortcuts": [
+            {"name": "Clientes", "url": "/clientes", "icons": [_ICONOS_PWA[0]]},
+            {"name": "Pedidos", "url": "/leads", "icons": [_ICONOS_PWA[0]]},
+            {"name": "Avisos de pagos", "url": "/avisos", "icons": [_ICONOS_PWA[0]]},
+        ],
+    })
+
+
+_SW_JS = """/* ZEDYTH service worker: instalable + aviso sin conexión. No guarda páginas ni datos privados. */
+const V = 'zedyth-v1', OFFLINE = '/offline';
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(V).then(c => c.add(OFFLINE)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys()
+    .then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k))))
+    .then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', e => {
+  const r = e.request;
+  if (r.method !== 'GET') return;
+  if (r.mode === 'navigate') {
+    e.respondWith(fetch(r).catch(() => caches.match(OFFLINE)));
+    return;
+  }
+  const u = new URL(r.url);
+  if (u.origin === location.origin && u.pathname.startsWith('/static/')) {
+    e.respondWith(fetch(r).then(res => {
+      if (res.ok) { const cp = res.clone(); caches.open(V).then(c => c.put(r, cp)); }
+      return res;
+    }).catch(() => caches.match(r)));
+  }
+});
+"""
+
+
+@app.route('/sw.js')
+def service_worker():
+    r = Response(_SW_JS, mimetype='application/javascript')
+    r.headers['Cache-Control'] = 'no-cache'
+    r.headers['Service-Worker-Allowed'] = '/'
+    return r
+
+
+@app.route('/offline')
+def pwa_offline():
+    return Response(
+        '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="theme-color" content="#000000"><title>Sin conexión · ZEDYTH</title>'
+        '<style>html,body{height:100%;margin:0;background:#000;color:#fff;font-family:Inter,system-ui,sans-serif}'
+        'main{min-height:100%;display:grid;place-content:center;gap:14px;text-align:center;padding:24px}'
+        'h1{font-size:22px;font-weight:500;letter-spacing:-.02em;margin:0}p{margin:0;color:#9b9b9b;font-size:15px}'
+        'button{justify-self:center;margin-top:8px;font:500 14px Inter,system-ui,sans-serif;padding:12px 20px;'
+        'border:0;border-radius:8px;background:#fff;color:#000;cursor:pointer}</style></head><body><main>'
+        '<img src="/static/img/zedyth/favicon.png" width="72" height="72" alt="" style="justify-self:center">'
+        '<h1>Sin conexión</h1><p>Revisa tu internet e inténtalo de nuevo.</p>'
+        '<button onclick="location.reload()">Reintentar</button></main></body></html>',
+        mimetype='text/html')
 
 
 if __name__ == '__main__':
