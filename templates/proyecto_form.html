@@ -8,7 +8,7 @@
 {% block content %}
 <section class="hero">
     <h1>Editar proyecto</h1>
-    <p>{{ p.nombre }} · {{ p.cliente.nombre_comercial }}</p>
+    <p>{{ p.nombre }} · {{ 'Plataforma propia' if p.tipo == 'Plataforma propia' else p.cliente.nombre_comercial }}</p>
 </section>
 
 <form method="post" class="stack" style="max-width: 820px; margin: 0 auto;">
@@ -22,6 +22,8 @@
             {{ campo('rama_produccion', 'Rama de producción') }}
             {{ campo('carpeta_local', 'Carpeta del proyecto (ruta)') }}
             {{ campo('stack', 'Stack tecnológico') }}
+            {{ campo('url_produccion', 'URL de producción', 'url') }}
+            {{ campo('version', 'Versión actual') }}
             {{ campo('dominio_registrador', 'Dominio / registrador') }}
             {{ campo('frontend_plataforma', 'Plataforma de frontend') }}
             {{ campo('backend_plataforma', 'Plataforma de backend') }}
@@ -31,7 +33,7 @@
         </div>
     </div>
     <div class="modal-actions">
-        <a class="btn" href="/clientes/{{ p.cliente_id }}">Cancelar</a>
+        <a class="btn" href="{{ '/plataformas/' ~ p.id if p.tipo == 'Plataforma propia' else '/clientes/' ~ p.cliente_id }}">Cancelar</a>
         <button class="btn btn-primary" type="submit">Guardar proyecto</button>
     </div>
 </form>

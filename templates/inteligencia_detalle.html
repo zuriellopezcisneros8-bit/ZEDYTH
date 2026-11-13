@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.in-w{max-width:1100px;margin:0 auto}.in-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.in-top h1{margin:0;font-size:26px;letter-spacing:-.5px;flex:1}.in-top small{color:#9a9a9a;display:block;font-size:13px;font-weight:400;margin-top:2px}
+.in-btn{display:inline-block;padding:10px 18px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.04);color:#fff;font:600 14px Inter,sans-serif;cursor:pointer;text-decoration:none}
+.in-btn.w{background:#fff;color:#000;border-color:#fff}.in-btn:hover{opacity:.88}
+.in-f{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.in-f input,.in-f select,.in-fm input,.in-fm select,.in-fm textarea{background:#0a0a0a;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:10px 12px;font:14px Inter,sans-serif;width:100%}
+.in-f input,.in-f select{width:auto;flex:1 1 140px}.in-fm textarea{min-height:90px;resize:vertical}
+.in-c{border:1px solid rgba(255,255,255,.1);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.012));padding:16px 18px;margin-bottom:10px;display:block;color:#fff;text-decoration:none}
+.in-c:hover{border-color:rgba(255,255,255,.3)}.in-c b{font-size:16px}.in-m{color:#9a9a9a;font-size:13px;margin-top:4px}
+.in-p{display:inline-block;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:2px 10px;font-size:12px;margin-right:6px;color:#d4d4d4}
+.in-p.alta{border-color:#f87171;color:#f87171}.in-p.conf{border-color:#f5c542;color:#f5c542}
+.in-fm{display:grid;gap:12px;max-width:760px}.in-fm label{font-size:13px;color:#9a9a9a;display:block;margin-bottom:4px}
+.in-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.in-box{border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:18px;margin-bottom:14px;background:rgba(255,255,255,.03)}
+.in-box h3{margin:0 0 8px;font-size:15px;color:#d4d4d4}.in-box p{margin:0;white-space:pre-wrap;color:#e5e5e5;font-size:15px}
+</style>
+<div class="in-w">
+ <div class="in-top"><h1>{{ r.titulo }}<small>{{ r.tipo }} · prioridad {{ r.prioridad|lower }}{% if r.confidencial %} · confidencial{% endif %}</small></h1>
+  <a class="in-btn" href="{{ url_for('inteligencia') }}">← Volver</a><a class="in-btn w" href="{{ url_for('inteligencia_form', iid=r.id) }}">Editar</a></div>
+ <form method="post" action="{{ url_for('inteligencia_estado', iid=r.id) }}" class="in-f">
+  <select name="estado">{% for e in estados %}<option {{ 'selected' if e==r.estado }}>{{ e }}</option>{% endfor %}</select><button class="in-btn" type="submit">Cambiar estado</button>
+ </form>
+ <div class="in-g" style="margin-bottom:14px">
+  {% for t,v in [('Empresa / titular',r.entidad),('Referencia',r.referencia),('Jurisdicción',r.jurisdiccion),('Fuente',r.fuente),('Fecha del hecho',r.fecha_evento.strftime('%d/%m/%Y') if r.fecha_evento else None)] if v %}
+  <div class="in-box" style="margin:0"><h3>{{ t }}</h3><p>{{ v }}</p></div>{% endfor %}
+ </div>
+ {% if r.resumen %}<div class="in-box"><h3>Resumen</h3><p>{{ r.resumen }}</p></div>{% endif %}
+ {% if r.hallazgos %}<div class="in-box"><h3>Hallazgos</h3><p>{{ r.hallazgos }}</p></div>{% endif %}
+ <div class="in-box"><h3>Bitácora de la investigación</h3>
+  <form class="in-fm" method="post" action="{{ url_for('inteligencia_nota', iid=r.id) }}" style="margin-bottom:14px">
+   <textarea name="texto" required placeholder="Nuevo avance o hallazgo"></textarea>
+   <input type="text" name="fuente" maxlength="300" placeholder="Fuente (opcional)">
+   <div><button class="in-btn w" type="submit">Agregar a la bitácora</button></div>
+  </form>
+  {% for n in r.notas %}<div class="in-c" style="margin-bottom:8px"><p style="margin:0;white-space:pre-wrap">{{ n.texto }}</p>
+   <div class="in-m">{{ (n.fecha).strftime('%d/%m/%Y %H:%M') }} UTC · {{ n.autor or 'sistema' }}{% if n.fuente %} · {{ n.fuente }}{% endif %}</div></div>
+  {% else %}<div class="in-m">Sin avances registrados todavía.</div>{% endfor %}
+ </div>
+</div>
+{% endblock %}

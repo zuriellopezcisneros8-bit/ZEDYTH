@@ -22,7 +22,7 @@
             <tbody>
                 {% for p in proyectos %}
                 <tr>
-                    <td><div style="font-weight:500;">{{ p.nombre }}</div><a class="mono" href="/clientes/{{ p.cliente.id }}">{{ p.cliente.nombre_comercial }}</a></td>
+                    <td><div style="font-weight:500;">{{ p.nombre }}</div>{% if p.tipo == 'Plataforma propia' %}<a class="mono" href="/plataformas/{{ p.id }}">Plataforma propia</a>{% else %}<a class="mono" href="/clientes/{{ p.cliente.id }}">{{ p.cliente.nombre_comercial }}</a>{% endif %}</td>
                     <td><span class="badge {{ 'badge-green' if p.estado in ['Activo','Mantenido'] else 'badge-amber' if p.estado == 'Desarrollo' else 'badge-red' }}">{{ p.estado }}</span></td>
                     <td>{% if p.repo_url %}<a href="{{ p.repo_url }}" target="_blank" rel="noopener" style="text-decoration:underline;">GitHub</a> <span class="mono">{{ p.rama_produccion or '' }}</span>{% else %}—{% endif %}</td>
                     <td class="mono">{{ p.carpeta_local or '—' }}</td>

@@ -140,9 +140,13 @@ class Proyecto(db.Model):
     backend_plataforma = db.Column(db.String(100))
     bd_storage = db.Column(db.String(200))
     ia_cuentas = db.Column(db.String(300))   # solo nombre de cuenta/ubicación; no guardar llaves en claro
+    tipo = db.Column(db.String(20), default="A medida")      # A medida | Plataforma propia
+    url_produccion = db.Column(db.String(300))
+    version = db.Column(db.String(30))
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
 
     costos = db.relationship('CostoServicio', backref='proyecto', lazy=True)
+    subdominios = db.relationship('Subdominio', backref='proyecto', cascade='all, delete-orphan', lazy=True)
 
 
 class Suscripcion(db.Model):
@@ -284,6 +288,47 @@ class Resena(db.Model):
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class Subdominio(db.Model):
+    """Dominios y subdominios de una plataforma (solo infraestructura externa)."""
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    nombre = db.Column(db.String(200), nullable=False)       # api.zmarthket.com
+    proposito = db.Column(db.String(100))                    # Sitio, API, Panel, Correo...
+    destino = db.Column(db.String(200))                      # dónde apunta: Vercel, Render, Cloudflare...
+    estado = db.Column(db.String(12), default="Activo")      # Activo, Inactivo
+    notas = db.Column(db.String(300))
+
+
+class Inteligencia(db.Model):
+    """División de inteligencia: incidentes, empresas, patentes, tecnologías y amenazas investigadas."""
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(20), default="Incidente")        # Incidente, Empresa, Patente, Tecnología, Amenaza, Otro
+    titulo = db.Column(db.String(200), nullable=False)
+    estado = db.Column(db.String(20), default="Abierto")        # Abierto, En investigación, Cerrado
+    prioridad = db.Column(db.String(10), default="Media")       # Baja, Media, Alta, Crítica
+    confidencial = db.Column(db.Boolean, default=False)
+    entidad = db.Column(db.String(200))                         # empresa, titular o persona relacionada
+    referencia = db.Column(db.String(200))                      # n.º de patente, RFC, CVE, URL...
+    jurisdiccion = db.Column(db.String(100))                    # oficina o país (IMPI, USPTO, EPO...)
+    fecha_evento = db.Column(db.Date)
+    fuente = db.Column(db.String(300))
+    resumen = db.Column(db.Text)
+    hallazgos = db.Column(db.Text)
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+    actualizado_en = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    notas = db.relationship('IntelNota', backref='registro', cascade='all, delete-orphan', order_by='IntelNota.id.desc()')
+
+
+class IntelNota(db.Model):
+    """Bitácora de la investigación: cada avance queda con fecha y fuente."""
+    id = db.Column(db.Integer, primary_key=True)
+    registro_id = db.Column(db.Integer, db.ForeignKey('inteligencia.id'), nullable=False)
+    texto = db.Column(db.Text, nullable=False)
+    fuente = db.Column(db.String(300))
+    autor = db.Column(db.String(80))
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 @event.listens_for(db.Model, "before_insert", propagate=True)
 @event.listens_for(db.Model, "before_update", propagate=True)
 def _ajustar_longitudes(mapper, connection, target):
@@ -336,7 +381,8 @@ def migrar_columnas():
     """Agrega columnas nuevas a una base existente (SQLite o PostgreSQL) sin perder datos."""
     pg = db.engine.dialect.name == "postgresql"
     nuevas = {
-        "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)")],
+        "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)"), ("tipo", "VARCHAR(20) DEFAULT 'A medida'"),
+                      ("url_produccion", "VARCHAR(300)"), ("version", "VARCHAR(30)")],
         "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
                  ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
                  ("semilla", "VARCHAR(40)"),
@@ -550,6 +596,20 @@ def proyecto_general():
     return p
 
 
+PLAT = "Plataforma propia"
+INTERNO = "ZEDYTH Technologies (interno)"
+
+
+def cliente_interno():
+    """Las plataformas propias cuelgan de este cliente interno (así no cambia el esquema de la base)."""
+    c = Cliente.query.filter_by(nombre_comercial=INTERNO).first()
+    if not c:
+        c = Cliente(nombre_comercial=INTERNO, contacto="interno")
+        db.session.add(c)
+        db.session.commit()
+    return c
+
+
 # Inicialización de la DB
 with app.app_context():
     db.create_all()
@@ -558,6 +618,7 @@ with app.app_context():
     aplicar_fichas()
     sembrar_usuario_admin()
     proyecto_general()
+    cliente_interno()
 
 # --- SEGURIDAD Y PROTECCIÓN DE RUTAS ---------------------------------------
 
@@ -626,7 +687,7 @@ def logout():
 # --- RUTAS PRINCIPALES -----------------------------------------------------
 @app.route('/panel')
 def index():
-    clientes = Cliente.query.order_by(Cliente.id.desc()).all()
+    clientes = Cliente.query.filter(Cliente.nombre_comercial != INTERNO).order_by(Cliente.id.desc()).all()
     ingresos = sum(x.monto_periodo / x.meses for x in Suscripcion.query.all())
     stats = {
         "clientes_activos": len(clientes),
@@ -812,7 +873,8 @@ def membresias_vista():
 CAMPOS_CLIENTE = ["nombre_comercial", "razon_social", "rfc", "direccion_fiscal",
                   "contacto", "contacto_nombre", "telefono"]
 CAMPOS_PROYECTO = ["nombre", "estado", "repo_url", "rama_produccion", "stack", "dominio_registrador",
-                   "frontend_plataforma", "backend_plataforma", "bd_storage", "ia_cuentas", "carpeta_local", "boveda_ref"]
+                   "frontend_plataforma", "backend_plataforma", "bd_storage", "ia_cuentas", "carpeta_local", "boveda_ref",
+                   "url_produccion", "version"]
 
 
 def campo(nombre):
@@ -827,7 +889,7 @@ def campo_fecha(nombre):
 @app.route('/clientes')
 def clientes():
     q = (request.args.get('q') or "").strip()
-    consulta = Cliente.query
+    consulta = Cliente.query.filter(Cliente.nombre_comercial != INTERNO)
     if q:
         like = f"%{q}%"
         consulta = consulta.filter(db.or_(Cliente.nombre_comercial.ilike(like),
@@ -906,6 +968,8 @@ def costo_nuevo(pid):
     db.session.flush()
     registrar("crear", "CostoServicio", k.id, f"{k.proveedor} · proyecto {p.nombre}")
     db.session.commit()
+    if p.tipo == PLAT:
+        return redirect(url_for('plataforma_detalle', pid=p.id))
     return redirect(url_for('cliente_detalle', cid=p.cliente_id))
 
 
@@ -1006,6 +1070,70 @@ def avisos():
 
 
 # --- REPOSITORIOS ------------------------------------------------------------
+@app.route('/plataformas')
+def plataformas():
+    filas = Proyecto.query.filter_by(tipo=PLAT).order_by(Proyecto.nombre).all()
+    for p in filas:
+        p.gasto = sum(float(k.monto_mensual or 0) for k in p.costos)
+        venc = [v.fecha for v in p.vencimientos if v.fecha]
+        p.prox_venc = min(venc) if venc else None
+        p.ult_resp = ultimo_respaldo(p)
+    return render_template('plataformas.html', plataformas=filas, total=sum(p.gasto for p in filas), hoy=date.today())
+
+
+@app.route('/plataformas/nueva', methods=['GET', 'POST'])
+def plataforma_nueva():
+    if request.method == 'POST':
+        if not campo('nombre'):
+            return redirect(request.url)
+        p = Proyecto(cliente_id=cliente_interno().id, tipo=PLAT, **{k: campo(k) for k in CAMPOS_PROYECTO})
+        p.estado = p.estado or "Desarrollo"
+        p.rama_produccion = p.rama_produccion or "main"
+        db.session.add(p)
+        db.session.flush()
+        registrar("crear", "Plataforma", p.id, p.nombre)
+        db.session.commit()
+        return redirect(url_for('plataforma_detalle', pid=p.id))
+    return render_template('plataforma_form.html')
+
+
+@app.route('/plataformas/<int:pid>')
+def plataforma_detalle(pid):
+    p = db.get_or_404(Proyecto, pid)
+    if p.tipo != PLAT:
+        return redirect(url_for('cliente_detalle', cid=p.cliente_id))
+    return render_template('plataforma_detalle.html', p=p, hoy=date.today(),
+                           gasto=sum(float(k.monto_mensual or 0) for k in p.costos),
+                           subdominios=sorted(p.subdominios, key=lambda x: x.nombre),
+                           costos=sorted(p.costos, key=lambda k: k.proxima_fecha_pago or date.max),
+                           vencimientos=sorted(p.vencimientos, key=lambda v: v.fecha)[:5],
+                           ultimo=ultimo_respaldo(p))
+
+
+@app.route('/plataformas/<int:pid>/subdominio', methods=['POST'])
+def subdominio_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    if campo('nombre'):
+        s = Subdominio(proyecto_id=p.id, nombre=campo('nombre'), proposito=campo('proposito') or None,
+                       destino=campo('destino') or None, estado=campo('estado') if campo('estado') in ("Activo", "Inactivo") else "Activo",
+                       notas=campo('notas') or None)
+        db.session.add(s)
+        db.session.flush()
+        registrar("crear", "Subdominio", s.id, f"{s.nombre} · {p.nombre}")
+        db.session.commit()
+    return redirect(url_for('plataforma_detalle', pid=p.id))
+
+
+@app.route('/subdominios/<int:sid>/eliminar', methods=['POST'])
+def subdominio_eliminar(sid):
+    s = db.get_or_404(Subdominio, sid)
+    pid = s.proyecto_id
+    registrar("eliminar", "Subdominio", s.id, s.nombre)
+    db.session.delete(s)
+    db.session.commit()
+    return redirect(url_for('plataforma_detalle', pid=pid))
+
+
 @app.route('/repositorios')
 def repositorios():
     q = (request.args.get('q') or "").strip()
@@ -1029,6 +1157,8 @@ def proyecto_form(pid):
         p.estado = p.estado or "Desarrollo"
         registrar("editar", "Proyecto", p.id, p.nombre)
         db.session.commit()
+        if p.tipo == PLAT:
+            return redirect(url_for('plataforma_detalle', pid=p.id))
         return redirect(url_for('cliente_detalle', cid=p.cliente_id))
     return render_template('proyecto_form.html', p=p)
 
@@ -1572,6 +1702,86 @@ def configurador_enviar():
     texto = (f"Hola, soy {lead.nombre}. Armé mi sistema en el configurador de ZEDYTH:\n"
              f"{lead.resumen or lead.negocio or ''}\nContacto: {lead.contacto}")
     return {"ok": True, "wa": f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"}
+
+
+INTEL_TIPOS = ("Incidente", "Empresa", "Patente", "Tecnología", "Amenaza", "Otro")
+INTEL_ESTADOS = ("Abierto", "En investigación", "Cerrado")
+INTEL_PRIORIDADES = ("Baja", "Media", "Alta", "Crítica")
+
+
+@app.route('/inteligencia')
+def inteligencia():
+    q = Inteligencia.query
+    tipo, estado, texto = request.args.get('tipo', ''), request.args.get('estado', ''), request.args.get('q', '').strip()
+    if tipo in INTEL_TIPOS:
+        q = q.filter_by(tipo=tipo)
+    if estado in INTEL_ESTADOS:
+        q = q.filter_by(estado=estado)
+    if texto:
+        like = f"%{texto}%"
+        q = q.filter(db.or_(Inteligencia.titulo.ilike(like), Inteligencia.entidad.ilike(like), Inteligencia.referencia.ilike(like)))
+    filas = q.order_by(Inteligencia.actualizado_en.desc()).limit(300).all()
+    abiertos = Inteligencia.query.filter(Inteligencia.estado != "Cerrado").count()
+    return render_template('inteligencia.html', filas=filas, tipos=INTEL_TIPOS, estados=INTEL_ESTADOS,
+                           f_tipo=tipo, f_estado=estado, f_q=texto, abiertos=abiertos)
+
+
+@app.route('/inteligencia/nuevo', methods=['GET', 'POST'])
+@app.route('/inteligencia/<int:iid>/editar', methods=['GET', 'POST'])
+def inteligencia_form(iid=None):
+    r = db.get_or_404(Inteligencia, iid) if iid else None
+    if request.method == 'POST':
+        titulo = campo('titulo')
+        if not titulo:
+            return redirect(request.url)
+        nuevo = r is None
+        if nuevo:
+            r = Inteligencia()
+            db.session.add(r)
+        r.titulo = titulo
+        r.tipo = campo('tipo') if campo('tipo') in INTEL_TIPOS else "Otro"
+        r.estado = campo('estado') if campo('estado') in INTEL_ESTADOS else "Abierto"
+        r.prioridad = campo('prioridad') if campo('prioridad') in INTEL_PRIORIDADES else "Media"
+        r.confidencial = bool(request.form.get('confidencial'))
+        for k in ('entidad', 'referencia', 'jurisdiccion', 'fuente', 'resumen', 'hallazgos'):
+            setattr(r, k, campo(k) or None)
+        try:
+            r.fecha_evento = campo_fecha('fecha_evento')
+        except ValueError:
+            r.fecha_evento = None
+        db.session.flush()
+        registrar("crear" if nuevo else "editar", "Inteligencia", r.id, f"{r.tipo}: {r.titulo}")
+        db.session.commit()
+        return redirect(url_for('inteligencia_detalle', iid=r.id))
+    return render_template('inteligencia_form.html', r=r, tipos=INTEL_TIPOS, estados=INTEL_ESTADOS, prioridades=INTEL_PRIORIDADES)
+
+
+@app.route('/inteligencia/<int:iid>')
+def inteligencia_detalle(iid):
+    r = db.get_or_404(Inteligencia, iid)
+    return render_template('inteligencia_detalle.html', r=r, estados=INTEL_ESTADOS)
+
+
+@app.route('/inteligencia/<int:iid>/nota', methods=['POST'])
+def inteligencia_nota(iid):
+    r = db.get_or_404(Inteligencia, iid)
+    if campo('texto'):
+        db.session.add(IntelNota(registro_id=r.id, texto=campo('texto'), fuente=campo('fuente') or None,
+                                 autor=current_user.username))
+        r.actualizado_en = datetime.utcnow()
+        registrar("nota", "Inteligencia", r.id, r.titulo)
+        db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=r.id))
+
+
+@app.route('/inteligencia/<int:iid>/estado', methods=['POST'])
+def inteligencia_estado(iid):
+    r = db.get_or_404(Inteligencia, iid)
+    if campo('estado') in INTEL_ESTADOS:
+        r.estado = campo('estado')
+        registrar("estado", "Inteligencia", r.id, r.estado)
+        db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=r.id))
 
 
 @app.route('/leads')

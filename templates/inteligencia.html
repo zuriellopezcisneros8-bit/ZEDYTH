@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.in-w{max-width:1100px;margin:0 auto}.in-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.in-top h1{margin:0;font-size:26px;letter-spacing:-.5px;flex:1}.in-top small{color:#9a9a9a;display:block;font-size:13px;font-weight:400;margin-top:2px}
+.in-btn{display:inline-block;padding:10px 18px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.04);color:#fff;font:600 14px Inter,sans-serif;cursor:pointer;text-decoration:none}
+.in-btn.w{background:#fff;color:#000;border-color:#fff}.in-btn:hover{opacity:.88}
+.in-f{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.in-f input,.in-f select,.in-fm input,.in-fm select,.in-fm textarea{background:#0a0a0a;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:10px 12px;font:14px Inter,sans-serif;width:100%}
+.in-f input,.in-f select{width:auto;flex:1 1 140px}.in-fm textarea{min-height:90px;resize:vertical}
+.in-c{border:1px solid rgba(255,255,255,.1);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.012));padding:16px 18px;margin-bottom:10px;display:block;color:#fff;text-decoration:none}
+.in-c:hover{border-color:rgba(255,255,255,.3)}.in-c b{font-size:16px}.in-m{color:#9a9a9a;font-size:13px;margin-top:4px}
+.in-p{display:inline-block;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:2px 10px;font-size:12px;margin-right:6px;color:#d4d4d4}
+.in-p.alta{border-color:#f87171;color:#f87171}.in-p.conf{border-color:#f5c542;color:#f5c542}
+.in-fm{display:grid;gap:12px;max-width:760px}.in-fm label{font-size:13px;color:#9a9a9a;display:block;margin-bottom:4px}
+.in-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.in-box{border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:18px;margin-bottom:14px;background:rgba(255,255,255,.03)}
+.in-box h3{margin:0 0 8px;font-size:15px;color:#d4d4d4}.in-box p{margin:0;white-space:pre-wrap;color:#e5e5e5;font-size:15px}
+</style>
+<div class="in-w">
+ <div class="in-top"><h1>Inteligencia<small>{{ abiertos }} registro{{ '' if abiertos==1 else 's' }} abierto{{ '' if abiertos==1 else 's' }}</small></h1><a class="in-btn w" href="{{ url_for('inteligencia_form') }}">+ Nuevo registro</a></div>
+ <form class="in-f" method="get">
+  <input type="text" name="q" value="{{ f_q }}" placeholder="Buscar título, empresa o referencia">
+  <select name="tipo"><option value="">Todos los tipos</option>{% for t in tipos %}<option {{ 'selected' if t==f_tipo }}>{{ t }}</option>{% endfor %}</select>
+  <select name="estado"><option value="">Todos los estados</option>{% for e in estados %}<option {{ 'selected' if e==f_estado }}>{{ e }}</option>{% endfor %}</select>
+  <button class="in-btn" type="submit">Filtrar</button>
+ </form>
+ {% for r in filas %}
+ <a class="in-c" href="{{ url_for('inteligencia_detalle', iid=r.id) }}">
+  <span class="in-p">{{ r.tipo }}</span><span class="in-p {{ 'alta' if r.prioridad in ('Alta','Crítica') }}">{{ r.prioridad }}</span>{% if r.confidencial %}<span class="in-p conf">Confidencial</span>{% endif %}
+  <div><b>{{ r.titulo }}</b></div>
+  <div class="in-m">{{ r.estado }}{% if r.entidad %} · {{ r.entidad }}{% endif %}{% if r.referencia %} · {{ r.referencia }}{% endif %} · {{ r.actualizado_en.strftime('%d/%m/%Y') }}</div>
+ </a>
+ {% else %}<p class="in-m">Aún no hay registros. Crea el primero con «Nuevo registro».</p>{% endfor %}
+</div>
+{% endblock %}
