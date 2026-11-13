@@ -104,7 +104,7 @@
       '<div class="up-datos"><div><span>24 h</span><strong>' + pct(m.uptime["24h"]) + "</strong></div>" +
       "<div><span>7 días</span><strong>" + pct(m.uptime["7d"]) + "</strong></div><div><span>30 días</span><strong>" + pct(m.uptime["30d"]) + "</strong></div>" +
       "<div><span>Respuesta prom.</span><strong>" + ms(m.respuesta_ms) + "</strong></div></div>" + lista(m.caidas) + "</div>").join("");
-    return h + '<div class="up-pie"><a href="#" class="up-probar">Probar conexión</a><a href="#" class="up-refrescar">Actualizar ahora</a>' +
+    return h + '<div class="up-pie"><a href="#" class="up-probar">Probar conexión</a><a href="#" class="up-refrescar">Actualizar ahora</a><a href="#" class="up-cambiar">Cambiar API key</a>' +
       '<a href="#" class="up-desconectar" style="color:#f87171;">Desconectar</a></div>';
   };
   const mensaje = (t, ok) => { const e = $(".up-msg-global"); e.className = "up-msg-global up-msg " + (ok ? "ok" : "mal"); e.textContent = t; };
@@ -115,6 +115,11 @@
   raiz.addEventListener("click", async e => {
     const a = e.target.closest("a, button"); if (!a) return;
     if (a.classList.contains("up-refrescar")) { e.preventDefault(); mensaje("", true); cargarUR(true); }
+    if (a.classList.contains("up-cambiar")) {
+      e.preventDefault(); mensaje("", true);
+      $(".up-ur").innerHTML = formulario(nota("Pega la nueva key: reemplaza a la guardada (usa la Read-only API key general de la cuenta).")) +
+        '<div class="up-pie"><a href="#" class="up-refrescar">Cancelar</a></div>';
+    }
     if (a.classList.contains("up-probar")) {
       e.preventDefault(); mensaje("Probando…", true);
       const r = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(() => ({ ok: false, error: "Sin respuesta." }));
