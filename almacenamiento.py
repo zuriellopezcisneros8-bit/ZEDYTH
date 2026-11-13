@@ -2,7 +2,9 @@
 almacenamiento.py — Panel de almacenamiento (Neon + Cloudflare R2 + Cloudinary)
 
 Se conecta por API a cada servicio y junta todo en un solo resumen.
-Las llaves viven SOLO en variables de entorno (Render); nunca llegan al navegador.
+Las llaves se pegan desde el propio panel (sección "Conexiones"): se guardan CIFRADAS en la base
+de datos y nunca vuelven al navegador. Si prefieres, también siguen funcionando como variables
+de entorno (Render); lo guardado en el panel tiene prioridad.
 
 Uso en app.py (antes de `if __name__ == '__main__':`):
 
@@ -10,6 +12,7 @@ Uso en app.py (antes de `if __name__ == '__main__':`):
     app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 """
 import base64
+import hashlib
 import heapq
 import json
 import os
@@ -19,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib import error as _uerr, parse as _uparse, request as _ureq
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request
 from flask_login import current_user
 
 CACHE_SEGUNDOS = 300      # el resumen se guarda 5 min (cuida los límites de las APIs)
@@ -29,8 +32,27 @@ UMBRAL_ALERTA = 80        # % de uso a partir del cual se avisa
 
 
 # --- utilidades -------------------------------------------------------------
+# Campos que se pueden guardar desde el panel: nombre -> (servicio, es_secreto)
+CAMPOS = {
+    "NEON_API_KEY": ("neon", True), "NEON_ORG_ID": ("neon", False), "NEON_LIMITE_GB": ("neon", False),
+    "R2_ACCOUNT_ID": ("r2", False), "R2_ACCESS_KEY_ID": ("r2", True), "R2_SECRET_ACCESS_KEY": ("r2", True),
+    "R2_BUCKETS": ("r2", False), "R2_LIMITE_GB": ("r2", False),
+    "CLOUDINARY_CLOUD_NAME": ("cloudinary", False), "CLOUDINARY_API_KEY": ("cloudinary", True),
+    "CLOUDINARY_API_SECRET": ("cloudinary", True), "CLOUDINARY_LIMITE_GB": ("cloudinary", False),
+}
+SERVICIOS = ("neon", "r2", "cloudinary")
+_guardadas = {}           # valores guardados desde el panel (ya descifrados, solo en memoria)
+_estado = {"tabla": False, "ilegibles": 0}
+
+
 def _env(nombre, defecto=""):
-    return (os.environ.get(nombre) or defecto).strip()
+    return (_guardadas.get(nombre) or os.environ.get(nombre) or defecto).strip()
+
+
+def _origen(nombre):
+    if _guardadas.get(nombre):
+        return "panel"
+    return "entorno" if (os.environ.get(nombre) or "").strip() else None
 
 
 def _gb(nombre, defecto=""):
@@ -177,6 +199,9 @@ def datos_r2():
 
 # --- CLOUDINARY -------------------------------------------------------------
 def _cld_cred():
+    tres = ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
+    if all(_guardadas.get(k) for k in tres):
+        return tuple(_guardadas[k].strip() for k in tres)
     url = _env("CLOUDINARY_URL")
     if url.startswith("cloudinary://"):
         p = _uparse.urlparse(url)
@@ -277,9 +302,76 @@ def _invalidar():
     _cache["t"] = 0.0
 
 
+def _probar(servicio):
+    """Una llamada mínima a la API para confirmar que las llaves funcionan. Devuelve un texto."""
+    if servicio == "neon":
+        if not _env("NEON_API_KEY"):
+            raise RuntimeError("Falta la API key de Neon.")
+        ruta = "/projects?limit=100"
+        if _env("NEON_ORG_ID"):
+            ruta += "&org_id=" + _uparse.quote(_env("NEON_ORG_ID"))
+        n = len(_neon(ruta).get("projects", []))
+        return f"Conectado. Se ven {n} proyecto(s)."
+    if servicio == "r2":
+        if not _r2_configurado():
+            raise RuntimeError("Faltan datos de R2 (Account ID, Access Key ID y Secret).")
+        cli = _r2()
+        fijos = [b.strip() for b in _env("R2_BUCKETS").split(",") if b.strip()]
+        if fijos:
+            cli.list_objects_v2(Bucket=fijos[0], MaxKeys=1)
+            return f"Conectado. Se puede leer el bucket {fijos[0]}."
+        n = len(cli.list_buckets().get("Buckets", []))
+        return f"Conectado. Se ven {n} bucket(s)."
+    if servicio == "cloudinary":
+        if not _cld_configurado():
+            raise RuntimeError("Faltan datos de Cloudinary.")
+        uso = _cld("/usage")
+        return f"Conectado. Plan: {uso.get('plan') or 'desconocido'}."
+    raise RuntimeError("Servicio desconocido.")
+
+
 # --- Blueprint ----------------------------------------------------------------
+_Modelo = None
+
+
 def crear_blueprint(db, registrar):
+    global _Modelo
     bp = Blueprint("almacen", __name__)
+
+    if _Modelo is None:
+        class ConexionAlmacen(db.Model):
+            """Llaves de las APIs guardadas desde el panel. El valor va CIFRADO (Fernet)."""
+            __tablename__ = "conexiones_almacen"
+            nombre = db.Column(db.String(60), primary_key=True)
+            valor = db.Column(db.Text, nullable=False)
+            actualizado = db.Column(db.DateTime, default=datetime.utcnow)
+        _Modelo = ConexionAlmacen
+    Conexion = _Modelo
+
+    def fernet():
+        from cryptography.fernet import Fernet
+        clave = hashlib.sha256(("almacenamiento|" + str(current_app.config["SECRET_KEY"])).encode()).digest()
+        return Fernet(base64.urlsafe_b64encode(clave))
+
+    def cargar_guardadas():
+        """Lee y descifra lo guardado. Se llama en cada petición: así todos los workers ven lo último."""
+        if not _estado["tabla"]:
+            Conexion.__table__.create(db.engine, checkfirst=True)
+            _estado["tabla"] = True
+        nuevas, ilegibles = {}, 0
+        filas = Conexion.query.all()
+        if filas:
+            f = fernet()
+            for r in filas:
+                if r.nombre not in CAMPOS:
+                    continue
+                try:
+                    nuevas[r.nombre] = f.decrypt(r.valor.encode()).decode()
+                except Exception:                 # SECRET_KEY cambió o el dato se dañó
+                    ilegibles += 1
+        _guardadas.clear()
+        _guardadas.update(nuevas)
+        _estado["ilegibles"] = ilegibles
 
     def es_admin():
         return current_user.is_authenticated and (getattr(current_user, "rol", "") or "") == "admin"
@@ -307,6 +399,7 @@ def crear_blueprint(db, registrar):
         if not es_admin():
             return negado()
         forzar = request.args.get("forzar") == "1"
+        cargar_guardadas()
         with _lock:
             if forzar or not _cache["datos"] or time.time() - _cache["t"] > CACHE_SEGUNDOS:
                 datos = _armar()
@@ -323,6 +416,7 @@ def crear_blueprint(db, registrar):
         d, fallo = cuerpo_confirmado()
         if fallo:
             return fallo
+        cargar_guardadas()
         bucket, key = d.get("bucket"), d.get("key")
         if not isinstance(bucket, str) or not isinstance(key, str) or not key:
             return jsonify(ok=False, error="Datos incompletos."), 400
@@ -343,6 +437,7 @@ def crear_blueprint(db, registrar):
         d, fallo = cuerpo_confirmado()
         if fallo:
             return fallo
+        cargar_guardadas()
         pid, tipo = d.get("public_id"), d.get("resource_type")
         if not isinstance(pid, str) or not pid or tipo not in ("image", "video", "raw"):
             return jsonify(ok=False, error="Datos incompletos."), 400
@@ -356,5 +451,108 @@ def crear_blueprint(db, registrar):
         db.session.commit()
         _invalidar()
         return jsonify(ok=True)
+
+    # --- Conexiones: guardar llaves desde el panel --------------------------------
+    @bp.route("/api/almacenamiento/conexiones")
+    def conexiones():
+        if not es_admin():
+            return negado()
+        cargar_guardadas()
+        campos = []
+        for nombre, (serv, secreto) in CAMPOS.items():
+            origen = _origen(nombre)
+            campos.append({"nombre": nombre, "servicio": serv, "secreto": secreto, "origen": origen,
+                           "valor": None if (secreto or not origen) else _env(nombre)})
+        listo = {"neon": bool(_env("NEON_API_KEY")), "r2": _r2_configurado(), "cloudinary": _cld_configurado()}
+        return jsonify(ok=True, campos=campos, conectado=listo, ilegibles=_estado["ilegibles"])
+
+    @bp.route("/api/almacenamiento/conexiones/guardar", methods=["POST"])
+    def conexiones_guardar():
+        d, fallo = cuerpo_confirmado()
+        if fallo:
+            return fallo
+        serv, valores = d.get("servicio"), d.get("valores")
+        if serv not in SERVICIOS or not isinstance(valores, dict):
+            return jsonify(ok=False, error="Datos incompletos."), 400
+        cargar_guardadas()
+        cambios = []
+        for nombre, v in valores.items():
+            if nombre not in CAMPOS or CAMPOS[nombre][0] != serv:
+                return jsonify(ok=False, error=f"Campo no permitido: {nombre}"), 400
+            if v is None:
+                continue
+            if not isinstance(v, str) or len(v) > 2000:
+                return jsonify(ok=False, error=f"Valor no válido en {nombre}."), 400
+            v = v.strip()
+            if not v and CAMPOS[nombre][1]:
+                continue                                   # secreto vacío = conservar el que ya está
+            if v and nombre.endswith("_LIMITE_GB"):
+                try:
+                    if float(v) <= 0:
+                        raise ValueError
+                except ValueError:
+                    return jsonify(ok=False, error="El límite debe ser un número de GB mayor que 0."), 400
+            cambios.append((nombre, v))
+        if not cambios:
+            return jsonify(ok=False, error="No hay nada nuevo que guardar."), 400
+        try:
+            f = fernet()
+            for nombre, v in cambios:
+                fila = db.session.get(Conexion, nombre)
+                if not v:
+                    if fila:
+                        db.session.delete(fila)
+                    continue
+                cifrado = f.encrypt(v.encode()).decode()
+                if fila:
+                    fila.valor, fila.actualizado = cifrado, datetime.utcnow()
+                else:
+                    db.session.add(Conexion(nombre=nombre, valor=cifrado))
+            registrar("guardar", "Conexión", None, f"{serv}: {', '.join(n for n, _ in cambios)}"[:300])
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo guardar: " + str(e)[:150]), 500
+        _invalidar()
+        return jsonify(ok=True)
+
+    @bp.route("/api/almacenamiento/conexiones/desconectar", methods=["POST"])
+    def conexiones_desconectar():
+        d, fallo = cuerpo_confirmado()
+        if fallo:
+            return fallo
+        serv = d.get("servicio")
+        if serv not in SERVICIOS:
+            return jsonify(ok=False, error="Datos incompletos."), 400
+        cargar_guardadas()
+        try:
+            for nombre, (s_, _) in CAMPOS.items():
+                if s_ == serv:
+                    fila = db.session.get(Conexion, nombre)
+                    if fila:
+                        db.session.delete(fila)
+            registrar("eliminar", "Conexión", None, serv)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error=str(e)[:150]), 500
+        _invalidar()
+        return jsonify(ok=True)
+
+    @bp.route("/api/almacenamiento/conexiones/probar", methods=["POST"])
+    def conexiones_probar():
+        if not es_admin():
+            return negado()
+        d = request.get_json(silent=True)
+        serv = d.get("servicio") if isinstance(d, dict) else None
+        if serv not in SERVICIOS:
+            return jsonify(ok=False, error="Datos incompletos."), 400
+        cargar_guardadas()
+        try:
+            return jsonify(ok=True, mensaje=_probar(serv))
+        except ImportError as e:
+            return jsonify(ok=False, error=f"Falta instalar una librería: {e}")
+        except Exception as e:
+            return jsonify(ok=False, error=str(e)[:250])
 
     return bp

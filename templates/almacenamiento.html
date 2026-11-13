@@ -1,74 +1,64 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Almacenamiento · Zedyth</title>
+<!-- templates/almacenamiento.html -->
+{% extends "base.html" %}
+
+{% block content %}
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --txt:#1c2330; --mut:#6b7585; --brd:#e3e7ee; --ac:#4f46e5;
-          --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --track:#e9edf3; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0f1218; --card:#171c25; --txt:#e8ecf3; --mut:#93a0b5; --brd:#262d3a; --ac:#818cf8; --track:#262d3a; }
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  .wrap { max-width:1100px; margin:0 auto; padding:20px 16px 60px; }
-  header { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:16px; }
-  h1 { font-size:22px; margin:0; } h2 { font-size:17px; margin:28px 0 10px; }
-  .muted { color:var(--mut); font-size:13px; }
-  a { color:var(--ac); }
-  button { font:inherit; cursor:pointer; border:1px solid var(--brd); background:var(--card); color:var(--txt); padding:7px 12px; border-radius:8px; }
-  button:hover { border-color:var(--ac); } button:disabled { opacity:.5; cursor:wait; }
-  button.del { color:var(--bad); padding:3px 9px; font-size:13px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
-  .card { background:var(--card); border:1px solid var(--brd); border-radius:12px; padding:16px; }
-  .card h3 { margin:0 0 4px; font-size:14px; color:var(--mut); font-weight:600; }
-  .big { font-size:28px; font-weight:700; }
-  .barra { height:9px; background:var(--track); border-radius:99px; overflow:hidden; margin:10px 0 4px; }
-  .barra div { height:100%; border-radius:99px; } .verde { background:var(--ok); } .ambar { background:var(--warn); } .rojo { background:var(--bad); }
-  .aviso { border-radius:10px; padding:10px 14px; margin-bottom:8px; border:1px solid var(--warn); background:rgba(217,119,6,.12); }
-  .aviso.error { border-color:var(--bad); background:rgba(220,38,38,.1); }
-  .tabla { overflow-x:auto; background:var(--card); border:1px solid var(--brd); border-radius:12px; }
-  table { width:100%; border-collapse:collapse; min-width:520px; }
-  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--brd); font-size:14px; vertical-align:top; }
-  th { color:var(--mut); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
-  tr:last-child td { border-bottom:0; }
+  .alm-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin-bottom:8px; }
+  .alm-barra { height:9px; background:rgba(128,128,128,.25); border-radius:99px; overflow:hidden; margin:10px 0 4px; }
+  .alm-barra div { height:100%; border-radius:99px; }
+  .alm-verde { background:#4ade80; } .alm-ambar { background:#f5b94c; } .alm-rojo { background:#f87171; }
+  .alm-aviso { border-radius:10px; padding:10px 14px; margin-bottom:8px; border:1px solid #f5b94c; background:rgba(245,185,76,.12); }
+  .alm-aviso.error { border-color:#f87171; background:rgba(248,113,113,.1); }
+  .alm-mut { color:var(--text-muted, #9aa3b2); font-size:13px; }
+  .alm-tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:rgba(128,128,128,.2); margin:1px 2px 1px 0; }
+  .alm-form { display:none; margin-top:12px; border-top:1px solid rgba(128,128,128,.25); padding-top:12px; }
+  .alm-form.abierto { display:block; }
+  .alm-form .lbl { display:block; margin-bottom:10px; font-size:13px; }
+  .alm-form .field { width:100%; margin-top:4px; }
+  .alm-ayuda { font-size:13px; color:var(--text-muted, #9aa3b2); margin:0 0 10px; line-height:1.5; }
+  .alm-botones { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .alm-msg { margin-top:10px; font-size:13px; min-height:18px; }
+  .alm-msg.ok { color:#4ade80; } .alm-msg.mal { color:#f87171; }
+  .alm-del { color:#f87171; }
+  .alm-vacio { padding:16px; color:var(--text-muted, #9aa3b2); }
+  .alm-tabla table { min-width:520px; }
   td.num, th.num { text-align:right; white-space:nowrap; }
-  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:var(--track); color:var(--mut); margin:1px 2px 1px 0; }
-  .vacio { padding:16px; color:var(--mut); }
-  code { font-size:13px; word-break:break-all; }
+  code { word-break:break-all; font-size:13px; }
 </style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div>
-      <h1>Almacenamiento</h1>
-      <div class="muted" id="estado">Cargando…</div>
-    </div>
-    <div><button id="btn-recargar" type="button">Actualizar ahora</button></div>
-  </header>
 
-  <div id="alertas"></div>
-  <div class="grid" id="tarjetas"></div>
+<section class="hero">
+    <h1>Almacenamiento</h1>
+    <p id="estado">Cargando…</p>
+</section>
 
-  <h2>Neon · proyectos y ramas</h2>
-  <div class="tabla" id="neon"></div>
+<div id="alertas"></div>
 
-  <h2>Neon · tablas más pesadas de esta base</h2>
-  <div class="tabla" id="tablas"></div>
+<div class="section-title" style="margin-top:0;">Conexiones</div>
+<p class="alm-mut" style="margin-top:0;">Pega aquí las llaves de tus servicios. Se guardan cifradas y no se vuelven a mostrar.</p>
+<div class="alm-grid" id="conexiones"></div>
 
-  <h2>Cloudflare R2 · buckets y archivos más pesados</h2>
-  <div id="r2"></div>
+<div class="section-title">Resumen de espacio</div>
+<div class="alm-grid" id="tarjetas"></div>
+<div style="margin:6px 0 0;"><button class="btn" id="btn-recargar" type="button">Actualizar ahora</button></div>
 
-  <h2>Cloudinary · archivos más pesados</h2>
-  <div class="tabla" id="cld"></div>
-</div>
+<div class="section-title">Neon · proyectos y ramas</div>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="neon"></div></div>
+
+<div class="section-title">Neon · tablas más pesadas de esta base</div>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="tablas"></div></div>
+
+<div class="section-title">Cloudflare R2 · buckets y archivos más pesados</div>
+<div id="r2"></div>
+
+<div class="section-title">Cloudinary · archivos más pesados</div>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="cld"></div></div>
 
 {% raw %}
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const JSONH = { "Content-Type": "application/json" };
+
 function fmt(b) {
   if (b == null) return "—";
   const u = ["B","KB","MB","GB","TB"]; let i = 0; b = Number(b);
@@ -76,78 +66,218 @@ function fmt(b) {
   return (i ? b.toFixed(b >= 100 ? 0 : 1) : b) + " " + u[i];
 }
 function barra(pct, sinLimite) {
-  if (pct == null) return `<div class="muted">${sinLimite || "Sin límite configurado"}</div>`;
-  const c = pct >= 90 ? "rojo" : pct >= 80 ? "ambar" : "verde";
-  return `<div class="barra"><div class="${c}" style="width:${Math.min(pct,100)}%"></div></div><div class="muted">${pct}% usado</div>`;
+  if (pct == null) return `<div class="alm-mut">${sinLimite || "Sin límite configurado"}</div>`;
+  const c = pct >= 90 ? "alm-rojo" : pct >= 80 ? "alm-ambar" : "alm-verde";
+  return `<div class="alm-barra"><div class="${c}" style="width:${Math.min(pct,100)}%"></div></div><div class="alm-mut">${pct}% usado</div>`;
 }
 function tabla(cabeceras, filas, vacio) {
-  if (!filas.length) return `<div class="vacio">${vacio}</div>`;
+  if (!filas.length) return `<div class="alm-vacio">${vacio}</div>`;
   const th = cabeceras.map(h => `<th class="${h.num ? "num" : ""}">${h.t}</th>`).join("");
-  return `<table><thead><tr>${th}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
+  return `<table class="table-luxury"><thead><tr>${th}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
 }
-function errorOSinConfig(s, nombre, que) {
-  if (s.error) return `<div class="vacio">No se pudo leer ${nombre}: ${esc(s.error)}</div>`;
-  if (!s.configurado) return `<div class="vacio">${nombre} no está conectado. Agrega ${que} en las variables de entorno.</div>`;
+function errorOSinConfig(s, nombre) {
+  if (s.error) return `<div class="alm-vacio">No se pudo leer ${nombre}: ${esc(s.error)}</div>`;
+  if (!s.configurado) return `<div class="alm-vacio">${nombre} no está conectado. Conéctalo arriba, en «Conexiones».</div>`;
   return null;
 }
 
+/* ---------------- Conexiones ---------------- */
+const SERV = {
+  neon: {
+    titulo: "Neon",
+    ayuda: "En console.neon.tech entra a <strong>Account settings → API keys → Create new API key</strong> y pega la llave. El ID de organización solo se usa si tus proyectos están dentro de una organización.",
+    campos: [
+      ["NEON_API_KEY", "API key de Neon", true],
+      ["NEON_ORG_ID", "ID de organización (opcional)", false],
+      ["NEON_LIMITE_GB", "Límite por proyecto en GB (opcional, para ver el %)", false]],
+  },
+  r2: {
+    titulo: "Cloudflare R2",
+    ayuda: "En Cloudflare entra a <strong>R2 Object Storage</strong>. El Account ID aparece en esa página. Luego <strong>Manage API tokens → Create API token</strong> (permiso «Admin Read &amp; Write» para poder listar y borrar) y copia el Access Key ID y el Secret. Si tu token es de un solo bucket, escribe su nombre abajo.",
+    campos: [
+      ["R2_ACCOUNT_ID", "Account ID", false],
+      ["R2_ACCESS_KEY_ID", "Access Key ID", true],
+      ["R2_SECRET_ACCESS_KEY", "Secret Access Key", true],
+      ["R2_BUCKETS", "Buckets (opcional, separados por coma)", false],
+      ["R2_LIMITE_GB", "Límite en GB (vacío = 10 GB del plan gratuito)", false]],
+  },
+  cloudinary: {
+    titulo: "Cloudinary",
+    ayuda: "En cloudinary.com entra a <strong>Console → Settings → API Keys</strong>. Puedes pegar aquí la línea completa que empieza con <code>cloudinary://</code> y se llenan solos los tres datos.",
+    url: true,
+    campos: [
+      ["CLOUDINARY_CLOUD_NAME", "Cloud name", false],
+      ["CLOUDINARY_API_KEY", "API Key", true],
+      ["CLOUDINARY_API_SECRET", "API Secret", true],
+      ["CLOUDINARY_LIMITE_GB", "Límite en GB (opcional)", false]],
+  },
+};
+const abiertos = new Set();
+let conex = null;
+
+function campoInfo(n) { return (conex.campos || []).find(c => c.nombre === n) || {}; }
+
+function tarjetaConexion(k) {
+  const s = SERV[k], ok = conex.conectado[k];
+  const delPanel = s.campos.some(([n]) => campoInfo(n).origen === "panel");
+  const deEntorno = s.campos.some(([n]) => campoInfo(n).origen === "entorno");
+  const estado = ok ? `<span class="badge badge-green">Conectado</span>` : `<span class="badge badge-amber">Sin conectar</span>`;
+  const origen = ok ? (delPanel ? "Guardado desde el panel" : deEntorno ? "Viene de las variables de Render" : "") : "";
+  const campos = s.campos.map(([n, et, sec]) => {
+    const i = campoInfo(n);
+    const ph = sec ? (i.origen ? "•••••• guardado (déjalo vacío para conservarlo)" : "Pega aquí") : "";
+    return `<label class="lbl">${et}<input class="field" data-campo="${n}" data-sec="${sec ? 1 : 0}" type="${sec ? "password" : "text"}" autocomplete="off" placeholder="${ph}" value="${sec ? "" : esc(i.valor || "")}"></label>`;
+  }).join("");
+  const url = s.url ? `<label class="lbl">Pegar línea completa (cloudinary://…)<input class="field" data-url="1" type="password" autocomplete="off" placeholder="cloudinary://clave:secreto@nombre"></label>` : "";
+  return `<div class="luxury-card" data-serv="${k}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><h3 class="stat-label" style="margin:0;">${s.titulo}</h3>${estado}</div>
+    <div class="alm-mut" style="margin-top:6px;">${origen || "Aún no hay llaves."}</div>
+    <div class="alm-botones" style="margin-top:10px;"><button class="btn btn-primary" type="button" data-accion="abrir">${ok ? "Editar" : "Conectar"}</button>${ok ? `<button class="btn" type="button" data-accion="probar">Probar conexión</button>` : ""}</div>
+    <div class="alm-form ${abiertos.has(k) ? "abierto" : ""}">
+      <p class="alm-ayuda">${s.ayuda}</p>${url}${campos}
+      <div class="alm-botones"><button class="btn btn-primary" type="button" data-accion="guardar">Guardar</button>
+        ${delPanel ? `<button class="btn alm-del" type="button" data-accion="desconectar">Quitar llaves guardadas</button>` : ""}</div>
+    </div>
+    <div class="alm-msg"></div>
+  </div>`;
+}
+
+function verConexiones() {
+  const av = conex.ilegibles ? `<div class="alm-aviso error" style="grid-column:1/-1">Hay ${conex.ilegibles} llave(s) guardada(s) que ya no se pueden leer (cambió la SECRET_KEY). Vuelve a pegarlas.</div>` : "";
+  $("#conexiones").innerHTML = av + Object.keys(SERV).map(tarjetaConexion).join("");
+}
+
+async function cargarConexiones() {
+  try {
+    const r = await fetch("/api/almacenamiento/conexiones", { credentials: "same-origin" });
+    const d = await r.json();
+    if (!d.ok) throw new Error();
+    conex = d; verConexiones();
+  } catch (e) { $("#conexiones").innerHTML = `<div class="alm-aviso error">No se pudieron cargar las conexiones. Recarga la página.</div>`; }
+}
+
+async function post(url, cuerpo) {
+  const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: JSONH, body: JSON.stringify(cuerpo) });
+  return r.json();
+}
+
+document.addEventListener("input", e => {
+  const u = e.target.closest("[data-url]");
+  if (!u) return;
+  const m = u.value.trim().match(/^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/);
+  if (!m) return;
+  const t = u.closest("[data-serv]");
+  t.querySelector('[data-campo="CLOUDINARY_API_KEY"]').value = decodeURIComponent(m[1]);
+  t.querySelector('[data-campo="CLOUDINARY_API_SECRET"]').value = decodeURIComponent(m[2]);
+  t.querySelector('[data-campo="CLOUDINARY_CLOUD_NAME"]').value = m[3];
+  u.value = "";
+});
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-accion]");
+  if (!b) return;
+  const tarjeta = b.closest("[data-serv]"), k = tarjeta.dataset.serv, msg = tarjeta.querySelector(".alm-msg");
+  const decir = (t, ok) => { msg.textContent = t; msg.className = "alm-msg " + (ok ? "ok" : "mal"); };
+  const a = b.dataset.accion;
+  if (a === "abrir") {
+    abiertos.has(k) ? abiertos.delete(k) : abiertos.add(k);
+    tarjeta.querySelector(".alm-form").classList.toggle("abierto");
+    return;
+  }
+  b.disabled = true;
+  try {
+    if (a === "guardar") {
+      const valores = {};
+      tarjeta.querySelectorAll("[data-campo]").forEach(i => {
+        if (i.dataset.sec === "1" && !i.value.trim()) return;
+        valores[i.dataset.campo] = i.value;
+      });
+      const d = await post("/api/almacenamiento/conexiones/guardar", { servicio: k, valores, confirmar: true });
+      if (!d.ok) { decir(d.error || "No se pudo guardar.", false); b.disabled = false; return; }
+      await cargarConexiones();
+      const t2 = document.querySelector(`[data-serv="${k}"] .alm-msg`);
+      t2.textContent = "Guardado. Probando conexión…"; t2.className = "alm-msg";
+      const p = await post("/api/almacenamiento/conexiones/probar", { servicio: k });
+      t2.textContent = p.ok ? "Guardado. " + p.mensaje : "Guardado, pero falló la prueba: " + p.error;
+      t2.className = "alm-msg " + (p.ok ? "ok" : "mal");
+      cargar(true);
+      return;
+    }
+    if (a === "probar") {
+      decir("Probando…", true);
+      const p = await post("/api/almacenamiento/conexiones/probar", { servicio: k });
+      decir(p.ok ? p.mensaje : p.error, p.ok);
+    }
+    if (a === "desconectar") {
+      if (!confirm("¿Quitar las llaves guardadas de " + SERV[k].titulo + "?\n\nSi también están en Render, seguirán usándose esas.")) { b.disabled = false; return; }
+      const d = await post("/api/almacenamiento/conexiones/desconectar", { servicio: k, confirmar: true });
+      if (!d.ok) { decir(d.error || "No se pudo quitar.", false); b.disabled = false; return; }
+      abiertos.delete(k);
+      await cargarConexiones(); cargar(true);
+      return;
+    }
+  } catch (err) { decir("Error de conexión. Intenta de nuevo.", false); }
+  b.disabled = false;
+});
+
+/* ---------------- Resumen ---------------- */
 function tarjetas(d) {
   const n = d.neon, r = d.r2, c = d.cloudinary, h = [];
-  h.push(`<div class="card"><h3>Neon</h3>` + (n.error ? `<div class="muted">Error: ${esc(n.error)}</div>` :
-    !n.configurado ? `<div class="muted">Sin conectar</div>` :
-    `<div class="big">${fmt(n.total)}</div><div class="muted">${n.proyectos.length} proyecto(s)</div>` +
-    barra(Math.max(0, ...n.proyectos.map(p => p.pct || 0)) || null, "Define NEON_LIMITE_GB para ver el %")) + `</div>`);
-  h.push(`<div class="card"><h3>Cloudflare R2</h3>` + (r.error ? `<div class="muted">Error: ${esc(r.error)}</div>` :
-    !r.configurado ? `<div class="muted">Sin conectar</div>` :
-    `<div class="big">${fmt(r.total)}</div><div class="muted">${r.buckets.length} bucket(s) · límite ${fmt(r.limite)}</div>` + barra(r.pct)) + `</div>`);
-  h.push(`<div class="card"><h3>Cloudinary${c.plan ? " · " + esc(c.plan) : ""}</h3>` + (c.error ? `<div class="muted">Error: ${esc(c.error)}</div>` :
-    !c.configurado ? `<div class="muted">Sin conectar</div>` :
-    `<div class="big">${fmt(c.total)}</div><div class="muted">${c.recursos ?? "—"} archivos · ${c.derivados ?? "—"} derivados</div>` +
+  h.push(`<div class="luxury-card"><h3 class="stat-label">Neon</h3>` + (n.error ? `<div class="alm-mut">Error: ${esc(n.error)}</div>` :
+    !n.configurado ? `<div class="alm-mut">Sin conectar</div>` :
+    `<div class="stat-value">${fmt(n.total)}</div><div class="alm-mut">${n.proyectos.length} proyecto(s)</div>` +
+    barra(Math.max(0, ...n.proyectos.map(p => p.pct || 0)) || null, "Pon el límite en GB (Conexiones) para ver el %")) + `</div>`);
+  h.push(`<div class="luxury-card"><h3 class="stat-label">Cloudflare R2</h3>` + (r.error ? `<div class="alm-mut">Error: ${esc(r.error)}</div>` :
+    !r.configurado ? `<div class="alm-mut">Sin conectar</div>` :
+    `<div class="stat-value">${fmt(r.total)}</div><div class="alm-mut">${r.buckets.length} bucket(s) · límite ${fmt(r.limite)}</div>` + barra(r.pct)) + `</div>`);
+  h.push(`<div class="luxury-card"><h3 class="stat-label">Cloudinary${c.plan ? " · " + esc(c.plan) : ""}</h3>` + (c.error ? `<div class="alm-mut">Error: ${esc(c.error)}</div>` :
+    !c.configurado ? `<div class="alm-mut">Sin conectar</div>` :
+    `<div class="stat-value">${fmt(c.total)}</div><div class="alm-mut">${c.recursos ?? "—"} archivos · ${c.derivados ?? "—"} derivados</div>` +
     barra(c.pct, "Sin porcentaje disponible") +
-    (c.creditos && c.creditos.limite ? `<div class="muted">Créditos: ${c.creditos.usado} de ${c.creditos.limite}</div>` : "")) + `</div>`);
+    (c.creditos && c.creditos.limite ? `<div class="alm-mut">Créditos: ${c.creditos.usado} de ${c.creditos.limite}</div>` : "")) + `</div>`);
   $("#tarjetas").innerHTML = h.join("");
 }
 
 function verNeon(d) {
-  const n = d.neon, e = errorOSinConfig(n, "Neon", "NEON_API_KEY");
+  const n = d.neon, e = errorOSinConfig(n, "Neon");
   if (e) { $("#neon").innerHTML = e; return; }
   const filas = n.proyectos.map(p => `<tr>
-    <td><strong>${esc(p.nombre)}</strong><div class="muted">${esc(p.region || "")}</div>${p.aviso ? `<div class="muted">${esc(p.aviso)}</div>` : ""}</td>
-    <td>${p.bases.map(b => `<span class="tag">${esc(b)}</span>`).join("") || "—"}</td>
-    <td>${p.ramas.map(r => `<span class="tag">${esc(r.nombre)}${r.principal ? " ★" : ""} · ${fmt(r.bytes)}</span>`).join("") || "—"}</td>
-    <td class="num">${fmt(p.bytes)}${p.pct != null ? `<div class="muted">${p.pct}%</div>` : ""}</td></tr>`);
+    <td><strong>${esc(p.nombre)}</strong><div class="alm-mut">${esc(p.region || "")}</div>${p.aviso ? `<div class="alm-mut">${esc(p.aviso)}</div>` : ""}</td>
+    <td>${p.bases.map(b => `<span class="alm-tag">${esc(b)}</span>`).join("") || "—"}</td>
+    <td>${p.ramas.map(r => `<span class="alm-tag">${esc(r.nombre)}${r.principal ? " ★" : ""} · ${fmt(r.bytes)}</span>`).join("") || "—"}</td>
+    <td class="num">${fmt(p.bytes)}${p.pct != null ? `<div class="alm-mut">${p.pct}%</div>` : ""}</td></tr>`);
   $("#neon").innerHTML = tabla([{t:"Proyecto"},{t:"Bases (rama principal)"},{t:"Ramas"},{t:"Espacio",num:1}], filas, "No hay proyectos.");
 }
 
 function verTablas(d) {
   const t = d.tablas;
-  if (!t) { $("#tablas").innerHTML = `<div class="vacio">Esta app usa SQLite local; las tablas se ven cuando está conectada a Neon.</div>`; return; }
-  if (t.error) { $("#tablas").innerHTML = `<div class="vacio">No se pudo leer: ${esc(t.error)}</div>`; return; }
+  if (!t) { $("#tablas").innerHTML = `<div class="alm-vacio">Esta app usa SQLite local; las tablas se ven cuando está conectada a Neon.</div>`; return; }
+  if (t.error) { $("#tablas").innerHTML = `<div class="alm-vacio">No se pudo leer: ${esc(t.error)}</div>`; return; }
   const filas = t.tablas.map(x => `<tr><td><code>${esc(x.nombre)}</code></td><td class="num">${fmt(x.bytes)}</td></tr>`);
-  $("#tablas").innerHTML = `<div class="vacio" style="padding-bottom:0">Tamaño total de la base: <strong>${fmt(t.base)}</strong></div>` +
+  $("#tablas").innerHTML = `<div class="alm-vacio" style="padding-bottom:0">Tamaño total de la base: <strong>${fmt(t.base)}</strong></div>` +
     tabla([{t:"Tabla"},{t:"Tamaño (con índices)",num:1}], filas, "Sin tablas.");
 }
 
 function verR2(d) {
-  const r = d.r2, e = errorOSinConfig(r, "Cloudflare R2", "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY");
-  if (e) { $("#r2").innerHTML = `<div class="tabla">${e}</div>`; return; }
+  const r = d.r2, e = errorOSinConfig(r, "Cloudflare R2");
+  if (e) { $("#r2").innerHTML = `<div class="luxury-card">${e}</div>`; return; }
   $("#r2").innerHTML = r.buckets.map(b => {
-    if (b.error) return `<div class="tabla" style="margin-bottom:12px"><div class="vacio"><strong>${esc(b.nombre)}</strong>: ${esc(b.error)}</div></div>`;
+    if (b.error) return `<div class="luxury-card" style="margin-bottom:12px"><strong>${esc(b.nombre)}</strong>: ${esc(b.error)}</div>`;
     const filas = b.grandes.map(o => `<tr><td><code>${esc(o.key)}</code></td><td class="num">${fmt(o.bytes)}</td>
-      <td class="num"><button class="del" data-del="r2" data-bucket="${esc(b.nombre)}" data-key="${esc(o.key)}" data-nombre="${esc(b.nombre + "/" + o.key)}">Eliminar</button></td></tr>`);
-    return `<div style="margin-bottom:14px"><div class="muted" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong> · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
-      <div class="tabla">${tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "Bucket vacío.")}</div></div>`;
-  }).join("") || `<div class="tabla"><div class="vacio">No hay buckets.</div></div>`;
+      <td class="num"><button class="btn alm-del" data-del="r2" data-bucket="${esc(b.nombre)}" data-key="${esc(o.key)}" data-nombre="${esc(b.nombre + "/" + o.key)}">Eliminar</button></td></tr>`);
+    return `<div style="margin-bottom:14px"><div class="alm-mut" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong> · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
+      <div class="luxury-card alm-tabla" style="padding:0;overflow:hidden"><div class="table-wrap">${tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "Bucket vacío.")}</div></div></div>`;
+  }).join("") || `<div class="luxury-card">No hay buckets.</div>`;
 }
 
 function verCld(d) {
-  const c = d.cloudinary, e = errorOSinConfig(c, "Cloudinary", "CLOUDINARY_URL");
+  const c = d.cloudinary, e = errorOSinConfig(c, "Cloudinary");
   if (e) { $("#cld").innerHTML = e; return; }
-  const filas = c.grandes.map(a => `<tr><td><code>${esc(a.public_id)}</code><div class="muted">${esc(a.tipo)}${a.formato ? " · " + esc(a.formato) : ""}</div></td>
+  const filas = c.grandes.map(a => `<tr><td><code>${esc(a.public_id)}</code><div class="alm-mut">${esc(a.tipo)}${a.formato ? " · " + esc(a.formato) : ""}</div></td>
     <td class="num">${fmt(a.bytes)}</td>
-    <td class="num"><button class="del" data-del="cld" data-id="${esc(a.public_id)}" data-rt="${esc(a.tipo)}" data-nombre="${esc(a.tipo + "/" + a.public_id)}">Eliminar</button></td></tr>`);
+    <td class="num"><button class="btn alm-del" data-del="cld" data-id="${esc(a.public_id)}" data-rt="${esc(a.tipo)}" data-nombre="${esc(a.tipo + "/" + a.public_id)}">Eliminar</button></td></tr>`);
   $("#cld").innerHTML = tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "No hay archivos.") +
-    (c.muestra ? `<div class="vacio">Hay más archivos de los analizados; la lista corresponde a una muestra.</div>` : "");
+    (c.muestra ? `<div class="alm-vacio">Hay más archivos de los analizados; la lista corresponde a una muestra.</div>` : "");
 }
 
 async function cargar(forzar) {
@@ -156,7 +286,7 @@ async function cargar(forzar) {
     const r = await fetch("/api/almacenamiento/resumen" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || "Error");
-    $("#alertas").innerHTML = d.alertas.map(a => `<div class="aviso ${a.nivel === "error" ? "error" : ""}">${esc(a.texto)}</div>`).join("");
+    $("#alertas").innerHTML = d.alertas.map(a => `<div class="alm-aviso ${a.nivel === "error" ? "error" : ""}">${esc(a.texto)}</div>`).join("");
     tarjetas(d); verNeon(d); verTablas(d); verR2(d); verCld(d);
     $("#estado").textContent = "Actualizado " + new Date(d.generado).toLocaleString();
   } catch (err) {
@@ -175,16 +305,15 @@ document.addEventListener("click", async e => {
   const cuerpo = esR2 ? { bucket: b.dataset.bucket, key: b.dataset.key, confirmar: true }
                       : { public_id: b.dataset.id, resource_type: b.dataset.rt, confirmar: true };
   try {
-    const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
-    const d = await r.json();
+    const d = await post(url, cuerpo);
     if (!d.ok) { alert("No se pudo eliminar: " + (d.error || "error")); b.disabled = false; return; }
     cargar(true);
   } catch (err) { alert("No se pudo eliminar."); b.disabled = false; }
 });
 
 $("#btn-recargar").addEventListener("click", () => cargar(true));
+cargarConexiones();
 cargar(false);
 </script>
 {% endraw %}
-</body>
-</html>
+{% endblock %}
