@@ -38,6 +38,9 @@ UMBRAL_ALERTA = 80        # % de uso a partir del cual se avisa
 CAMPOS = {
     "NEON_API_KEY": ("neon", True), "NEON_ORG_ID": ("neon", False), "NEON_LIMITE_GB": ("neon", False),
     "NEON_LIMITE_CU": ("neon", False), "UPTIMEROBOT_API_KEY": ("uptimerobot", True),
+    # cuentas adicionales de Neon (2 a 5): cada una con su llave y, si hace falta, el ID de su organización
+    **{f"NEON_API_KEY_{i}": ("neon", True) for i in range(2, 6)},
+    **{f"NEON_ORG_ID_{i}": ("neon", False) for i in range(2, 6)},
     "R2_ACCOUNT_ID": ("r2", False), "R2_ACCESS_KEY_ID": ("r2", True), "R2_SECRET_ACCESS_KEY": ("r2", True),
     "R2_BUCKETS": ("r2", False), "R2_LIMITE_GB": ("r2", False),
     "CLOUDINARY_CLOUD_NAME": ("cloudinary", False), "CLOUDINARY_API_KEY": ("cloudinary", True),
@@ -123,12 +126,27 @@ def _http(url, metodo="GET", headers=None, timeout=20, datos=None):
 
 
 # --- NEON -------------------------------------------------------------------
-def _neon(ruta):
+def _neon_cuentas():
+    """Cuentas de Neon con llave guardada: [(etiqueta, llave, id_organizacion)]. La 1.ª es la principal."""
+    out = []
+    for i in range(1, 6):
+        suf = "" if i == 1 else f"_{i}"
+        llave = _env("NEON_API_KEY" + suf)
+        if llave:
+            out.append(("Principal" if i == 1 else f"Cuenta {i}", llave, _env("NEON_ORG_ID" + suf)))
+    return out
+
+
+def _neon(ruta, clave=None):
     return _http("https://console.neon.tech/api/v2" + ruta,
-                 headers={"Authorization": "Bearer " + _env("NEON_API_KEY"), "Accept": "application/json"})
+                 headers={"Authorization": "Bearer " + (clave or _env("NEON_API_KEY")), "Accept": "application/json"})
 
 
-def _neon_proyecto(p):
+def _ruta_proyectos(org):
+    return "/projects?limit=100" + ("&org_id=" + _uparse.quote(org) if org else "")
+
+
+def _neon_proyecto(p, clave=None):
     pid = p["id"]
     info = {"id": pid, "nombre": p.get("name"), "region": p.get("region_id"),
             "bytes": p.get("synthetic_storage_size") or 0, "ramas": [], "bases": [],
@@ -140,7 +158,7 @@ def _neon_proyecto(p):
             "activo_horas": (p["active_time_seconds"] / 3600) if isinstance(p.get("active_time_seconds"), (int, float)) else None,
             "periodo_inicio": p.get("consumption_period_start"), "periodo_fin": p.get("consumption_period_end")}
     try:
-        for r in _neon(f"/projects/{pid}/branches").get("branches", []):
+        for r in _neon(f"/projects/{pid}/branches", clave).get("branches", []):
             info["ramas"].append({"id": r["id"], "nombre": r.get("name"),
                                   "principal": bool(r.get("default") or r.get("primary")),
                                   "bytes": r.get("logical_size") or 0, "estado": r.get("current_state"),
@@ -152,7 +170,7 @@ def _neon_proyecto(p):
             info["bytes"] = sum(r["bytes"] for r in info["ramas"])
         prin = next((r for r in info["ramas"] if r["principal"]), info["ramas"][0] if info["ramas"] else None)
         if prin:
-            dbs = _neon(f"/projects/{pid}/branches/{prin['id']}/databases").get("databases", [])
+            dbs = _neon(f"/projects/{pid}/branches/{prin['id']}/databases", clave).get("databases", [])
             info["bases"] = [d.get("name") for d in dbs]
     except RuntimeError as e:
         info["aviso"] = str(e)
@@ -160,14 +178,23 @@ def _neon_proyecto(p):
 
 
 def datos_neon():
-    if not _env("NEON_API_KEY"):
+    cuentas = _neon_cuentas()
+    if not cuentas:
         return {"configurado": False}
-    ruta = "/projects?limit=100"
-    if _env("NEON_ORG_ID"):
-        ruta += "&org_id=" + _uparse.quote(_env("NEON_ORG_ID"))
-    proyectos = _neon(ruta).get("projects", [])
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        filas = list(ex.map(_neon_proyecto, proyectos))
+    filas, fallos = [], []
+    for etiqueta, clave, org in cuentas:            # una cuenta que falla no tumba a las demás
+        try:
+            proyectos = _neon(_ruta_proyectos(org), clave).get("projects", [])
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                fs = list(ex.map(lambda p, c=clave: _neon_proyecto(p, c), proyectos))
+        except RuntimeError as e:
+            fallos.append({"cuenta": etiqueta, "error": str(e)[:200]})
+            continue
+        for f in fs:
+            f["cuenta"] = etiqueta
+        filas += fs
+    if fallos and not filas and len(fallos) == len(cuentas):
+        raise RuntimeError("; ".join(f"{x['cuenta']}: {x['error']}" for x in fallos)[:300])
     limite = _gb("NEON_LIMITE_GB", "1")       # límite POR PROYECTO: plan gratuito de Neon = 1 GB; cámbialo en Conexiones
     lim_cu = _limite_cu()
     for f in filas:
@@ -178,7 +205,7 @@ def datos_neon():
         f["cu_restantes"], f["cu_proyeccion"] = _cu_restantes_y_proyeccion(f, lim_cu)
     filas.sort(key=lambda f: f["bytes"], reverse=True)
     return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas), "limite": limite,
-            "limite_cu": lim_cu}
+            "limite_cu": lim_cu, "cuentas": [c[0] for c in cuentas], "cuentas_error": fallos}
 
 
 def _cu_restantes_y_proyeccion(f, limite):
@@ -490,6 +517,8 @@ def _alertas(d):
         peor = max(pcts) if pcts else None
         if peor is not None and peor >= UMBRAL_ALERTA:
             avisos.append({"nivel": "alerta", "texto": f"{nombre} está al {peor}% de su límite."})
+    for c in (d["neon"].get("cuentas_error") or []):
+        avisos.append({"nivel": "error", "texto": f"Neon · {c['cuenta']}: no se pudo leer ({c['error']})"})
     for p in (d["neon"].get("proyectos") or []):
         if p.get("cu_pct") is not None and p["cu_pct"] >= UMBRAL_ALERTA:
             avisos.append({"nivel": "alerta", "texto": f"Neon · {p['nombre']}: horas de cómputo al {p['cu_pct']}% del límite del mes."})
@@ -598,7 +627,7 @@ def _por_proyecto(d, f):
             p = next((x for x in n.get("proyectos", []) if str(x.get("nombre", "")).lower() == f["neon"].lower()), None)
             if p:
                 lim = p.get("limite")
-                res["neon"] = {"estado": "ok", "nombre": p["nombre"], "bytes": p["bytes"], "pct": p.get("pct"),
+                res["neon"] = {"estado": "ok", "nombre": p["nombre"], "cuenta": p.get("cuenta"), "bytes": p["bytes"], "pct": p.get("pct"),
                                "limite": lim, "restante": _restante(p["bytes"], lim),
                                "region": p.get("region"), "creado": p.get("creado"), "actualizado": p.get("actualizado"),
                                "compute_s": p.get("compute_s"), "activo_s": p.get("activo_s"),
@@ -678,13 +707,16 @@ def _invalidar():
 def _probar(servicio):
     """Una llamada mínima a la API para confirmar que las llaves funcionan. Devuelve un texto."""
     if servicio == "neon":
-        if not _env("NEON_API_KEY"):
+        cuentas = _neon_cuentas()
+        if not cuentas:
             raise RuntimeError("Falta la API key de Neon.")
-        ruta = "/projects?limit=100"
-        if _env("NEON_ORG_ID"):
-            ruta += "&org_id=" + _uparse.quote(_env("NEON_ORG_ID"))
-        n = len(_neon(ruta).get("projects", []))
-        return f"Conectado. Se ven {n} proyecto(s)."
+        partes = []
+        for etiqueta, clave, org in cuentas:
+            try:
+                partes.append(f"{etiqueta}: {len(_neon(_ruta_proyectos(org), clave).get('projects', []))} proyecto(s)")
+            except RuntimeError as e:
+                raise RuntimeError(f"{etiqueta}: {e}") from None
+        return "Conectado. " + "; ".join(partes) + "."
     if servicio == "r2":
         if not _r2_configurado():
             raise RuntimeError("Faltan datos de R2 (Account ID, Access Key ID y Secret).")
@@ -1420,7 +1452,7 @@ def crear_blueprint(db, registrar):
             origen = _origen(nombre)
             campos.append({"nombre": nombre, "servicio": serv, "secreto": secreto, "origen": origen,
                            "valor": None if (secreto or not origen) else _env(nombre)})
-        listo = {"neon": bool(_env("NEON_API_KEY")), "r2": _r2_configurado(), "cloudinary": _cld_configurado(),
+        listo = {"neon": bool(_neon_cuentas()), "r2": _r2_configurado(), "cloudinary": _cld_configurado(),
                  "uptimerobot": _ur_configurado()}   # "costos" no es una conexión
         return jsonify(ok=True, campos=campos, conectado=listo, ilegibles=_estado["ilegibles"])
 

@@ -83,7 +83,7 @@
   /* ---------- resumen superior: barra, % usado y lo que queda ---------- */
   const tileNeon = (x, u) => {
     const hay = x.limite != null;
-    return '<div class="luxury-card ap-tile"><h3 class="stat-label">Neon · ' + esc(x.nombre) + '</h3><div class="ap-big">' + fmt(x.bytes) + "</div>" +
+    return '<div class="luxury-card ap-tile"><h3 class="stat-label">Neon · ' + esc(x.nombre) + (x.cuenta && x.cuenta !== "Principal" ? " (" + esc(x.cuenta) + ")" : "") + '</h3><div class="ap-big">' + fmt(x.bytes) + "</div>" +
       (hay ? barra(x.pct, u) + '<div class="ap-estado">Llevas <b>' + fpct(x.pct) + "</b> ocupado de " + fmt(x.limite) +
         ".<br>Te quedan <b>" + fmt(x.restante) + "</b> (" + fpct(Math.max(0, +(100 - x.pct).toFixed(1))) + ").</div>"
       : '<div class="ap-estado">' + mut("Define el límite en GB (Conexiones) para ver el porcentaje.") + "</div>") + "</div>";

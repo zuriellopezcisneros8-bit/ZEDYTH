@@ -121,10 +121,18 @@ function errorOSinConfig(s, nombre) {
 const SERV = {
   neon: {
     titulo: "Neon",
-    ayuda: "En console.neon.tech entra a <strong>Account settings → API keys → Create new API key</strong> y pega la llave. El ID de organización solo se usa si tus proyectos están dentro de una organización.",
+    ayuda: "En console.neon.tech entra a <strong>Account settings → API keys → Create new API key</strong> y pega la llave. El ID de organización solo se usa si tus proyectos están dentro de una organización. Si tienes proyectos en más de una cuenta u organización de Neon, pega la llave de la principal arriba y las demás en «Cuenta 2», «Cuenta 3»… (hasta 5): el panel suma todos los proyectos.",
     campos: [
       ["NEON_API_KEY", "API key de Neon", true],
       ["NEON_ORG_ID", "ID de organización (opcional)", false],
+      ["NEON_API_KEY_2", "Cuenta 2 · API key de Neon (opcional)", true],
+      ["NEON_ORG_ID_2", "Cuenta 2 · ID de organización (opcional)", false],
+      ["NEON_API_KEY_3", "Cuenta 3 · API key de Neon (opcional)", true],
+      ["NEON_ORG_ID_3", "Cuenta 3 · ID de organización (opcional)", false],
+      ["NEON_API_KEY_4", "Cuenta 4 · API key de Neon (opcional)", true],
+      ["NEON_ORG_ID_4", "Cuenta 4 · ID de organización (opcional)", false],
+      ["NEON_API_KEY_5", "Cuenta 5 · API key de Neon (opcional)", true],
+      ["NEON_ORG_ID_5", "Cuenta 5 · ID de organización (opcional)", false],
       ["NEON_LIMITE_GB", "Límite por proyecto en GB (opcional, para ver el %)", false],
       ["NEON_LIMITE_CU", "Límite de horas de cómputo (CU-h) por proyecto y mes (vacío = 100, el del plan gratuito)", false]],
   },
