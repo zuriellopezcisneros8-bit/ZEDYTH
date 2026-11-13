@@ -34,7 +34,8 @@
         }
 
         /* ===== Header: todo en una fila mientras quepa ===== */
-        html, body { max-width: 100%; overflow-x: hidden; }
+        html { max-width: 100%; }
+        body { max-width: 100%; overflow-x: hidden; overflow-x: clip; }   /* clip no crea contenedor de scroll */
         .top-header { box-sizing: border-box; max-width: 100%; }
         .top-header:not(.nav-collapsed) { flex-wrap: nowrap; }
         .top-header .nav-links,
@@ -178,9 +179,6 @@
 
         /* ===== Modo aplicación (PWA) ===== */
         html { -webkit-tap-highlight-color: transparent; }
-        @media (display-mode: standalone) {
-            html, body { overscroll-behavior-y: none; }
-        }
         .install-btn {
             display: none; align-items: center; justify-content: center;
             width: 36px; height: 36px; padding: 0; flex: none; cursor: pointer;
@@ -303,7 +301,12 @@
                 header.classList.add('nav-collapsed');
             }
 
-            function schedule() {
+            var ultimoAncho = window.innerWidth;
+            function schedule(e) {
+                if (e && e.type === 'resize' && e.isTrusted) {   // solo si cambió el ANCHO; al deslizar cambia el alto y no hay que recalcular
+                    if (window.innerWidth === ultimoAncho) return;
+                }
+                ultimoAncho = window.innerWidth;
                 if (raf) cancelAnimationFrame(raf);
                 raf = requestAnimationFrame(fit);
             }
@@ -428,4 +431,4 @@
     </script>
 
 </body>
-</html>
+</html>
