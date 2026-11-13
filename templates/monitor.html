@@ -1,0 +1,262 @@
+<!-- templates/monitor.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .mon-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:8px; }
+  .mon-mut { color:var(--text-muted, #9aa3b2); font-size:13px; }
+  .mon-badge { display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:99px; white-space:nowrap; }
+  .mon-ok { background:rgba(74,222,128,.18); color:#4ade80; }
+  .mon-mal { background:rgba(248,113,113,.18); color:#f87171; }
+  .mon-amb { background:rgba(245,185,76,.18); color:#f5b94c; }
+  .mon-gris { background:rgba(128,128,128,.22); color:var(--text-muted, #9aa3b2); }
+  .mon-rojo-t { color:#f87171; } .mon-ambar-t { color:#f5b94c; } .mon-verde-t { color:#4ade80; }
+  .mon-form { margin-top:10px; }
+  .mon-form .fila { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:12px; }
+  .mon-form label { display:block; font-size:13px; }
+  .mon-form .field { width:100%; margin-top:4px; }
+  .mon-botones { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .mon-msg { margin-top:10px; font-size:13px; min-height:18px; }
+  .mon-msg.ok { color:#4ade80; } .mon-msg.mal { color:#f87171; }
+  .mon-tabla table { min-width:760px; }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  .mon-acc { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+  .mon-acc .btn { padding:4px 10px; font-size:12px; }
+  .mon-del { color:#f87171; }
+  .mon-vacio { padding:16px; color:var(--text-muted, #9aa3b2); }
+  .mon-url { word-break:break-all; font-size:12px; }
+  details.mon-alta { margin-bottom:12px; }
+  details.mon-alta summary { cursor:pointer; font-weight:600; }
+  svg.mon-spark { display:block; margin-left:auto; }
+</style>
+
+<section class="hero">
+  <h1>Monitor</h1>
+  <p id="estado">Cargando…</p>
+</section>
+
+<div class="mon-grid" id="resumen-tarjetas"></div>
+
+<div class="section-title">Sitios vigilados</div>
+<details class="luxury-card mon-alta" id="alta">
+  <summary id="alta-titulo">Registrar una dirección</summary>
+  <div class="mon-form">
+    <p class="mon-mut" style="margin:0 0 12px;">El servidor visitará la dirección con el intervalo que elijas. Se declara «caído» tras 2 fallos seguidos y te llega una alerta al celular; cuando vuelve, otra. Para vigilar este mismo servidor usa su dirección <code>/healthz</code>: no toca la base de datos, así Neon puede dormirse.</p>
+    <div class="fila">
+      <label>Nombre<input class="field" id="f-nombre" maxlength="80" placeholder="ej. ZMARTHKET (API)"></label>
+      <label>Dirección<input class="field" id="f-url" maxlength="300" placeholder="https://mi-app.onrender.com/healthz" inputmode="url"></label>
+    </div>
+    <div class="fila">
+      <label>Revisar cada
+        <select class="field" id="f-intervalo">
+          {% for m in intervalos %}<option value="{{ m }}" {% if m == 5 %}selected{% endif %}>{{ m }} min</option>{% endfor %}
+        </select>
+      </label>
+      <label>Método
+        <select class="field" id="f-metodo"><option>GET</option><option>HEAD</option></select>
+      </label>
+      <label>Esperar respuesta en máximo (s)
+        <input class="field" id="f-timeout" type="number" min="1" max="{{ timeout_max }}" value="10">
+      </label>
+    </div>
+    <div class="fila">
+      <label>Se considera «en línea» si el código está entre
+        <span style="display:flex;gap:8px;margin-top:4px"><input class="field" id="f-cmin" type="number" min="100" max="599" value="200" style="margin:0"><input class="field" id="f-cmax" type="number" min="100" max="599" value="399" style="margin:0"></span>
+      </label>
+      <label>Texto que debe aparecer en la página (opcional)
+        <input class="field" id="f-texto" maxlength="100" placeholder="ej. ZEDYTH">
+      </label>
+    </div>
+    <div class="mon-botones">
+      <button class="btn" type="button" id="btn-probar">Probar ahora</button>
+      <button class="btn btn-primary" type="button" id="btn-guardar">Guardar</button>
+      <button class="btn" type="button" id="btn-propio">Usar este servidor (/healthz)</button>
+      <button class="btn" type="button" id="btn-cancelar" style="display:none">Cancelar edición</button>
+    </div>
+    <div class="mon-msg" id="msg"></div>
+  </div>
+</details>
+
+<div class="luxury-card mon-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="tabla"></div></div>
+
+<div class="section-title">Últimas caídas</div>
+<div class="luxury-card mon-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="caidas"></div></div>
+<p class="mon-mut" style="margin-top:10px;">Este monitor vive dentro del mismo servicio que el panel: si ese servicio se apaga o Render lo duerme, no hay quien avise. Para vigilar al propio servidor mantén un monitor externo (por ejemplo UptimeRobot) apuntando a <code>/healthz</code>.</p>
+
+{% raw %}
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const JSONH = { "Content-Type": "application/json" };
+let sitios = [], resumen = {}, editId = null;
+
+async function post(url, cuerpo) {
+  const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: JSONH, body: JSON.stringify(cuerpo || {}) });
+  try { return await r.json(); } catch (e) { return { ok: false, error: "Respuesta no válida (¿sesión vencida?)." }; }
+}
+const decir = (t, ok) => { const m = $("#msg"); m.textContent = t; m.className = "mon-msg " + (ok ? "ok" : "mal"); };
+
+function hace(iso) {
+  if (!iso) return "—";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "hace " + Math.round(s) + " s";
+  if (s < 3600) return "hace " + Math.round(s / 60) + " min";
+  if (s < 172800) return "hace " + Math.round(s / 3600) + " h";
+  return "hace " + Math.round(s / 86400) + " d";
+}
+function dur(s) {
+  s = Math.round(s || 0);
+  if (s < 60) return s + " s";
+  if (s < 3600) return Math.round(s / 60) + " min";
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h < 48 ? `${h} h ${m} min` : `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+const pct = v => v == null ? "—" : v.toFixed(v >= 99.995 ? 0 : 2) + "%";
+const clsPct = v => v == null ? "" : v >= 99.5 ? "mon-verde-t" : v >= 97 ? "mon-ambar-t" : "mon-rojo-t";
+
+function etiqueta(s) {
+  if (!s.activo) return `<span class="mon-badge mon-gris">En pausa</span>`;
+  if (s.estado === "abajo") return `<span class="mon-badge mon-mal">Caído</span>`;
+  if (s.estado === "nuevo") return `<span class="mon-badge mon-gris">${s.ultimo ? "Verificando…" : "Pendiente"}</span>`;
+  if (s.fallos > 0) return `<span class="mon-badge mon-amb">Reintentando</span>`;
+  return `<span class="mon-badge mon-ok">En línea</span>`;
+}
+
+function spark(serie) {
+  if (!serie || !serie.length) return `<span class="mon-mut">—</span>`;
+  const W = 120, H = 26, n = serie.length, bw = W / Math.max(n, 30);
+  const maxMs = Math.max(200, ...serie.filter(x => x[0]).map(x => x[1] || 0));
+  const barras = serie.map((x, i) => {
+    const alto = x[0] ? Math.max(3, Math.round((x[1] || 0) / maxMs * (H - 2))) : H;
+    return `<rect x="${(i * bw).toFixed(1)}" y="${H - alto}" width="${Math.max(bw - 0.6, 1).toFixed(1)}" height="${alto}" fill="${x[0] ? "#4ade80" : "#f87171"}" rx="0.5"/>`;
+  }).join("");
+  return `<svg class="mon-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Últimas respuestas">${barras}</svg>`;
+}
+
+function tarjetas() {
+  const act = sitios.filter(s => s.activo);
+  const caidos = act.filter(s => s.estado === "abajo").length;
+  const lentos = act.filter(s => s.ms != null).map(s => s.ms);
+  const prom = lentos.length ? Math.round(lentos.reduce((a, b) => a + b, 0) / lentos.length) : null;
+  const ssl = sitios.filter(s => s.ssl_dias != null).sort((a, b) => a.ssl_dias - b.ssl_dias)[0];
+  $("#resumen-tarjetas").innerHTML = [
+    `<div class="luxury-card"><h3 class="stat-label">Estado general</h3><div class="stat-value ${caidos ? "mon-rojo-t" : "mon-verde-t"}">${!sitios.length ? "—" : caidos ? caidos + " caído(s)" : "Todo en línea"}</div><div class="mon-mut">${act.length} activo(s) de ${sitios.length}</div></div>`,
+    `<div class="luxury-card"><h3 class="stat-label">Respuesta promedio</h3><div class="stat-value">${prom != null ? prom + " ms" : "—"}</div><div class="mon-mut">última visita de cada sitio</div></div>`,
+    `<div class="luxury-card"><h3 class="stat-label">Certificado más próximo</h3><div class="stat-value ${ssl && ssl.ssl_dias <= 14 ? "mon-ambar-t" : ""}">${ssl ? ssl.ssl_dias + " días" : "—"}</div><div class="mon-mut">${ssl ? esc(ssl.nombre) : "solo sitios https"}</div></div>`
+  ].join("");
+}
+
+function tabla() {
+  if (!sitios.length) { $("#tabla").innerHTML = `<div class="mon-vacio">Aún no vigilas nada. Abre «Registrar una dirección» y agrega la primera (por ejemplo, <code>${esc(location.origin)}/healthz</code>).</div>`; return; }
+  const filas = sitios.map(s => {
+    const r = resumen[String(s.id)] || {};
+    const u7 = r.u7 ?? s.hoy, u30 = r.u30;
+    const detalle = s.estado === "abajo" || s.fallos > 0 ? `<div class="mon-rojo-t" style="font-size:12px">${esc(s.error || "")}</div>` : "";
+    return `<tr>
+      <td><strong>${esc(s.nombre)}</strong><div class="mon-url mon-mut">${esc(s.metodo)} ${esc(s.url)}</div>${detalle}</td>
+      <td>${etiqueta(s)}<div class="mon-mut">${s.estado === "abajo" && s.desde ? "desde " + hace(s.desde) : "revisado " + hace(s.ultimo)}</div></td>
+      <td class="num">${s.codigo ?? "—"}<div class="mon-mut">${s.ms != null ? s.ms + " ms" : ""}</div></td>
+      <td class="num"><span class="${clsPct(s.hoy)}">${pct(s.hoy)}</span><div class="mon-mut">hoy</div></td>
+      <td class="num"><span class="${clsPct(u7)}">${pct(u7)}</span> · <span class="${clsPct(u30)}">${pct(u30)}</span><div class="mon-mut">7 d · 30 d</div></td>
+      <td class="num">${s.ssl_dias != null ? `<span class="${s.ssl_dias <= 14 ? "mon-ambar-t" : ""}">${s.ssl_dias} d</span>` : "—"}<div class="mon-mut">SSL</div></td>
+      <td class="num">${spark(s.serie)}<div class="mon-mut">cada ${s.intervalo_min} min</div></td>
+      <td><div class="mon-acc">
+        <button class="btn" data-a="revisar" data-id="${s.id}">Revisar</button>
+        <button class="btn" data-a="editar" data-id="${s.id}">Editar</button>
+        <button class="btn" data-a="pausar" data-id="${s.id}">${s.activo ? "Pausar" : "Reanudar"}</button>
+        <button class="btn mon-del" data-a="eliminar" data-id="${s.id}">Eliminar</button>
+      </div></td></tr>`;
+  });
+  const th = ["Sitio", "Estado", "Código", "Hoy", "Disponibilidad", "SSL", "Respuestas recientes", ""];
+  $("#tabla").innerHTML = `<table class="table-luxury"><thead><tr>${th.map((t, i) => `<th class="${i >= 2 && i <= 6 ? "num" : ""}">${t}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
+}
+
+function caidas(lista) {
+  if (!lista.length) { $("#caidas").innerHTML = `<div class="mon-vacio">Sin caídas registradas.</div>`; return; }
+  const filas = lista.map(c => `<tr><td><strong>${esc(c.sitio)}</strong></td><td>${new Date(c.inicio).toLocaleString("es-MX")}</td>
+    <td>${c.fin ? "Recuperado" : `<span class="mon-rojo-t">Sigue caído</span>`}</td><td class="num">${dur(c.duracion_s)}</td><td class="mon-mut">${esc(c.motivo || "")}</td></tr>`);
+  $("#caidas").innerHTML = `<table class="table-luxury"><thead><tr><th>Sitio</th><th>Inicio</th><th>Estado</th><th class="num">Duró</th><th>Motivo</th></tr></thead><tbody>${filas.join("")}</tbody></table>`;
+}
+
+async function cargarEstado() {
+  try {
+    const r = await fetch("/api/monitor/estado", { credentials: "same-origin" });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "Error");
+    sitios = d.sitios;
+    $("#estado").textContent = d.listo ? "Actualizado " + new Date().toLocaleTimeString("es-MX") + " · se refresca solo cada 30 s" : "El monitor aún no arranca (reintenta en un minuto).";
+    tarjetas(); tabla();
+  } catch (e) { $("#estado").textContent = "No se pudo cargar (¿sesión vencida?). Recarga la página."; }
+}
+async function cargarResumen() {
+  try {
+    const r = await fetch("/api/monitor/resumen", { credentials: "same-origin" });
+    const d = await r.json();
+    if (!d.ok) { $("#caidas").innerHTML = `<div class="mon-vacio">${esc(d.error || "No se pudo leer el historial.")}</div>`; return; }
+    resumen = d.sitios; caidas(d.caidas); tabla();
+  } catch (e) { $("#caidas").innerHTML = `<div class="mon-vacio">No se pudo leer el historial.</div>`; }
+}
+
+/* ---- formulario ---- */
+const leerForm = () => ({ nombre: $("#f-nombre").value, url: $("#f-url").value.trim(), intervalo_min: $("#f-intervalo").value, metodo: $("#f-metodo").value,
+  timeout_s: $("#f-timeout").value, cod_min: $("#f-cmin").value, cod_max: $("#f-cmax").value, texto: $("#f-texto").value });
+function llenarForm(s) {
+  $("#f-nombre").value = s ? s.nombre : ""; $("#f-url").value = s ? s.url : ""; $("#f-intervalo").value = s ? s.intervalo_min : 5;
+  $("#f-metodo").value = s ? s.metodo : "GET"; $("#f-timeout").value = s ? s.timeout_s : 10; $("#f-cmin").value = s ? s.cod_min : 200;
+  $("#f-cmax").value = s ? s.cod_max : 399; $("#f-texto").value = s ? s.texto : "";
+  editId = s ? s.id : null;
+  $("#alta-titulo").textContent = s ? "Editando: " + s.nombre : "Registrar una dirección";
+  $("#btn-cancelar").style.display = s ? "" : "none";
+  $("#btn-guardar").textContent = s ? "Guardar cambios" : "Guardar";
+  $("#msg").textContent = "";
+}
+$("#btn-cancelar").addEventListener("click", () => { llenarForm(null); $("#alta").open = false; });
+$("#btn-propio").addEventListener("click", () => { $("#f-url").value = location.origin + "/healthz"; if (!$("#f-nombre").value) $("#f-nombre").value = "Este servidor"; });
+
+$("#btn-probar").addEventListener("click", async e => {
+  const b = e.currentTarget; b.disabled = true; decir("Visitando la dirección…", true);
+  try {
+    const d = await post("/api/monitor/probar", leerForm());
+    if (!d.ok) decir(d.error || "No se pudo probar.", false);
+    else if (d.resultado.ok) decir(`Responde bien: código ${d.resultado.codigo} en ${d.resultado.ms} ms` + (d.resultado.ssl_dias != null ? ` · certificado vence en ${d.resultado.ssl_dias} días` : ""), true);
+    else decir("Falla: " + d.resultado.error, false);
+  } catch (err) { decir("Error de conexión. Intenta de nuevo.", false); }
+  b.disabled = false;
+});
+
+$("#btn-guardar").addEventListener("click", async e => {
+  const b = e.currentTarget; b.disabled = true;
+  try {
+    const d = await post(editId ? `/api/monitor/sitios/${editId}/editar` : "/api/monitor/sitios", leerForm());
+    if (!d.ok) { decir(d.error || "No se pudo guardar.", false); b.disabled = false; return; }
+    llenarForm(null); decir("Guardado. La primera visita se hace en unos segundos.", true);
+    await cargarEstado(); cargarResumen();
+    setTimeout(cargarEstado, 8000);
+  } catch (err) { decir("Error de conexión. Intenta de nuevo.", false); }
+  b.disabled = false;
+});
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-a]");
+  if (!b) return;
+  const id = Number(b.dataset.id), s = sitios.find(x => x.id === id), a = b.dataset.a;
+  if (!s) return;
+  if (a === "editar") { llenarForm(s); $("#alta").open = true; $("#alta").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+  if (a === "eliminar" && !confirm(`¿Eliminar «${s.nombre}» y todo su historial?\n\nNo se puede deshacer.`)) return;
+  b.disabled = true;
+  try {
+    const d = a === "revisar" ? await post(`/api/monitor/sitios/${id}/revisar`)
+      : a === "pausar" ? await post(`/api/monitor/sitios/${id}/pausar`, { activo: !s.activo })
+      : await post(`/api/monitor/sitios/${id}/eliminar`, { confirmar: true });
+    if (!d.ok) { alert(d.error || "No se pudo completar."); b.disabled = false; return; }
+    await cargarEstado();
+    if (a === "revisar") setTimeout(cargarEstado, 6000);
+    if (a === "eliminar") cargarResumen();
+  } catch (err) { alert("Error de conexión."); b.disabled = false; }
+});
+
+cargarEstado(); cargarResumen();
+setInterval(() => { if (!document.hidden) cargarEstado(); }, 30000);   // solo memoria del servidor: no despierta la base
+</script>
+{% endraw %}
+{% endblock %}

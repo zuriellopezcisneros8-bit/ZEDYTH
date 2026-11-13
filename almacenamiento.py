@@ -161,9 +161,35 @@ def datos_neon():
         f["pct"] = _pct(f["bytes"], limite)
         f["cu_limite"] = lim_cu
         f["cu_pct"] = _pct(f["cu_horas"], lim_cu) if f["cu_horas"] is not None else None
+        f["cu_restantes"], f["cu_proyeccion"] = _cu_restantes_y_proyeccion(f, lim_cu)
     filas.sort(key=lambda f: f["bytes"], reverse=True)
     return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas), "limite": limite,
             "limite_cu": lim_cu}
+
+
+def _cu_restantes_y_proyeccion(f, limite):
+    """Horas de cómputo que le quedan al proyecto este mes y cuántas llevaría al cierre del periodo si sigue al ritmo actual.
+    La proyección es None el primer día del periodo (todavía no hay ritmo confiable)."""
+    h = f.get("cu_horas")
+    if h is None:
+        return None, None
+    restantes = round(max(limite - h, 0.0), 2)
+    ini, fin = _fecha_utc(f.get("periodo_inicio")), _fecha_utc(f.get("periodo_fin"))
+    if not ini or not fin or fin <= ini:
+        return restantes, None
+    transcurrido = (datetime.now(timezone.utc) - ini).total_seconds()
+    if transcurrido < 86400:
+        return restantes, None
+    total = (fin - ini).total_seconds()
+    return restantes, round(h * total / min(transcurrido, total), 1)
+
+
+def _fecha_utc(iso):
+    try:
+        f = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return f if f.tzinfo else f.replace(tzinfo=timezone.utc)
 
 
 def _limite_cu():
@@ -415,6 +441,12 @@ def _alertas(d):
     for p in (d["neon"].get("proyectos") or []):
         if p.get("cu_pct") is not None and p["cu_pct"] >= UMBRAL_ALERTA:
             avisos.append({"nivel": "alerta", "texto": f"Neon · {p['nombre']}: horas de cómputo al {p['cu_pct']}% del límite del mes."})
+    for p in (d["neon"].get("proyectos") or []):
+        lim = p.get("cu_limite")
+        if (p.get("cu_proyeccion") is not None and lim and p["cu_proyeccion"] > lim
+                and not (p.get("cu_pct") is not None and p["cu_pct"] >= UMBRAL_ALERTA)):
+            avisos.append({"nivel": "alerta", "texto": f"Neon · {p['nombre']}: al ritmo actual llegarías a ~{p['cu_proyeccion']} CU-h este mes "
+                                                       f"(límite {lim:g}). Revisa qué mantiene despierta la base."})
     for m in ((d.get("uptimerobot") or {}).get("monitores") or []):
         if m["caido"]:
             avisos.append({"nivel": "error", "texto": f"UptimeRobot: «{m['nombre']}» está caído."})

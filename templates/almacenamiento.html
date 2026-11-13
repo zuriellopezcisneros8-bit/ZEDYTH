@@ -50,6 +50,10 @@
 <div class="alm-grid" id="tarjetas"></div>
 <div style="margin:6px 0 0;"><button class="btn" id="btn-recargar" type="button">Actualizar ahora</button></div>
 
+<div class="section-title">Neon · horas de cómputo de este mes</div>
+<p class="alm-mut" style="margin-top:0;">Una hora de cómputo (CU-h) es 1 hora con la base despierta usando 1 CPU. Con 0.25 CU hacen falta 4 horas despierta para gastar 1 CU-h. El límite se cambia en «Conexiones → Neon» (el plan gratuito de Neon ha cambiado de cifra con el tiempo: confírmala en tu consola de Neon).</p>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="computo"></div></div>
+
 <div class="section-title">Disponibilidad · UptimeRobot</div>
 <div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="uptime"></div></div>
 
@@ -293,6 +297,26 @@ const proyDe = (d, tipo, nombre) => {
     : `<div class="alm-mut" style="color:#b45309">Sin proyecto asignado — vincúlalo en «Editar proyecto»</div>`;
 };
 
+function verComputo(d) {
+  const n = d.neon, e = errorOSinConfig(n, "Neon");
+  if (e) { $("#computo").innerHTML = e; return; }
+  const ps = (n.proyectos || []).slice().sort((a, b) => (b.cu_horas ?? -1) - (a.cu_horas ?? -1));
+  const filas = ps.map(p => {
+    if (p.cu_horas == null) return `<tr><td><strong>${esc(p.nombre)}</strong></td><td colspan="5" class="alm-mut">Neon no entregó el dato de cómputo de este proyecto.</td></tr>`;
+    const pasa = p.cu_proyeccion != null && p.cu_limite && p.cu_proyeccion > p.cu_limite;
+    const proy = p.cu_proyeccion == null ? `<span class="alm-mut">aún sin ritmo</span>`
+      : `<span class="${pasa ? "alm-rojo-t" : "alm-verde-t"}">${p.cu_proyeccion.toFixed(1)} CU-h</span>` + (pasa ? `<div class="alm-mut">no alcanzaría el mes</div>` : "");
+    return `<tr>
+      <td><strong>${esc(p.nombre)}</strong>${p.activo_horas != null ? `<div class="alm-mut">Base despierta ${p.activo_horas.toFixed(1)} h</div>` : ""}</td>
+      <td class="num"><strong>${p.cu_horas.toFixed(1)}</strong> CU-h${barra(p.cu_pct)}</td>
+      <td class="num">${p.cu_limite != null ? p.cu_limite : "—"} CU-h</td>
+      <td class="num">${p.cu_restantes != null ? p.cu_restantes.toFixed(1) + " CU-h" : "—"}</td>
+      <td class="num">${proy}</td>
+      <td class="num">${p.periodo_fin ? fmtFecha(p.periodo_fin.slice(0, 10)) : "—"}</td></tr>`;
+  });
+  $("#computo").innerHTML = tabla([{t:"Proyecto"},{t:"Usadas este mes",num:1},{t:"Límite",num:1},{t:"Te quedan",num:1},{t:"Al cierre del mes (ritmo actual)",num:1},{t:"Se reinicia",num:1}], filas, "No hay proyectos.");
+}
+
 function verNeon(d) {
   const n = d.neon, e = errorOSinConfig(n, "Neon");
   if (e) { $("#neon").innerHTML = e; return; }
@@ -499,7 +523,7 @@ async function cargar(forzar) {
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || "Error");
     $("#alertas").innerHTML = d.alertas.map(a => `<div class="alm-aviso ${a.nivel === "error" ? "error" : ""}">${esc(a.texto)}</div>`).join("");
-    tarjetas(d); verNeon(d); verTablas(d); verR2(d); verCld(d);
+    tarjetas(d); verComputo(d); verNeon(d); verTablas(d); verR2(d); verCld(d);
     cargarHistorial(); cargarCostos();
     $("#estado").textContent = "Actualizado " + new Date(d.generado).toLocaleString();
   } catch (err) {

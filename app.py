@@ -16,6 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import zedith
 import notificar
+import monitor
 
 app = Flask(__name__)
 EN_RENDER = bool(os.environ.get("RENDER"))   # Render define esta variable en sus servidores
@@ -712,6 +713,7 @@ def inicializacion_y_seguridad():
         app.respaldo_hoy = date.today()
         
     iniciar_vigilante()
+    monitor.iniciar()          # monitor de disponibilidad HTTP(S): carga los sitios y arranca su hilo (una sola vez)
 
     # 2. Proteger todo el panel, excepto el login y los estáticos
     if not current_user.is_authenticated and request.endpoint not in RUTAS_PUBLICAS:
@@ -2384,6 +2386,7 @@ def _vigilante():
                     ultima_revision = time.time()
                     revisar_alertas()
                     almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
+                    monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
         except Exception as e:
             app.logger.error("Vigilante de alertas: %s", e)
 
@@ -2461,10 +2464,12 @@ def push_revisar():
     if _hora_de_avisar():
         revisar_alertas()
     almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
+    monitor.volcar()
     return {"ok": True, "reintentados": reintentados}
 
 import almacenamiento
 app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
+app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
 
 
 if __name__ == '__main__':
