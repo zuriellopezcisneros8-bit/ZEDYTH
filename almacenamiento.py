@@ -20,7 +20,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib import error as _uerr, parse as _uparse, request as _ureq
 
 from flask import Blueprint, current_app, jsonify, render_template, request
@@ -36,6 +36,7 @@ UMBRAL_ALERTA = 80        # % de uso a partir del cual se avisa
 # Campos que se pueden guardar desde el panel: nombre -> (servicio, es_secreto)
 CAMPOS = {
     "NEON_API_KEY": ("neon", True), "NEON_ORG_ID": ("neon", False), "NEON_LIMITE_GB": ("neon", False),
+    "NEON_LIMITE_CU": ("neon", False), "UPTIMEROBOT_API_KEY": ("uptimerobot", True),
     "R2_ACCOUNT_ID": ("r2", False), "R2_ACCESS_KEY_ID": ("r2", True), "R2_SECRET_ACCESS_KEY": ("r2", True),
     "R2_BUCKETS": ("r2", False), "R2_LIMITE_GB": ("r2", False),
     "CLOUDINARY_CLOUD_NAME": ("cloudinary", False), "CLOUDINARY_API_KEY": ("cloudinary", True),
@@ -44,7 +45,7 @@ CAMPOS = {
     "COSTO_USD_MXN": ("costos", False), "R2_PRECIO_GB": ("costos", False), "R2_GRATIS_GB": ("costos", False),
     "NEON_PRECIO_GB": ("costos", False), "NEON_GRATIS_TOTAL_GB": ("costos", False), "NEON_OTROS_USD": ("costos", False),
 }
-SERVICIOS = ("neon", "r2", "cloudinary", "costos")
+SERVICIOS = ("neon", "r2", "cloudinary", "uptimerobot", "costos")
 _guardadas = {}           # valores guardados desde el panel (ya descifrados, solo en memoria)
 _estado = {"tabla": False, "tabla_h": False, "limpieza": None, "ilegibles": 0}
 
@@ -95,8 +96,8 @@ def _pct(usado, limite):
     return 0.01 if (usado and p == 0) else p      # algo usado pero minúsculo: se muestra como "<0.1%"
 
 
-def _http(url, metodo="GET", headers=None, timeout=20):
-    req = _ureq.Request(url, method=metodo, headers=headers or {})
+def _http(url, metodo="GET", headers=None, timeout=20, datos=None):
+    req = _ureq.Request(url, data=datos, method=metodo, headers=headers or {})
     try:
         with _ureq.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8") or "{}")
@@ -119,7 +120,11 @@ def _neon_proyecto(p):
             "bytes": p.get("synthetic_storage_size") or 0, "ramas": [], "bases": [],
             "creado": p.get("created_at"), "actualizado": p.get("updated_at"),
             "compute_s": p.get("compute_time_seconds"), "activo_s": p.get("active_time_seconds"),
-            "escrito": p.get("written_data_bytes"), "transferencia": p.get("data_transfer_bytes")}
+            "escrito": p.get("written_data_bytes"), "transferencia": p.get("data_transfer_bytes"),
+            # compute_time_seconds = CPU-segundos (1 CPU por 1 s = 1): /3600 = CU-horas, lo que cuenta el plan gratis (100 por proyecto)
+            "cu_horas": (p["compute_time_seconds"] / 3600) if isinstance(p.get("compute_time_seconds"), (int, float)) else None,
+            "activo_horas": (p["active_time_seconds"] / 3600) if isinstance(p.get("active_time_seconds"), (int, float)) else None,
+            "periodo_inicio": p.get("consumption_period_start"), "periodo_fin": p.get("consumption_period_end")}
     try:
         for r in _neon(f"/projects/{pid}/branches").get("branches", []):
             info["ramas"].append({"id": r["id"], "nombre": r.get("name"),
@@ -150,11 +155,24 @@ def datos_neon():
     with ThreadPoolExecutor(max_workers=4) as ex:
         filas = list(ex.map(_neon_proyecto, proyectos))
     limite = _gb("NEON_LIMITE_GB", "1")       # límite POR PROYECTO: plan gratuito de Neon = 1 GB; cámbialo en Conexiones
+    lim_cu = _limite_cu()
     for f in filas:
         f["limite"] = limite
         f["pct"] = _pct(f["bytes"], limite)
+        f["cu_limite"] = lim_cu
+        f["cu_pct"] = _pct(f["cu_horas"], lim_cu) if f["cu_horas"] is not None else None
     filas.sort(key=lambda f: f["bytes"], reverse=True)
-    return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas), "limite": limite}
+    return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas), "limite": limite,
+            "limite_cu": lim_cu}
+
+
+def _limite_cu():
+    """Horas de cómputo (CU-horas) por proyecto y por mes: plan gratuito de Neon = 100; cámbialo en Conexiones."""
+    try:
+        v = float(_env("NEON_LIMITE_CU", "100"))
+    except ValueError:
+        return 100.0
+    return v if math.isfinite(v) and v > 0 else 100.0
 
 
 def tablas_locales(db):
@@ -311,6 +329,63 @@ def datos_cloudinary():
             "carpetas": {k: {"bytes": v[0], "archivos": v[1]} for k, v in carp.items()}}
 
 
+# --- UPTIMEROBOT (monitoreo de que todo esté en línea) -------------------------
+# Se usa la API v2 (getMonitors) con la llave de SOLO LECTURA: así, aunque se filtrara, no podría pausar ni borrar monitores.
+UR_ESTADOS = {0: "pausado", 1: "sin verificar", 2: "en línea", 8: "parece caído", 9: "caído"}
+
+
+def _ur_configurado():
+    return bool(_env("UPTIMEROBOT_API_KEY"))
+
+
+def _ur(metodo, campos):
+    cuerpo = _uparse.urlencode(dict(campos, api_key=_env("UPTIMEROBOT_API_KEY"), format="json")).encode()
+    r = _http("https://api.uptimerobot.com/v2/" + metodo, "POST",
+              {"Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache"}, datos=cuerpo)
+    if r.get("stat") != "ok":
+        raise RuntimeError("UptimeRobot: " + str((r.get("error") or {}).get("message") or "respuesta no válida")[:150])
+    return r
+
+
+def _numero(x):
+    try:
+        v = float(x)
+        return v if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _monitor_ur(m):
+    ratios = [_numero(x) for x in str(m.get("custom_uptime_ratio") or "").split("-")]      # orden pedido: 1-7-30 días
+    ratios += [None] * (3 - len(ratios))
+    valores = [v for v in (_numero(x.get("value")) for x in (m.get("response_times") or []) if isinstance(x, dict)) if v is not None]
+    media = _numero(m.get("average_response_time"))
+    if media is None and valores:
+        media = sum(valores) / len(valores)
+    caidas = []
+    for lg in (m.get("logs") or [])[:5]:
+        if isinstance(lg, dict) and lg.get("type") == 1 and _numero(lg.get("datetime")):
+            caidas.append({"fecha": datetime.utcfromtimestamp(int(lg["datetime"])).isoformat() + "Z",
+                           "duracion_s": _numero(lg.get("duration"))})
+    cod = _numero(m.get("status"))
+    cod = int(cod) if cod is not None else None
+    return {"id": m.get("id"), "nombre": m.get("friendly_name") or m.get("url") or "Monitor", "url": m.get("url"),
+            "intervalo_s": m.get("interval"), "codigo": cod, "estado": UR_ESTADOS.get(cod, "desconocido"),
+            "caido": cod in (8, 9), "uptime": {"24h": ratios[0], "7d": ratios[1], "30d": ratios[2]},
+            "respuesta_ms": None if media is None else round(media), "caidas": caidas}
+
+
+def datos_uptime():
+    if not _ur_configurado():
+        return {"configurado": False}
+    r = _ur("getMonitors", {"custom_uptime_ratios": "1-7-30", "response_times": 1, "response_times_limit": 24,
+                            "logs": 1, "log_types": "1", "logs_limit": 5})
+    mons = [_monitor_ur(m) for m in (r.get("monitors") or []) if isinstance(m, dict)]
+    mons.sort(key=lambda m: (not m["caido"], m["nombre"].lower()))
+    return {"configurado": True, "monitores": mons, "total": len(mons), "caidos": sum(1 for m in mons if m["caido"]),
+            "pausados": sum(1 for m in mons if m["codigo"] == 0)}
+
+
 # --- resumen general ----------------------------------------------------------
 _cache = {"t": 0.0, "datos": None}
 _lock = threading.Lock()
@@ -327,7 +402,8 @@ def _seguro(fn):
 
 def _alertas(d):
     avisos = []
-    for nombre, s in (("Neon", d["neon"]), ("Cloudflare R2", d["r2"]), ("Cloudinary", d["cloudinary"])):
+    for nombre, s in (("Neon", d["neon"]), ("Cloudflare R2", d["r2"]), ("Cloudinary", d["cloudinary"]),
+                      ("UptimeRobot", d.get("uptimerobot") or {})):
         if s.get("error"):
             avisos.append({"nivel": "error", "texto": f"{nombre}: no se pudo leer ({s['error']})"})
             continue
@@ -336,6 +412,14 @@ def _alertas(d):
         peor = max(pcts) if pcts else None
         if peor is not None and peor >= UMBRAL_ALERTA:
             avisos.append({"nivel": "alerta", "texto": f"{nombre} está al {peor}% de su límite."})
+    for p in (d["neon"].get("proyectos") or []):
+        if p.get("cu_pct") is not None and p["cu_pct"] >= UMBRAL_ALERTA:
+            avisos.append({"nivel": "alerta", "texto": f"Neon · {p['nombre']}: horas de cómputo al {p['cu_pct']}% del límite del mes."})
+    for m in ((d.get("uptimerobot") or {}).get("monitores") or []):
+        if m["caido"]:
+            avisos.append({"nivel": "error", "texto": f"UptimeRobot: «{m['nombre']}» está caído."})
+        elif m["uptime"].get("7d") is not None and m["uptime"]["7d"] < 99:
+            avisos.append({"nivel": "alerta", "texto": f"UptimeRobot: «{m['nombre']}» tuvo {m['uptime']['7d']}% de disponibilidad en 7 días."})
     return avisos
 
 
@@ -495,9 +579,9 @@ def _por_proyecto(d, f):
 
 
 def _armar():
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        f1, f2, f3 = (ex.submit(_seguro, fn) for fn in (datos_neon, datos_r2, datos_cloudinary))
-        d = {"neon": f1.result(), "r2": f2.result(), "cloudinary": f3.result()}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        f1, f2, f3, f4 = (ex.submit(_seguro, fn) for fn in (datos_neon, datos_r2, datos_cloudinary, datos_uptime))
+        d = {"neon": f1.result(), "r2": f2.result(), "cloudinary": f3.result(), "uptimerobot": f4.result()}
     d["alertas"] = _alertas(d)
     d["generado"] = datetime.utcnow().isoformat() + "Z"
     return d
@@ -532,6 +616,11 @@ def _probar(servicio):
             raise RuntimeError("Faltan datos de Cloudinary.")
         uso = _cld("/usage")
         return f"Conectado. Plan: {uso.get('plan') or 'desconocido'}."
+    if servicio == "uptimerobot":
+        if not _ur_configurado():
+            raise RuntimeError("Falta la API key de UptimeRobot.")
+        n = len(_ur("getMonitors", {}).get("monitors") or [])
+        return f"Conectado. Se ven {n} monitor(es)."
     raise RuntimeError("Servicio desconocido.")
 
 
@@ -550,6 +639,8 @@ def _etiqueta(clave):
         return "Cloudinary · créditos"
     if clave.startswith("neon:"):
         return "Neon · " + clave[5:]
+    if clave.startswith("neon_cu:"):
+        return "Neon · cómputo · " + clave[8:]
     return clave
 
 
@@ -560,6 +651,8 @@ def _lecturas(d):
     if n.get("configurado") and not n.get("error"):
         for p in n.get("proyectos", []):
             out.append(("neon:" + str(p["nombre"]), p["bytes"], p.get("limite"), "bytes"))
+            if p.get("cu_horas") is not None:
+                out.append(("neon_cu:" + str(p["nombre"]), p["cu_horas"], p.get("cu_limite"), "cu-h"))
     r = d.get("r2") or {}
     # si algún bucket falló, el total estaría incompleto y parecería que el espacio bajó: no se guarda
     if r.get("configurado") and not r.get("error") and not any(b.get("error") for b in r.get("buckets", [])):
@@ -573,12 +666,32 @@ def _lecturas(d):
     return out
 
 
-def proyectar(serie, limite, hoy):
+def _dias_hasta(iso):
+    """Días que faltan para una fecha ISO (None si no hay fecha, no se entiende o ya pasó)."""
+    try:
+        f = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if f.tzinfo is None:
+        f = f.replace(tzinfo=timezone.utc)
+    dias = (f - datetime.now(timezone.utc)).total_seconds() / 86400
+    return dias if dias > 0 else None
+
+
+def proyectar(serie, limite, hoy, acumulado=False):
     """serie = [(fecha, valor)] ordenada. El ritmo es una recta de mínimos cuadrados sobre los últimos
     VENTANA_DIAS días (más estable que comparar solo dos puntos). Estados: sin_datos, pocos_datos, sin_limite,
-    superado, estable, crece, lejano."""
+    superado, estable, crece, lejano.
+    acumulado=True: el valor se acumula en un periodo y vuelve a cero al reiniciarse (horas de cómputo del mes);
+    solo se usan las lecturas posteriores al último reinicio, para que la caída no se tome como 'bajó el consumo'."""
     r = {"actual": None, "por_dia": None, "dias": None, "fecha": None, "estado": "sin_datos",
          "dias_datos": 0, "cambio": None}
+    if acumulado and len(serie) > 1:
+        ini = 0
+        for i in range(1, len(serie)):
+            if serie[i][1] < serie[i - 1][1] - 1e-9:
+                ini = i
+        serie = serie[ini:]
     if not serie:
         return r
     actual = serie[-1][1]
@@ -619,9 +732,11 @@ def _ordenar_items(items):
 
 
 def _alertas_historial(items):
+    # horas de cómputo: si el periodo se reinicia antes de llegar al límite, no hay nada que avisar
     return [{"nivel": "alerta",
              "texto": f"{i['nombre']}: al ritmo actual llega a su límite en ~{max(1, round(i['dias']))} días ({i['fecha']})."}
-            for i in items if i["estado"] == "crece" and i["dias"] is not None and i["dias"] <= DIAS_AVISO]
+            for i in items if i["estado"] == "crece" and i["dias"] is not None and i["dias"] <= DIAS_AVISO
+            and i.get("llega_antes", True)]
 
 
 # --- costos --------------------------------------------------------------------
@@ -909,12 +1024,20 @@ def crear_blueprint(db, registrar):
             db.session.rollback()
             current_app.logger.warning("Leer historial de almacenamiento: %s", e)
             return []
+        neon = (_cache["datos"] or {}).get("neon") or {}
+        fines = {str(p["nombre"]): p.get("periodo_fin") for p in neon.get("proyectos", []) if isinstance(p, dict)}
         items = []
         for clave, s in series.items():
-            p = proyectar(s["serie"], s["limite"], hoy)
+            cu = clave.startswith("neon_cu:")
+            p = proyectar(s["serie"], s["limite"], hoy, acumulado=cu)
+            extra = {}
+            if cu:                                  # ¿se llega al límite antes de que el mes de Neon se reinicie?
+                reinicia = _dias_hasta(fines.get(clave[8:]))
+                extra = {"reinicia_dias": reinicia,
+                         "llega_antes": p["dias"] is not None and (reinicia is None or p["dias"] < reinicia)}
             items.append(dict(p, clave=clave, nombre=_etiqueta(clave), servicio=clave.split(":")[0],
                               unidad=s["unidad"], limite=s["limite"],
-                              serie=[[f.isoformat(), v] for f, v in s["serie"]]))
+                              serie=[[f.isoformat(), v] for f, v in s["serie"]], **extra))
         # sin límite en GB configurado, lo que importa en Cloudinary son los créditos: se oculta la fila duplicada
         if any(i["clave"] == "cloudinary:creditos" for i in items):
             items = [i for i in items if not (i["clave"] == "cloudinary" and not i["limite"])]
@@ -1137,7 +1260,8 @@ def crear_blueprint(db, registrar):
             origen = _origen(nombre)
             campos.append({"nombre": nombre, "servicio": serv, "secreto": secreto, "origen": origen,
                            "valor": None if (secreto or not origen) else _env(nombre)})
-        listo = {"neon": bool(_env("NEON_API_KEY")), "r2": _r2_configurado(), "cloudinary": _cld_configurado()}   # "costos" no es una conexión
+        listo = {"neon": bool(_env("NEON_API_KEY")), "r2": _r2_configurado(), "cloudinary": _cld_configurado(),
+                 "uptimerobot": _ur_configurado()}   # "costos" no es una conexión
         return jsonify(ok=True, campos=campos, conectado=listo, ilegibles=_estado["ilegibles"])
 
     @bp.route("/api/almacenamiento/conexiones/guardar", methods=["POST"])
@@ -1160,12 +1284,12 @@ def crear_blueprint(db, registrar):
             v = v.strip()
             if not v and CAMPOS[nombre][1]:
                 continue                                   # secreto vacío = conservar el que ya está
-            if v and nombre.endswith("_LIMITE_GB"):
+            if v and (nombre.endswith("_LIMITE_GB") or nombre == "NEON_LIMITE_CU"):
                 try:
                     if not math.isfinite(float(v)) or float(v) <= 0:
                         raise ValueError
                 except ValueError:
-                    return jsonify(ok=False, error="El límite debe ser un número de GB mayor que 0."), 400
+                    return jsonify(ok=False, error="El límite debe ser un número mayor que 0 (GB, u horas en el de cómputo)."), 400
             if v and nombre in TARIFAS:
                 try:
                     x = float(v)

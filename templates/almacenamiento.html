@@ -50,6 +50,9 @@
 <div class="alm-grid" id="tarjetas"></div>
 <div style="margin:6px 0 0;"><button class="btn" id="btn-recargar" type="button">Actualizar ahora</button></div>
 
+<div class="section-title">Disponibilidad · UptimeRobot</div>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="uptime"></div></div>
+
 <div class="section-title">Crecimiento diario y días al límite</div>
 <p class="alm-mut" style="margin-top:0;" id="hist-nota">Se guarda una lectura por día. El ritmo se calcula con los últimos 30 días.</p>
 <div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="historial"></div></div>
@@ -118,7 +121,13 @@ const SERV = {
     campos: [
       ["NEON_API_KEY", "API key de Neon", true],
       ["NEON_ORG_ID", "ID de organización (opcional)", false],
-      ["NEON_LIMITE_GB", "Límite por proyecto en GB (opcional, para ver el %)", false]],
+      ["NEON_LIMITE_GB", "Límite por proyecto en GB (opcional, para ver el %)", false],
+      ["NEON_LIMITE_CU", "Límite de horas de cómputo (CU-h) por proyecto y mes (vacío = 100, el del plan gratuito)", false]],
+  },
+  uptimerobot: {
+    titulo: "UptimeRobot",
+    ayuda: "En uptimerobot.com entra a <strong>Integrations &amp; API → API</strong> y copia la <strong>Read-only API key</strong> (solo lectura: aunque se filtrara, no puede pausar ni borrar monitores). Sugerencia: crea un monitor HTTP(s) a <code>https://TU-APP.onrender.com/healthz</code> cada 5 minutos; además de avisarte si se cae, mantiene despierto a Render y ya no necesitas otro bot.",
+    campos: [["UPTIMEROBOT_API_KEY", "Read-only API key", true]],
   },
   r2: {
     titulo: "Cloudflare R2",
@@ -264,6 +273,17 @@ function tarjetas(d) {
     `<div class="stat-value">${fmt(c.total)}</div><div class="alm-mut">${c.recursos ?? "—"} archivos · ${c.derivados ?? "—"} derivados</div>` +
     barra(c.pct, "Sin porcentaje disponible") +
     (c.creditos && c.creditos.limite ? `<div class="alm-mut">Créditos: ${c.creditos.usado} de ${c.creditos.limite}</div>` : "")) + `</div>`);
+  // horas de cómputo de Neon (lo que se gasta cuando la base está despierta)
+  if (n.configurado && !n.error) {
+    const ps = (n.proyectos || []).filter(p => p.cu_horas != null);
+    const peor = ps.slice().sort((a, b) => (b.cu_pct || 0) - (a.cu_pct || 0))[0];
+    h.splice(1, 0, `<div class="luxury-card"><h3 class="stat-label">Neon · horas de cómputo</h3>` + (!peor ? `<div class="alm-mut">Neon no entregó el dato de cómputo.</div>` :
+      `<div class="stat-value">${peor.cu_horas.toFixed(1)} CU-h</div><div class="alm-mut">de ${n.limite_cu} este mes · ${esc(peor.nombre)}${ps.length > 1 ? " (el más alto)" : ""}</div>` + barra(peor.cu_pct) +
+      `<div class="alm-mut">${peor.activo_horas != null ? "Base activa " + peor.activo_horas.toFixed(1) + " h" : ""}${peor.periodo_fin ? " · se reinicia " + fmtFecha(peor.periodo_fin.slice(0, 10)) : ""}</div>`) + `</div>`);
+  }
+  const u = d.uptimerobot || {};
+  if (u.configurado) h.push(`<div class="luxury-card"><h3 class="stat-label">UptimeRobot</h3>` + (u.error ? `<div class="alm-mut">Error: ${esc(u.error)}</div>` :
+    `<div class="stat-value ${u.caidos ? "alm-rojo-t" : "alm-verde-t"}">${u.caidos ? u.caidos + " caído(s)" : "Todo en línea"}</div><div class="alm-mut">${u.total} monitor(es)${u.pausados ? " · " + u.pausados + " en pausa" : ""}</div>`) + `</div>`);
   $("#tarjetas").innerHTML = h.join("");
 }
 
