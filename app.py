@@ -2438,8 +2438,10 @@ def push_revisar():
         revisar_alertas()
     return {"ok": True, "reintentados": reintentados}
 
-   import almacenamiento
-   app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
+import almacenamiento
+app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
+
+
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otros dispositivos en tu WiFi accedan a la PC
     # ssl_context='adhoc' genera un HTTPS temporal (necesario para usar la cámara en móviles)
