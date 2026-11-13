@@ -2363,6 +2363,8 @@ def revisar_alertas():
     for i in Incidente.query.filter_by(estado="Abierto", gravedad="Crítica").all():
         crear_notificacion("Incidente", f"Incidente crítico sin resolver: {i.titulo}", i.proyecto.nombre,
                            f"/proyectos/{i.proyecto_id}/seguridad", clave=f"inc-abierto-{i.id}-{hoy}")
+    for a in almacenamiento.avisos_horas():      # horas de cómputo de Neon agotadas o que no alcanzan (una vez por periodo)
+        crear_notificacion("Almacenamiento", a["titulo"], a["cuerpo"], "/almacenamiento", clave=a["clave"])
 
 
 def _hora_de_avisar():

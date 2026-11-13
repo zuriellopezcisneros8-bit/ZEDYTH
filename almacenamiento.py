@@ -37,7 +37,7 @@ UMBRAL_ALERTA = 80        # % de uso a partir del cual se avisa
 # Campos que se pueden guardar desde el panel: nombre -> (servicio, es_secreto)
 CAMPOS = {
     "NEON_API_KEY": ("neon", True), "NEON_ORG_ID": ("neon", False), "NEON_LIMITE_GB": ("neon", False),
-    "NEON_LIMITE_CU": ("neon", False), "UPTIMEROBOT_API_KEY": ("uptimerobot", True),
+    "NEON_LIMITE_CU": ("neon", False), "NEON_PLAN": ("neon", False), "UPTIMEROBOT_API_KEY": ("uptimerobot", True),
     # cuentas adicionales de Neon (2 a 5): cada una con su llave y, si hace falta, el ID de su organización
     **{f"NEON_API_KEY_{i}": ("neon", True) for i in range(2, 6)},
     **{f"NEON_ORG_ID_{i}": ("neon", False) for i in range(2, 6)},
@@ -73,6 +73,371 @@ TARIFAS = {
 # Cloudinary cobra por créditos (1 crédito = 1 GB almacenado = 1 GB de ancho de banda = 1,000 transformaciones)
 PLANES_CLD = (("Free", 25, 0.0), ("Plus", 225, 99.0), ("Advanced", 600, 249.0))
 FACTORES = (1, 2, 5, 10, 25)
+
+# --- horas del plan (cómputo de Neon) ---------------------------------------------
+CU_MINIMO = 0.25          # CU del cómputo más chico: sirve para pasar CU-h a horas despierta si Neon no da la medición
+
+
+def _horas_plan(f, limite, ahora=None):
+    """Todo lo de las horas de cómputo de UN proyecto en el periodo actual: las que incluye el plan, las usadas, las que
+    sobran (en CU-h y en horas despierta), a qué ritmo se gastan y cuándo se acabarían. None si Neon no dio el consumo."""
+    usadas = f.get("cu_horas")
+    if usadas is None or not limite or limite <= 0:
+        return None
+    ahora = ahora or datetime.now(timezone.utc)
+    usadas = max(float(usadas), 0.0)
+    sobran = max(limite - usadas, 0.0)
+    despierta = f.get("activo_horas")
+    prom = usadas / despierta if despierta and despierta >= 0.05 else None
+    medido = prom is not None and prom >= CU_MINIMO      # tamaño medio real del cómputo (CU) mientras estuvo despierto
+    cu_medio = prom if medido else CU_MINIMO
+    ini, fin = _fecha_utc(f.get("periodo_inicio")), _fecha_utc(f.get("periodo_fin"))
+    dias_total = dias_pasados = dias_faltan = None
+    if ini and fin and fin > ini:
+        dias_total = (fin - ini).total_seconds() / 86400
+        dias_pasados = min(max((ahora - ini).total_seconds() / 86400, 0.0), dias_total)
+        dias_faltan = max((fin - ahora).total_seconds() / 86400, 0.0)
+    ritmo = usadas / dias_pasados if dias_pasados and dias_pasados >= 1 else None     # CU-h por día; antes de 1 día no es confiable
+    dias_agota = None if not ritmo else sobran / ritmo
+    fecha_agota = None
+    if dias_agota is not None:
+        fecha_agota = ((ahora - timedelta(hours=6)) + timedelta(days=dias_agota)).date().isoformat()
+    presupuesto = sobran / dias_faltan if dias_faltan and dias_faltan > 0 else None   # CU-h por día para llegar al reinicio
+    pct = round(min(usadas * 100 / limite, 100.0), 1)
+    if sobran <= 0:
+        estado = "agotadas"
+    elif dias_agota is not None and dias_faltan is not None and dias_agota < dias_faltan:
+        estado = "riesgo"
+    elif pct >= UMBRAL_ALERTA:
+        estado = "vigilar"
+    else:
+        estado = "bien"
+
+    def r(x, n=2):
+        return None if x is None else round(x, n)
+    return {"plan": limite, "usadas": r(usadas), "sobran": r(sobran), "pct": pct,
+            "cu_medio": r(cu_medio), "cu_medido": medido,
+            "despierta_total": r(limite / cu_medio, 1), "despierta_usadas": r(despierta, 1),
+            "despierta_sobran": r(sobran / cu_medio, 1),
+            "dias_periodo": r(dias_total, 1), "dias_faltan": r(dias_faltan, 1),
+            "ritmo_dia": r(ritmo), "dias_agota": r(dias_agota, 1), "fecha_agota": fecha_agota,
+            "presupuesto_dia": r(presupuesto), "presupuesto_despierta": r(None if presupuesto is None else presupuesto / cu_medio, 1),
+            "estado": estado}
+
+
+def _resumen_horas(filas, limite):
+    """Horas del plan de toda la cuenta. Cada proyecto tiene SU bolsa: la suma es solo informativa."""
+    hs = [(f["nombre"], f["horas"], f.get("periodo_fin")) for f in filas if f.get("horas")]
+    out = {"proyectos": len(hs), "sin_dato": len(filas) - len(hs), "por_proyecto": limite, "plan": 0, "usadas": 0,
+           "sobran": 0, "pct": None, "agotadas": [], "en_riesgo": [], "apretado": None, "reinicia": None}
+    if not hs:
+        return out
+    out["plan"] = round(limite * len(hs), 2)
+    out["usadas"] = round(sum(h["usadas"] for _, h, _f in hs), 2)
+    out["sobran"] = round(sum(h["sobran"] for _, h, _f in hs), 2)
+    out["pct"] = round(out["usadas"] * 100 / out["plan"], 1) if out["plan"] else None
+    out["agotadas"] = [n for n, h, _f in hs if h["estado"] == "agotadas"]
+    out["en_riesgo"] = [n for n, h, _f in hs if h["estado"] == "riesgo"]
+    n, h, _f = min(hs, key=lambda x: (x[1]["sobran"], -x[1]["pct"]))
+    out["apretado"] = {"nombre": n, "sobran": h["sobran"], "pct": h["pct"], "estado": h["estado"],
+                       "dias_agota": h["dias_agota"], "fecha_agota": h["fecha_agota"]}
+    fines = [(_fecha_utc(fin), fin) for _n, _h, fin in hs if _fecha_utc(fin)]
+    ahora = datetime.now(timezone.utc)
+    futuros = [x for x in fines if x[0] > ahora] or fines
+    if futuros:
+        out["reinicia"] = min(futuros, key=lambda x: x[0])[1]
+    return out
+
+
+# --- NUESTRO PLAN: qué incluye cada servicio -----------------------------------------
+PLAN_FECHA = "13 nov 2026"
+# Cada función: (grupo, nombre, valor, detalle, clave de medición o None). Son cifras de REFERENCIA (los planes cambian):
+# donde se puede, el panel mide el uso real al lado; el origen y la fecha de revisión se muestran en la página.
+PLANES_INFO = {
+    "neon": {
+        "titulo": "Neon · base de datos PostgreSQL",
+        "enlace": "https://neon.com/faqs/free-plan-limits-and-quotas",
+        "planes": {
+            "free": {
+                "nombre": "Free", "precio": "US$0 al mes · sin tarjeta y sin vencimiento",
+                "resumen": "Plan gratuito permanente. Los límites de horas y de espacio son POR PROYECTO, no de toda la cuenta.",
+                "limites": {"cu": 100, "almacen": GIB, "total": 20 * GIB, "proyectos": 100, "ramas": 10, "transfer": 5 * GIB},
+                "funciones": [
+                    ("Cómputo", "Horas de cómputo", "100 CU-h por proyecto al mes",
+                     "1 CU-h = 1 hora con la base despierta usando 1 CPU. Con el cómputo más chico (0.25 CU) alcanzan unas 400 horas "
+                     "despierta al mes. Cada proyecto tiene su propia bolsa y se reinicia con su periodo.", "cu"),
+                    ("Cómputo", "Tamaño del cómputo", "hasta 2 CU (≈ 8 GB de RAM)",
+                     "La base sube de tamaño sola cuando hay carga. Entre más grande, más rápido se gastan las horas.", None),
+                    ("Cómputo", "Apagado automático", "a los 5 min sin uso · no se puede desactivar",
+                     "Sin consultas, la base se duerme y deja de gastar horas. Un monitor o una página que la consulte cada pocos "
+                     "minutos la mantiene despierta y gasta horas.", None),
+                    ("Almacenamiento", "Espacio por proyecto", "1 GB",
+                     "Lo que ocupan los datos de cada proyecto (sumando sus ramas).", "almacen"),
+                    ("Almacenamiento", "Espacio total de la cuenta", "20 GB entre todos los proyectos", "", "total"),
+                    ("Proyectos y ramas", "Proyectos", "hasta 100", "", "proyectos"),
+                    ("Proyectos y ramas", "Ramas por proyecto", "hasta 10",
+                     "Una rama es una copia de la base para probar sin tocar producción. Cada rama cuenta en el espacio.", "ramas"),
+                    ("Red", "Transferencia de datos", "5 GB por proyecto al mes", "Datos que salen de la base hacia internet.", "transfer"),
+                    ("Respaldo", "Restauración a un punto anterior", "ventana de 6 horas",
+                     "Se puede regresar la base a como estaba hasta 6 horas antes (con historial de cambios limitado a 1 GB). "
+                     "No sustituye a un respaldo propio.", None),
+                    ("Extras", "Autenticación gestionada (Better Auth)", "hasta 60,000 usuarios activos al mes por proyecto",
+                     "Servicio opcional de Neon; no se mide aquí.", None),
+                ],
+            },
+            "launch": {
+                "nombre": "Launch", "precio": "Pago por uso · sin mínimo mensual",
+                "resumen": "Se paga solo lo que se consume; ya no hay horas ni GB incluidos.",
+                "limites": {"ramas": 10, "transfer": 500 * GIB},
+                "funciones": [
+                    ("Cómputo", "Precio del cómputo", "US$0.106 por CU-h", "Se cobra cada hora de cómputo usada.", "cu"),
+                    ("Cómputo", "Tamaño del cómputo", "hasta 16 CU", "", None),
+                    ("Cómputo", "Apagado automático", "a los 5 min sin uso · se puede desactivar", "", None),
+                    ("Almacenamiento", "Precio del espacio", "US$0.35 por GB al mes", "Todo el espacio se cobra.", "almacen"),
+                    ("Proyectos y ramas", "Ramas por proyecto", "10 incluidas; luego US$1.50 por rama al mes", "", "ramas"),
+                    ("Red", "Transferencia de datos", "500 GB por proyecto; luego US$0.10 por GB", "", "transfer"),
+                    ("Respaldo", "Restauración a un punto anterior", "hasta 7 días", "", None),
+                ],
+            },
+            "scale": {
+                "nombre": "Scale", "precio": "Pago por uso · sin mínimo mensual",
+                "resumen": "Para producción exigente: más control y más historial.",
+                "limites": {"ramas": 25, "transfer": 500 * GIB},
+                "funciones": [
+                    ("Cómputo", "Precio del cómputo", "US$0.222 por CU-h", "", "cu"),
+                    ("Cómputo", "Tamaño del cómputo", "hasta 16 CU con autoescalado, o fijo hasta 56 CU", "", None),
+                    ("Cómputo", "Apagado automático", "desde 1 min hasta siempre encendido", "", None),
+                    ("Almacenamiento", "Precio del espacio", "US$0.35 por GB al mes", "", "almacen"),
+                    ("Proyectos y ramas", "Ramas por proyecto", "25 incluidas; luego US$1.50 por rama al mes", "", "ramas"),
+                    ("Red", "Transferencia de datos", "500 GB por proyecto; luego US$0.10 por GB", "", "transfer"),
+                    ("Respaldo", "Restauración a un punto anterior", "hasta 30 días", "", None),
+                ],
+            },
+        },
+    },
+    "r2": {
+        "titulo": "Cloudflare R2 · archivos",
+        "enlace": "https://developers.cloudflare.com/r2/pricing/",
+        "planes": {
+            "standard": {
+                "nombre": "Standard (con cupo gratis)", "precio": "Gratis hasta el cupo; después pago por uso",
+                "resumen": "No hay plan de pago aparte: cada mes los primeros 10 GB y las primeras operaciones son gratis y lo demás se cobra por uso.",
+                "limites": {"almacen": 10 * GIB},
+                "funciones": [
+                    ("Almacenamiento", "Espacio gratis", "10 GB al mes",
+                     "Pasado el cupo se cobran US$0.015 por GB al mes.", "almacen"),
+                    ("Operaciones", "Escrituras y listados (Clase A)", "1 millón al mes gratis; luego US$4.50 por millón",
+                     "Subir, copiar y listar archivos. No se mide desde el panel: se ve en Cloudflare → R2 → Metrics.", None),
+                    ("Operaciones", "Lecturas (Clase B)", "10 millones al mes gratis; luego US$0.36 por millón",
+                     "Descargar o consultar archivos. No se mide desde el panel.", None),
+                    ("Red", "Salida de datos (egress)", "siempre gratis",
+                     "No se cobra por los datos que salen hacia internet; es la gran diferencia con otros almacenes.", None),
+                    ("Clase de almacenamiento", "Infrequent Access", "US$0.01 por GB al mes · sin cupo gratis",
+                     "Más barato para archivos que casi no se leen: mínimo 30 días, US$0.01 por GB al recuperarlos y operaciones a "
+                     "US$9.00 (A) y US$0.90 (B) por millón.", None),
+                ],
+            },
+        },
+    },
+    "cloudinary": {
+        "titulo": "Cloudinary · imágenes y video",
+        "enlace": "https://cloudinary.com/documentation/billing_and_plans",
+        "planes": {
+            "free": {
+                "nombre": "Free", "precio": "US$0 al mes · sin tarjeta",
+                "resumen": "Todo se paga con una sola bolsa de créditos: almacenamiento, ancho de banda y transformaciones se restan de los mismos 25.",
+                "limites": {"creditos": 25},
+                "funciones": [
+                    ("Créditos", "Créditos al mes", "25",
+                     "1 crédito = 1 GB de almacenamiento, o 1 GB de ancho de banda, o 1,000 transformaciones. Se mide sobre los "
+                     "últimos 30 días corridos, no sobre el mes calendario.", "creditos"),
+                    ("Créditos", "Almacenamiento (consume créditos)", "1 GB = 1 crédito", "Lo que ocupan originales y derivados.", "cld_almacen"),
+                    ("Créditos", "Ancho de banda (consume créditos)", "1 GB entregado = 1 crédito", "Lo que se descarga al mostrar imágenes y videos.", "cld_banda"),
+                    ("Créditos", "Transformaciones (consumen créditos)", "1,000 = 1 crédito",
+                     "Cada redimensionado, recorte o conversión que genera una versión nueva.", "cld_trans"),
+                    ("Límites por archivo", "Tamaño máximo por archivo", "según el plan",
+                     "Lo que reporta tu cuenta de Cloudinary.", "cld_archivo"),
+                    ("Cuenta", "Usuarios y cuentas", "3 usuarios · 1 cuenta", "", None),
+                    ("Funciones", "Entrega por CDN, transformaciones y video", "incluidas",
+                     "Entrega por CDN, transformación de imágenes y transcodificación de video.", None),
+                ],
+            },
+            "plus": {
+                "nombre": "Plus", "precio": "US$99 al mes (US$89 con pago anual)",
+                "resumen": "Primer escalón de pago: sube la bolsa de créditos.",
+                "limites": {"creditos": 225},
+                "funciones": [("Créditos", "Créditos al mes", "225", "Mismo sistema de créditos que Free.", "creditos")],
+            },
+            "advanced": {
+                "nombre": "Advanced", "precio": "US$249 al mes (US$224 con pago anual)",
+                "resumen": "Más créditos y archivos más grandes.",
+                "limites": {"creditos": 600},
+                "funciones": [("Créditos", "Créditos al mes", "600", "Mismo sistema de créditos que Free.", "creditos"),
+                              ("Límites por archivo", "Tamaño máximo por archivo", "imagen 40 MB · video 4 GB", "", None)],
+            },
+        },
+    },
+    "uptimerobot": {
+        "titulo": "UptimeRobot · monitoreo",
+        "enlace": "https://uptimerobot.com/pricing",
+        "planes": {
+            "free": {
+                "nombre": "Free", "precio": "US$0 al mes",
+                "resumen": "Los límites del plan gratuito cambiaron varias veces entre 2024 y 2026: confírmalos en tu cuenta.",
+                "limites": {"monitores": 50},
+                "funciones": [
+                    ("Monitoreo", "Monitores", "hasta 50",
+                     "Algunas cuentas nuevas reportan 10: confírmalo en uptimerobot.com. El panel cuenta los que ve.", "monitores"),
+                    ("Monitoreo", "Frecuencia de revisión", "cada 5 min como mínimo (fija)",
+                     "Una caída más corta que 5 minutos puede pasar sin que se note.", "intervalo"),
+                    ("Monitoreo", "Tipos de revisión", "HTTP(s), palabra clave, ping y puerto", "", None),
+                    ("Avisos", "Integraciones de aviso", "hasta 5", "Correo y algunas apps; SMS y llamadas son de pago.", None),
+                    ("Avisos", "Página de estado", "1, sin dominio propio", "", None),
+                    ("Historial", "Registro de eventos", "3 meses", "", None),
+                    ("Términos", "Uso comercial", "permitido según los términos de mayo-junio de 2026",
+                     "Entre fines de 2024 y mediados de 2026 estuvo restringido; revisa los términos vigentes.", None),
+                ],
+            },
+        },
+    },
+}
+
+
+def _plan_neon():
+    """(clave, origen) del plan de Neon que declaró el usuario; sin declarar = gratuito."""
+    v = _env("NEON_PLAN").lower()
+    if v in PLANES_INFO["neon"]["planes"]:
+        return v, _origen("NEON_PLAN")
+    return "free", None
+
+
+def _med(usado, limite, unidad, texto=""):
+    if usado is None:
+        return None
+    return {"usado": usado, "limite": limite or None, "unidad": unidad,
+            "pct": _pct(usado, limite) if limite else None, "texto": texto}
+
+
+def _med_texto(texto):
+    return {"usado": None, "limite": None, "unidad": None, "pct": None, "texto": texto}
+
+
+def _med_neon(n, clave, lim):
+    ps = n.get("proyectos") or []
+    if clave == "proyectos":
+        return _med(len(ps), lim, "proyectos")
+    if not ps:
+        return None
+    if clave == "cu":
+        hs = [(p["nombre"], p["horas"]) for p in ps if p.get("horas")]
+        if not hs:
+            return None
+        nombre, h = min(hs, key=lambda x: x[1]["sobran"])
+        return _med(h["usadas"], lim, "CU-h", f"El proyecto más gastado: {nombre}")
+    if clave == "almacen":
+        p = max(ps, key=lambda x: x["bytes"])
+        return _med(p["bytes"], lim, "bytes", f"El más grande: {p['nombre']}")
+    if clave == "total":
+        return _med(n.get("total") or 0, lim, "bytes", "Suma de todos los proyectos")
+    if clave == "ramas":
+        p = max(ps, key=lambda x: len(x["ramas"]))
+        return _med(len(p["ramas"]), lim, "ramas", f"El que más tiene: {p['nombre']}")
+    if clave == "transfer":
+        vals = [(p["nombre"], p["transferencia"]) for p in ps if isinstance(p.get("transferencia"), (int, float))]
+        if not vals:
+            return None
+        nombre, v = max(vals, key=lambda x: x[1])
+        return _med(v, lim, "bytes", f"El mayor del periodo: {nombre}")
+    return None
+
+
+def _med_cld(c, clave, lim):
+    cred, des = c.get("creditos") or {}, c.get("creditos_desglose") or {}
+    if clave == "creditos":
+        return _med(cred.get("usado"), lim, "créditos")
+    cr = lambda k: f"≈ {des[k]:.2f} crédito(s)" if isinstance(des.get(k), (int, float)) else ""
+    if clave == "cld_almacen":
+        return _med(c.get("total"), None, "bytes", cr("almacenamiento"))
+    if clave == "cld_banda":
+        return _med(c.get("ancho_banda"), None, "bytes", cr("ancho_banda"))
+    if clave == "cld_trans":
+        return _med(c.get("transformaciones"), None, "transformaciones", cr("transformaciones"))
+    if clave == "cld_archivo":
+        m = c.get("limites_archivo") or {}
+        partes = []
+        for et, k in (("imagen", "image_max_size_bytes"), ("video", "video_max_size_bytes"), ("otros", "raw_max_size_bytes")):
+            v = _numero(m.get(k))
+            if v:
+                partes.append(f"{et} {v / 1024 ** 2:,.0f} MB")
+        return _med_texto(" · ".join(partes)) if partes else None
+    return None
+
+
+def _med_ur(u, clave, lim):
+    mons = u.get("monitores") or []
+    if clave == "monitores":
+        return _med(u.get("total", len(mons)), lim, "monitores", f"{u.get('pausados', 0)} en pausa" if u.get("pausados") else "")
+    if clave == "intervalo":
+        iv = [m["intervalo_s"] for m in mons if isinstance(m.get("intervalo_s"), (int, float)) and m["intervalo_s"] > 0]
+        return _med_texto(f"Tus monitores revisan cada {round(min(iv) / 60, 1):g} min como mínimo.") if iv else None
+    return None
+
+
+def _nuestro_plan(d):
+    """El plan que tenemos en cada servicio: lo que incluye (referencia) junto con lo que se usa hoy (medido)."""
+    t = _tarifas()
+    servicios = []
+    for clave in ("neon", "r2", "cloudinary", "uptimerobot"):
+        cat = PLANES_INFO[clave]
+        s = d.get(clave) or {}
+        nota = origen = None
+        if clave == "neon":
+            pc, origen = _plan_neon()
+            origen = {"panel": "elegido en Conexiones", "entorno": "de las variables de Render", None: "por defecto"}[origen]
+        elif clave == "cloudinary":
+            api = str(s.get("plan") or "").strip()
+            pc = api.lower() if api.lower() in cat["planes"] else "free"
+            origen = "reportado por Cloudinary" if api else "por defecto"
+            if api and api.lower() not in cat["planes"]:
+                nota = f"Cloudinary reporta el plan «{api}»; abajo se muestra la tabla del plan Free como referencia."
+        else:
+            pc, origen = next(iter(cat["planes"])), "único plan de referencia"
+        plan = cat["planes"][pc]
+        lims = dict(plan.get("limites") or {})
+        if clave == "neon" and pc == "free":                         # los límites que el usuario ajustó en Conexiones mandan
+            if s.get("limite_cu"):
+                lims["cu"] = s["limite_cu"]
+            if s.get("limite"):
+                lims["almacen"] = s["limite"]
+            lims["total"] = t["NEON_GRATIS_TOTAL_GB"] * GIB
+        if clave == "r2" and s.get("limite"):
+            lims["almacen"] = s["limite"]
+        if clave == "cloudinary" and (s.get("creditos") or {}).get("limite"):
+            lims["creditos"] = s["creditos"]["limite"]
+        if s.get("error"):
+            estado = "error"
+        elif not s.get("configurado"):
+            estado = "sin_conectar"
+        else:
+            estado = "ok"
+        medir = {"neon": _med_neon, "cloudinary": _med_cld, "uptimerobot": _med_ur,
+                 "r2": lambda r, k, lim: _med(r.get("total"), lim, "bytes") if k == "almacen" else None}[clave]
+        funciones = []
+        for grupo, nombre, valor, detalle, mk in plan["funciones"]:
+            m = None
+            if estado == "ok" and mk:
+                try:
+                    m = medir(s, mk, lims.get(mk))
+                except Exception:                                    # una medición rara no debe tumbar la página
+                    m = None
+            funciones.append({"grupo": grupo, "nombre": nombre, "valor": valor, "detalle": detalle, "medicion": m})
+        otros = [{"nombre": p["nombre"], "precio": p["precio"], "resumen": p["resumen"]}
+                 for k, p in cat["planes"].items() if k != pc]
+        servicios.append({"clave": clave, "titulo": cat["titulo"], "estado": estado, "error": s.get("error"),
+                          "plan": plan["nombre"], "plan_clave": pc, "origen_plan": origen, "precio": plan["precio"],
+                          "resumen": plan["resumen"], "nota": nota, "funciones": funciones, "otros_planes": otros,
+                          "enlace": cat["enlace"]})
+    return {"fecha_referencia": PLAN_FECHA, "servicios": servicios}
 
 
 _RE_UR_PROY = re.compile(r"^UPTIMEROBOT_KEY_P(\d{1,9})$")   # llave de UptimeRobot propia de UN proyecto (solo por su endpoint)
@@ -231,9 +596,11 @@ def datos_neon():
         f["cu_limite"] = lim_cu
         f["cu_pct"] = _pct(f["cu_horas"], lim_cu) if f["cu_horas"] is not None else None
         f["cu_restantes"], f["cu_proyeccion"] = _cu_restantes_y_proyeccion(f, lim_cu)
+        f["horas"] = _horas_plan(f, lim_cu)
     filas.sort(key=lambda f: f["bytes"], reverse=True)
     return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas), "limite": limite,
-            "limite_cu": lim_cu, "cuentas": [c[0] for c in cuentas], "cuentas_error": fallos}
+            "limite_cu": lim_cu, "horas_plan": _resumen_horas(filas, lim_cu),
+            "cuentas": [c[0] for c in cuentas], "cuentas_error": fallos}
 
 
 def _cu_restantes_y_proyeccion(f, limite):
@@ -413,13 +780,20 @@ def datos_cloudinary():
         if cursor:
             muestra = True
     grandes.sort(key=lambda x: x["bytes"], reverse=True)
+    banda, trans = uso.get("bandwidth") or {}, uso.get("transformations") or {}
+
+    def _cr(bloque, calculado):                  # créditos que da la API; si no vienen, se calculan con la equivalencia oficial
+        v = _numero(bloque.get("credits_usage"))
+        return v if v is not None else calculado
+    desglose = {"almacenamiento": _cr(almacen, usados / GIB), "ancho_banda": _cr(banda, (banda.get("usage") or 0) / GIB),
+                "transformaciones": _cr(trans, (trans.get("usage") or 0) / 1000)}
     limite = _gb("CLOUDINARY_LIMITE_GB")        # opcional; si no, se usa el % de créditos que reporta Cloudinary
     pct = _pct(usados, limite) if limite else cred.get("used_percent")
     return {"configurado": True, "plan": uso.get("plan"), "total": usados, "limite": limite, "pct": pct,
             "creditos": {"usado": cred.get("usage"), "limite": cred.get("limit"), "pct": cred.get("used_percent")},
             "recursos": uso.get("resources"), "derivados": uso.get("derived_resources"),
-            "ancho_banda": (uso.get("bandwidth") or {}).get("usage"),
-            "transformaciones": (uso.get("transformations") or {}).get("usage"),
+            "ancho_banda": banda.get("usage"), "transformaciones": trans.get("usage"),
+            "creditos_desglose": desglose, "limites_archivo": uso.get("media_limits") if isinstance(uso.get("media_limits"), dict) else None,
             "grandes": grandes[:40], "muestra": muestra,
             "carpetas": {k: {"bytes": v[0], "archivos": v[1]} for k, v in carp.items()}}
 
@@ -548,7 +922,9 @@ def _alertas(d):
     for c in (d["neon"].get("cuentas_error") or []):
         avisos.append({"nivel": "error", "texto": f"Neon · {c['cuenta']}: no se pudo leer ({c['error']})"})
     for p in (d["neon"].get("proyectos") or []):
-        if p.get("cu_pct") is not None and p["cu_pct"] >= UMBRAL_ALERTA:
+        if (p.get("horas") or {}).get("estado") == "agotadas":
+            avisos.append({"nivel": "error", "texto": f"Neon · {p['nombre']}: ya no quedan horas de cómputo del plan este mes (vuelven al reiniciarse el periodo)."})
+        elif p.get("cu_pct") is not None and p["cu_pct"] >= UMBRAL_ALERTA:
             avisos.append({"nivel": "alerta", "texto": f"Neon · {p['nombre']}: horas de cómputo al {p['cu_pct']}% del límite del mes."})
     for p in (d["neon"].get("proyectos") or []):
         lim = p.get("cu_limite")
@@ -1045,6 +1421,32 @@ def instantanea_diaria():
         current_app.logger.warning("Instantánea diaria de almacenamiento: %s", e)
 
 
+def avisos_horas():
+    """Para revisar_alertas() de app.py: avisos urgentes de horas de cómputo de Neon, SIN llamar a ninguna API (usa la última
+    lectura en memoria, de máximo 36 h). Cada aviso trae una `clave` que cambia por proyecto, estado y periodo: así
+    crear_notificacion lo manda una sola vez por periodo y no repite cada 2 h."""
+    d = _cache["datos"]
+    if not d or time.time() - _cache["t"] > 36 * 3600:
+        return []
+    out = []
+    for p in (d.get("neon") or {}).get("proyectos") or []:
+        h = p.get("horas") or {}
+        estado = h.get("estado")
+        if estado not in ("agotadas", "riesgo"):
+            continue
+        periodo = str(p.get("periodo_fin") or "")[:10] or "s-p"
+        nombre = str(p.get("nombre"))
+        if estado == "agotadas":
+            titulo = f"Neon sin horas de cómputo: {nombre}"
+            cuerpo = f"Ya usó {h['usadas']:g} de {h['plan']:g} CU-h del plan. Vuelven al reiniciarse el periodo ({periodo})."
+        else:
+            titulo = f"Neon: las horas de {nombre} no alcanzan"
+            cuerpo = (f"Lleva {h['usadas']:g} de {h['plan']:g} CU-h y al ritmo actual se acaban el {h['fecha_agota']} "
+                      f"(el periodo se reinicia el {periodo}). Revisa qué mantiene despierta la base.")
+        out.append({"clave": f"horas-{estado}-{nombre}-{periodo}"[:120], "titulo": titulo, "cuerpo": cuerpo})
+    return out
+
+
 def crear_blueprint(db, registrar):
     global _Modelo, _ModeloH
     bp = Blueprint("almacen", __name__)
@@ -1220,6 +1622,14 @@ def crear_blueprint(db, registrar):
         d["vinculos"] = _vinculos(_filas_proyectos(db))
         d["alertas"] = list(d.get("alertas") or []) + _alertas_historial(items_historial())   # copia: no tocar el caché
         return jsonify(ok=True, **d)
+
+    @bp.route("/api/almacenamiento/plan")
+    def nuestro_plan_ruta():
+        """Nuestro plan en cada servicio: lo que incluye (referencia) junto con lo que se usa hoy (medido). Mismo caché de 5 min."""
+        if not es_admin():
+            return negado()
+        d = datos_cacheados(request.args.get("forzar") == "1")
+        return jsonify(ok=True, generado=d["generado"], **_nuestro_plan(d))
 
     @bp.route("/api/almacenamiento/historial")
     def historial():
@@ -1504,6 +1914,10 @@ def crear_blueprint(db, registrar):
             v = v.strip()
             if not v and CAMPOS[nombre][1]:
                 continue                                   # secreto vacío = conservar el que ya está
+            if nombre == "NEON_PLAN":
+                v = v.lower()
+                if v and v not in PLANES_INFO["neon"]["planes"]:
+                    return jsonify(ok=False, error="El plan de Neon debe ser uno de: " + ", ".join(PLANES_INFO["neon"]["planes"]) + "."), 400
             if v and (nombre.endswith("_LIMITE_GB") or nombre == "NEON_LIMITE_CU"):
                 try:
                     if not math.isfinite(float(v)) or float(v) <= 0:

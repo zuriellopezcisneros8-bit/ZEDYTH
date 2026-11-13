@@ -33,6 +33,12 @@
   tr.alm-propio td { background:rgba(122,162,255,.10); }
   details.alm-tarifas { margin-top:12px; }
   details.alm-tarifas summary { cursor:pointer; font-weight:600; }
+  tr.alm-grupo td { background:rgba(128,128,128,.12); font-weight:600; font-size:13px; letter-spacing:.02em; }
+  .alm-plan { margin-bottom:14px; }
+  .alm-plan-cab { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; padding:16px 16px 10px; }
+  .alm-plan-pie { padding:12px 16px 16px; border-top:1px solid rgba(128,128,128,.2); }
+  .alm-plan-pie p { margin:4px 0; }
+  .alm-sub { font-size:13px; color:var(--text-muted, #9aa3b2); margin-top:3px; line-height:1.45; }
 </style>
 
 <section class="hero">
@@ -50,9 +56,15 @@
 <div class="alm-grid" id="tarjetas"></div>
 <div style="margin:6px 0 0;"><button class="btn" id="btn-recargar" type="button">Actualizar ahora</button></div>
 
-<div class="section-title">Neon · horas de cómputo de este mes</div>
-<p class="alm-mut" style="margin-top:0;">Una hora de cómputo (CU-h) es 1 hora con la base despierta usando 1 CPU. Con 0.25 CU hacen falta 4 horas despierta para gastar 1 CU-h. El límite se cambia en «Conexiones → Neon» (el plan gratuito de Neon ha cambiado de cifra con el tiempo: confírmala en tu consola de Neon).</p>
+<div class="section-title">Neon · horas del plan y cuántas te sobran</div>
+<p class="alm-mut" style="margin-top:0;">Una hora de cómputo (CU-h) es 1 hora con la base despierta usando 1 CPU: con el cómputo más chico (0.25 CU) hacen falta 4 horas despierta para gastar 1 CU-h. <strong>Cada proyecto tiene su propia bolsa</strong> de horas y no se pueden pasar de uno a otro. El límite se cambia en «Conexiones → Neon».</p>
+<div class="alm-grid" id="horas-resumen"></div>
 <div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="computo"></div></div>
+<p class="alm-mut" id="horas-nota" style="margin-top:8px;"></p>
+
+<div class="section-title">Nuestro plan · qué incluye cada servicio</div>
+<p class="alm-mut" style="margin-top:0;" id="plan-nota">Cargando el detalle de los planes…</p>
+<div id="plan"></div>
 
 <div class="section-title">Disponibilidad · UptimeRobot</div>
 <div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="uptime"></div></div>
@@ -134,7 +146,8 @@ const SERV = {
       ["NEON_API_KEY_5", "Cuenta 5 · API key de Neon (opcional)", true],
       ["NEON_ORG_ID_5", "Cuenta 5 · ID de organización (opcional)", false],
       ["NEON_LIMITE_GB", "Límite por proyecto en GB (opcional, para ver el %)", false],
-      ["NEON_LIMITE_CU", "Límite de horas de cómputo (CU-h) por proyecto y mes (vacío = 100, el del plan gratuito)", false]],
+      ["NEON_LIMITE_CU", "Límite de horas de cómputo (CU-h) por proyecto y mes (vacío = 100, el del plan gratuito)", false],
+      ["NEON_PLAN", "Plan de Neon que tienes: free, launch o scale (vacío = free). Solo cambia la tabla de «Nuestro plan»", false]],
   },
   uptimerobot: {
     titulo: "UptimeRobot",
@@ -305,24 +318,61 @@ const proyDe = (d, tipo, nombre) => {
     : `<div class="alm-mut" style="color:#b45309">Sin proyecto asignado — vincúlalo en «Editar proyecto»</div>`;
 };
 
+const nHoras = (x, dec = 1) => x == null ? "—" : Number(x).toLocaleString("es-MX", { maximumFractionDigits: dec });
+const fmtDias = x => x == null ? "—" : x < 1 ? "menos de 1 día" : Math.round(x) === 1 ? "1 día" : Math.round(x) + " días";
+
+function estadoHoras(h) {
+  if (h.estado === "agotadas") return `<span class="badge badge-red">Agotadas</span><div class="alm-mut">Vuelven al reiniciarse el periodo</div>`;
+  if (h.estado === "riesgo") return `<span class="badge badge-red">Se acaban antes del reinicio</span><div class="alm-mut">Al ritmo actual, el ${fmtFecha(h.fecha_agota)} (en ~${fmtDias(h.dias_agota)})${h.dias_faltan != null ? `; faltan ${fmtDias(h.dias_faltan)} para el reinicio` : ", antes de que se reinicie el periodo"}</div>`;
+  if (h.estado === "vigilar") return `<span class="badge badge-amber">Vigilar</span><div class="alm-mut">Ya usaste ${h.pct}% de las horas${h.dias_agota != null ? ` · al ritmo actual, hasta el ${fmtFecha(h.fecha_agota)}` : ""}</div>`;
+  return `<span class="badge badge-green">Alcanzan</span><div class="alm-mut">${h.dias_agota != null ? "Al ritmo actual durarían ~" + fmtDias(h.dias_agota) : "Aún sin ritmo (menos de 1 día del periodo)"}</div>`;
+}
+
+function verHorasResumen(d) {
+  const n = d.neon, hp = n && n.horas_plan, el = $("#horas-resumen");
+  if (!n || n.error || !n.configurado || !hp || !hp.proyectos) { el.innerHTML = ""; return; }
+  const ap = hp.apretado, k = c => `<div class="luxury-card">${c}</div>`;
+  const h = [];
+  h.push(k(`<h3 class="stat-label">Horas del plan</h3><div class="stat-value">${nHoras(hp.plan, 0)} CU-h</div>
+    <div class="alm-mut">${hp.proyectos} proyecto(s) × ${nHoras(hp.por_proyecto, 0)} CU-h al mes</div>
+    <div class="alm-mut">≈ ${nHoras(hp.por_proyecto / 0.25, 0)} h despierta por proyecto si el cómputo es de 0.25 CU</div>`));
+  h.push(k(`<h3 class="stat-label">Te sobran</h3><div class="stat-value ${hp.agotadas.length ? "alm-rojo-t" : "alm-verde-t"}">${nHoras(hp.sobran)} CU-h</div>
+    <div class="alm-mut">Usadas ${nHoras(hp.usadas)} de ${nHoras(hp.plan, 0)}</div>` + barra(hp.pct)));
+  if (ap) h.push(k(`<h3 class="stat-label">Proyecto más apretado</h3><div class="stat-value" style="font-size:20px;">${esc(ap.nombre)}</div>
+    <div class="alm-mut">Le quedan ${nHoras(ap.sobran)} CU-h</div>${estadoHoras(Object.assign({ dias_faltan: null }, ap))}`));
+  const fin = hp.reinicia ? hp.reinicia.slice(0, 10) : null;
+  const dias = hp.reinicia ? (new Date(hp.reinicia) - new Date()) / 86400000 : null;
+  h.push(k(`<h3 class="stat-label">Se reinicia</h3><div class="stat-value">${dias != null ? fmtDias(Math.max(dias, 0)) : "—"}</div>
+    <div class="alm-mut">${fin ? fmtFecha(fin) : "Neon no dio la fecha"} (el periodo más próximo)</div>` +
+    (hp.agotadas.length ? `<div class="alm-rojo-t" style="margin-top:6px;">Sin horas: ${hp.agotadas.map(esc).join(", ")}</div>` : "") +
+    (hp.en_riesgo.length ? `<div class="alm-ambar-t" style="margin-top:6px;">En riesgo: ${hp.en_riesgo.map(esc).join(", ")}</div>` : "")));
+  el.innerHTML = h.join("");
+}
+
 function verComputo(d) {
+  verHorasResumen(d);
   const n = d.neon, e = errorOSinConfig(n, "Neon");
-  if (e) { $("#computo").innerHTML = e; return; }
-  const ps = (n.proyectos || []).slice().sort((a, b) => (b.cu_horas ?? -1) - (a.cu_horas ?? -1));
+  if (e) { $("#computo").innerHTML = e; $("#horas-nota").textContent = ""; return; }
+  const peso = p => p.horas ? p.horas.pct : -1;
+  const ps = (n.proyectos || []).slice().sort((a, b) => peso(b) - peso(a));
   const filas = ps.map(p => {
-    if (p.cu_horas == null) return `<tr><td><strong>${esc(p.nombre)}</strong></td><td colspan="5" class="alm-mut">Neon no entregó el dato de cómputo de este proyecto.</td></tr>`;
-    const pasa = p.cu_proyeccion != null && p.cu_limite && p.cu_proyeccion > p.cu_limite;
-    const proy = p.cu_proyeccion == null ? `<span class="alm-mut">aún sin ritmo</span>`
-      : `<span class="${pasa ? "alm-rojo-t" : "alm-verde-t"}">${p.cu_proyeccion.toFixed(1)} CU-h</span>` + (pasa ? `<div class="alm-mut">no alcanzaría el mes</div>` : "");
+    const h = p.horas;
+    if (!h) return `<tr><td><strong>${esc(p.nombre)}</strong>${p.cuenta ? `<div class="alm-mut">${esc(p.cuenta)}</div>` : ""}</td><td colspan="6" class="alm-mut">Neon no entregó el dato de cómputo de este proyecto.</td></tr>`;
+    const tam = h.cu_medido ? `tamaño medio ~${nHoras(h.cu_medio, 2)} CU` : `a 0.25 CU (no hay medición)`;
+    const ritmo = h.ritmo_dia == null ? `<span class="alm-mut">aún sin ritmo</span>`
+      : `<strong>${nHoras(h.ritmo_dia, 2)}</strong> CU-h/día` + (h.presupuesto_dia != null && h.estado !== "agotadas"
+        ? `<div class="alm-mut">Para llegar al reinicio: máx. ${nHoras(h.presupuesto_dia, 2)} CU-h/día (≈ ${nHoras(h.presupuesto_despierta)} h despierta)</div>` : "");
     return `<tr>
-      <td><strong>${esc(p.nombre)}</strong>${p.activo_horas != null ? `<div class="alm-mut">Base despierta ${p.activo_horas.toFixed(1)} h</div>` : ""}</td>
-      <td class="num"><strong>${p.cu_horas.toFixed(1)}</strong> CU-h${barra(p.cu_pct)}</td>
-      <td class="num">${p.cu_limite != null ? p.cu_limite : "—"} CU-h</td>
-      <td class="num">${p.cu_restantes != null ? p.cu_restantes.toFixed(1) + " CU-h" : "—"}</td>
-      <td class="num">${proy}</td>
-      <td class="num">${p.periodo_fin ? fmtFecha(p.periodo_fin.slice(0, 10)) : "—"}</td></tr>`;
+      <td><strong>${esc(p.nombre)}</strong>${p.cuenta ? `<div class="alm-mut">${esc(p.cuenta)}</div>` : ""}${h.despierta_usadas != null ? `<div class="alm-mut">Base despierta ${nHoras(h.despierta_usadas)} h · ${tam}</div>` : ""}</td>
+      <td class="num">${nHoras(h.plan, 0)} CU-h<div class="alm-mut">≈ ${nHoras(h.despierta_total, 0)} h despierta</div></td>
+      <td class="num"><strong>${nHoras(h.usadas)}</strong> CU-h${barra(h.pct)}</td>
+      <td class="num"><strong class="${h.estado === "agotadas" ? "alm-rojo-t" : ""}">${nHoras(h.sobran)} CU-h</strong><div class="alm-mut">≈ ${nHoras(h.despierta_sobran)} h despierta</div></td>
+      <td class="num">${ritmo}</td>
+      <td>${estadoHoras(h)}</td>
+      <td class="num">${p.periodo_fin ? fmtFecha(p.periodo_fin.slice(0, 10)) : "—"}${h.dias_faltan != null ? `<div class="alm-mut">en ${fmtDias(h.dias_faltan)}</div>` : ""}</td></tr>`;
   });
-  $("#computo").innerHTML = tabla([{t:"Proyecto"},{t:"Usadas este mes",num:1},{t:"Límite",num:1},{t:"Te quedan",num:1},{t:"Al cierre del mes (ritmo actual)",num:1},{t:"Se reinicia",num:1}], filas, "No hay proyectos.");
+  $("#computo").innerHTML = tabla([{t:"Proyecto"},{t:"Horas del plan",num:1},{t:"Usadas este mes",num:1},{t:"Te sobran",num:1},{t:"Ritmo de gasto",num:1},{t:"¿Alcanzan?"},{t:"Se reinicia",num:1}], filas, "No hay proyectos.");
+  $("#horas-nota").textContent = "«Horas despierta» es una equivalencia: se calcula con el tamaño medio real del cómputo cuando Neon da el tiempo despierto, y si no, con el cómputo más chico (0.25 CU). Mientras más grande el cómputo, menos horas despierta rinde cada CU-h.";
 }
 
 function verNeon(d) {
@@ -524,6 +574,55 @@ function aplicarFactor() {
 }
 $("#factor").addEventListener("keydown", e => { if (e.key === "Enter") aplicarFactor(); });
 
+
+/* ---------------- Nuestro plan ---------------- */
+function medHtml(m, estado) {
+  if (estado === "sin_conectar") return `<span class="alm-mut">Conecta el servicio para ver tu uso</span>`;
+  if (estado === "error") return `<span class="alm-mut">No se pudo leer</span>`;
+  if (!m) return `<span class="alm-mut">No se mide desde el panel</span>`;
+  if (m.usado == null) return `<span>${esc(m.texto)}</span>`;
+  const f = v => m.unidad === "bytes" ? fmt(v) : nHoras(v, 2) + (m.unidad ? " " + m.unidad : "");
+  return `<strong>${f(m.usado)}</strong>${m.limite ? ` de ${f(m.limite)}` : ""}` + (m.pct != null ? barra(m.pct) : "") +
+    (m.texto ? `<div class="alm-mut">${esc(m.texto)}</div>` : "");
+}
+
+function planServicio(s) {
+  let ultimo = null;
+  const filas = [];
+  s.funciones.forEach(f => {
+    if (f.grupo !== ultimo) { filas.push(`<tr class="alm-grupo"><td colspan="3">${esc(f.grupo)}</td></tr>`); ultimo = f.grupo; }
+    filas.push(`<tr><td><strong>${esc(f.nombre)}</strong></td>
+      <td>${esc(f.valor)}${f.detalle ? `<div class="alm-sub">${esc(f.detalle)}</div>` : ""}</td>
+      <td>${medHtml(f.medicion, s.estado)}</td></tr>`);
+  });
+  const aviso = s.estado === "sin_conectar" ? `<div class="alm-aviso" style="margin:0 16px 10px;">Este servicio aún no está conectado: abajo se ve el plan de referencia, sin tu uso. Conéctalo en «Conexiones».</div>`
+    : s.estado === "error" ? `<div class="alm-aviso error" style="margin:0 16px 10px;">No se pudo leer el servicio: ${esc(s.error || "error")}. Se muestra el plan de referencia.</div>` : "";
+  const nota = s.nota ? `<div class="alm-aviso" style="margin:0 16px 10px;">${esc(s.nota)}</div>` : "";
+  const otros = s.otros_planes.length
+    ? `<p><strong>Si creces:</strong></p>` + s.otros_planes.map(o => `<p class="alm-mut"><strong>${esc(o.nombre)}</strong> · ${esc(o.precio)} — ${esc(o.resumen)}</p>`).join("")
+    : "";
+  return `<div class="luxury-card alm-plan" style="padding:0; overflow:hidden;">
+    <div class="alm-plan-cab"><div><h3 class="stat-label" style="margin:0;">${esc(s.titulo)}</h3><div class="alm-sub" style="max-width:640px;">${esc(s.resumen)}</div></div>
+      <div style="text-align:right;"><span class="badge badge-green">Plan ${esc(s.plan)}</span><div class="alm-mut">${esc(s.precio)}</div><div class="alm-mut">Origen: ${esc(s.origen_plan || "—")}</div></div></div>
+    ${aviso}${nota}
+    <div class="table-wrap alm-tabla">${tabla([{t:"Función"},{t:"Lo que incluye"},{t:"Lo que usas hoy"}], filas, "Sin datos.")}</div>
+    <div class="alm-plan-pie">${otros}<p class="alm-mut"><a href="${esc(s.enlace)}" target="_blank" rel="noopener noreferrer">Ver la página oficial del plan</a></p></div>
+  </div>`;
+}
+
+async function cargarPlan(forzar) {
+  try {
+    const r = await fetch("/api/almacenamiento/plan" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "Error");
+    $("#plan").innerHTML = d.servicios.map(planServicio).join("");
+    $("#plan-nota").textContent = "Cifras de referencia revisadas el " + d.fecha_referencia + ". Los planes cambian: el uso de la derecha es real (se lee de cada servicio), pero lo que \"incluye\" conviene confirmarlo en la página oficial antes de decidir algo de dinero.";
+  } catch (err) {
+    $("#plan").innerHTML = `<div class="alm-aviso error">No se pudo cargar el detalle de los planes. Recarga la página.</div>`;
+    $("#plan-nota").textContent = "";
+  }
+}
+
 async function cargar(forzar) {
   const btn = $("#btn-recargar"); btn.disabled = true; $("#estado").textContent = "Consultando las APIs…";
   try {
@@ -532,7 +631,7 @@ async function cargar(forzar) {
     if (!d.ok) throw new Error(d.error || "Error");
     $("#alertas").innerHTML = d.alertas.map(a => `<div class="alm-aviso ${a.nivel === "error" ? "error" : ""}">${esc(a.texto)}</div>`).join("");
     tarjetas(d); verComputo(d); verNeon(d); verTablas(d); verR2(d); verCld(d);
-    cargarHistorial(); cargarCostos();
+    cargarHistorial(); cargarCostos(); cargarPlan(false);
     $("#estado").textContent = "Actualizado " + new Date(d.generado).toLocaleString();
   } catch (err) {
     $("#estado").textContent = "No se pudo cargar (¿sesión vencida?). Recarga la página.";
