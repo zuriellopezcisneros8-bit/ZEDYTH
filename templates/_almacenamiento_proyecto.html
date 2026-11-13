@@ -1,99 +1,258 @@
-<!-- templates/_almacenamiento_proyecto.html : base de datos y archivos vinculados a ESTE proyecto, con gestión -->
+<!-- templates/_almacenamiento_proyecto.html : centro de control de base de datos y archivos de ESTE proyecto -->
+<div class="section-title">Base de datos y almacenamiento</div>
 {% if p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo %}
-<div class="luxury-card alm-proy" data-pid="{{ p.id }}" style="margin-top:16px;">
-  <h3 class="stat-label">Base de datos y almacenamiento de este proyecto</h3>
-  <div class="alm-proy-cuerpo" style="font-size:14px; display:grid; gap:10px;"><span style="color:var(--text-muted);">Consultando…</span></div>
-  <div style="display:flex; gap:14px; align-items:center; margin-top:8px;">
-    <a class="mono alm-proy-refrescar" href="#" style="font-size:13px;">Actualizar ahora</a>
-    <a class="mono" href="/almacenamiento" style="font-size:13px;">Ver todo en Almacenamiento</a>
+<style>
+  .ap-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:16px; }
+  .ap-tile .ap-big { font-size:30px; font-weight:600; line-height:1.1; margin:6px 0 2px; }
+  .ap-barra { height:12px; background:rgba(128,128,128,.25); border-radius:99px; overflow:hidden; margin:12px 0 6px; }
+  .ap-barra > div { height:100%; border-radius:99px; min-width:3px; transition:width .4s; }
+  .ap-barra.fina { height:7px; margin:0; }
+  .ap-verde { background:#4ade80; } .ap-ambar { background:#f5b94c; } .ap-rojo { background:#f87171; }
+  .ap-mut { color:var(--text-muted, #9aa3b2); font-size:13px; }
+  .ap-estado { font-size:14px; margin-top:6px; line-height:1.5; }
+  .ap-estado b { font-weight:600; }
+  .ap-cab { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; }
+  .ap-datos { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px 18px; margin:14px 0 6px; }
+  .ap-datos > div > span { display:block; color:var(--text-muted, #9aa3b2); font-size:12px; margin-bottom:2px; }
+  .ap-datos > div > strong { font-size:15px; font-weight:600; }
+  .ap-sub { font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--text-muted, #9aa3b2); margin:18px 0 6px; }
+  .ap-tabla { overflow-x:auto; }
+  .ap-tabla table { width:100%; border-collapse:collapse; font-size:13px; min-width:480px; }
+  .ap-tabla th { text-align:left; font-weight:500; color:var(--text-muted, #9aa3b2); padding:6px 8px; border-bottom:1px solid rgba(128,128,128,.25); }
+  .ap-tabla td { padding:7px 8px; border-bottom:1px solid rgba(128,128,128,.12); vertical-align:middle; }
+  .ap-tabla td.n, .ap-tabla th.n { text-align:right; white-space:nowrap; }
+  .ap-tabla code { font-size:12px; word-break:break-all; }
+  .ap-chip { display:inline-block; font-size:12px; padding:2px 10px; border-radius:99px; background:rgba(128,128,128,.2); margin:2px 4px 2px 0; }
+  .ap-aviso { border-radius:10px; padding:10px 14px; margin-bottom:12px; border:1px solid #f5b94c; background:rgba(245,185,76,.12); font-size:14px; }
+  .ap-aviso.error { border-color:#f87171; background:rgba(248,113,113,.1); }
+  .ap-card { margin-bottom:16px; }
+  .ap-del { color:#f87171; padding:2px 10px; font-size:12px; }
+  .ap-acciones { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+</style>
+
+<div class="alm-proy" data-pid="{{ p.id }}">
+  <div class="ap-cab" style="margin-bottom:14px;">
+    <span class="ap-mut ap-generado">Consultando…</span>
+    <div class="ap-acciones">
+      <a class="mono alm-proy-refrescar" href="#" style="font-size:13px;">Actualizar ahora</a>
+      <a class="mono" href="/almacenamiento" style="font-size:13px;">Conexiones y límites</a>
+      <a class="mono" href="/proyectos/{{ p.id }}/editar" style="font-size:13px;">Cambiar vínculos</a>
+    </div>
   </div>
+  <div class="ap-avisos"></div>
+  <div class="ap-tiles"></div>
+  <div class="ap-detalle"><div class="luxury-card"><span class="ap-mut">Consultando Neon, R2 y Cloudinary…</span></div></div>
 </div>
+
 {% raw %}
 <script>
 (function () {
-  const paneles = document.querySelectorAll(".alm-proy");
-  if (!paneles.length || window.__almProyCargado) return;
+  const raiz = document.querySelector(".alm-proy");
+  if (!raiz || window.__almProyCargado) return;
   window.__almProyCargado = true;
+  const pid = raiz.dataset.pid;
+  const $ = s => raiz.querySelector(s);
+
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const fmt = b => {
-    if (b == null) return "—";
+    if (b == null || isNaN(b)) return "—";
     const u = ["B","KB","MB","GB","TB"]; let i = 0, n = Number(b);
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return n.toFixed(i ? 1 : 0) + " " + u[i];
+    return n.toFixed(i >= 3 ? 2 : (i ? 1 : 0)) + " " + u[i];
   };
-  const mut = t => '<span style="color:var(--text-muted);">' + t + "</span>";
-  const linea = (tit, txt) => "<div><strong>" + esc(tit) + "</strong> · " + txt + "</div>";
+  const fpct = p => p == null ? "—" : (p > 0 && p < 0.1 ? "<0.1%" : p + "%");
+  const num = n => n == null ? "—" : Number(n).toLocaleString("es-MX");
+  const fecha = iso => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString("es-MX", { day:"2-digit", month:"short", year:"numeric" }) : "—"; };
+  const horas = s => s == null ? "—" : (s >= 3600 ? (s / 3600).toFixed(1) + " h" : Math.round(s / 60) + " min");
+  const color = (pct, umbral) => pct == null ? "ap-verde" : pct >= umbral ? "ap-rojo" : pct >= 60 ? "ap-ambar" : "ap-verde";
+  const barra = (pct, umbral, fina) =>
+    '<div class="ap-barra' + (fina ? " fina" : "") + '"><div class="' + color(pct, umbral) + '" style="width:' + Math.min(pct || 0, 100) + '%"></div></div>';
+  const mut = t => '<span class="ap-mut">' + t + "</span>";
+  const dato = (t, v) => "<div><span>" + esc(t) + "</span><strong>" + v + "</strong></div>";
+  const tabla = (cabeceras, filas, vacio) => filas.length
+    ? '<div class="ap-tabla"><table><thead><tr>' + cabeceras.map(h => '<th' + (h.n ? ' class="n"' : "") + ">" + esc(h.t) + "</th>").join("") +
+      "</tr></thead><tbody>" + filas.join("") + "</tbody></table></div>"
+    : '<div class="ap-mut" style="padding:6px 0;">' + vacio + "</div>";
+  const tarjeta = (titulo, cuerpo) => '<div class="luxury-card ap-card"><h3 class="stat-label">' + titulo + "</h3>" + cuerpo + "</div>";
+
   const problema = (tit, x) =>
-    x.estado === "sin_conectar" ? linea(tit, mut("conecta la llave en Almacenamiento → Conexiones.")) :
-    x.estado === "error" ? linea(tit, mut("error: " + esc(x.error))) :
-    x.estado === "no_encontrado" ? linea(tit, mut("no encontré «" + esc(x.buscado || x.entrada) + "». Revisa el vínculo en «Editar proyecto».")) : null;
-  const btn = (attrs) => '<button type="button" class="btn alm-del" ' + attrs + ' style="padding:2px 10px;font-size:12px;">Eliminar</button>';
-  const archivos = (lista, fila) => lista.length
-    ? '<div style="margin:4px 0 0 12px;display:grid;gap:4px;">' + lista.map(fila).join("") + "</div>"
-    : "";
-  const pintar = (el, r) => {
-    const out = [];
-    if (r.neon) {
-      const x = r.neon;
-      out.push(problema("Neon", x) || linea("Neon · " + x.nombre,
-        fmt(x.bytes) + (x.pct != null ? " (" + x.pct + "% del límite)" : "") + " · " + x.ramas + " rama(s)" +
-        ((x.bases || []).length ? " · bases: " + x.bases.map(esc).join(", ") : "") +
-        (x.aviso ? "<div>" + mut(esc(x.aviso)) + "</div>" : "") +
-        ((x.detalle_ramas || []).length ? '<div style="margin:4px 0 0 12px;">' + x.detalle_ramas.map(b =>
-          "<div>" + esc(b.nombre) + (b.principal ? " ★" : "") + " · " + fmt(b.bytes) + "</div>").join("") + "</div>" : "")));
-    }
-    (r.r2 || []).forEach(x => out.push(problema("R2", x) ||
-      linea("R2 · " + x.entrada, fmt(x.bytes) + " · " + x.objetos + (x.estimado ? "+" : "") + " objetos" + (x.estimado ? mut(" (conteo parcial)") : "")) +
-      archivos(x.grandes || [], g => '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;"><span>' +
-        esc(g.key) + " · " + fmt(g.bytes) + "</span>" +
-        btn('data-tipo="r2" data-bucket="' + esc(x.bucket) + '" data-key="' + esc(g.key) + '"') + "</div>")));
-    if (r.cloudinary) {
-      const x = r.cloudinary;
-      out.push(problema("Cloudinary", x) || (linea("Cloudinary · " + x.carpeta,
-        x.vacia ? mut("no hay archivos en esa carpeta.") :
-        fmt(x.bytes) + " · " + x.archivos + " archivo(s)" + (x.muestra ? mut(" (según una muestra)") : "")) +
-        archivos(x.grandes || [], g => '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;"><span>' +
-          esc(g.public_id) + " · " + fmt(g.bytes) + "</span>" +
-          btn('data-tipo="cld" data-id="' + esc(g.public_id) + '" data-rt="' + esc(g.tipo) + '"') + "</div>")));
-    }
-    el.querySelector(".alm-proy-cuerpo").innerHTML = out.join("") || mut("Sin vínculos.");
+    x.estado === "sin_conectar" ? tarjeta(esc(tit), mut("Falta conectar la llave en <a href='/almacenamiento'>Almacenamiento → Conexiones</a>.")) :
+    x.estado === "error" ? tarjeta(esc(tit), '<div class="ap-aviso error">No se pudo leer: ' + esc(x.error) + "</div>") :
+    x.estado === "no_encontrado" ? tarjeta(esc(tit), mut("No encontré «" + esc(x.buscado || x.entrada) + "». Revisa el nombre en «Cambiar vínculos».")) : "";
+
+  /* ---------- resumen superior: barra, % usado y lo que queda ---------- */
+  const tileNeon = (x, u) => {
+    const hay = x.limite != null;
+    return '<div class="luxury-card ap-tile"><h3 class="stat-label">Neon · ' + esc(x.nombre) + '</h3><div class="ap-big">' + fmt(x.bytes) + "</div>" +
+      (hay ? barra(x.pct, u) + '<div class="ap-estado">Llevas <b>' + fpct(x.pct) + "</b> ocupado de " + fmt(x.limite) +
+        ".<br>Te quedan <b>" + fmt(x.restante) + "</b> (" + fpct(Math.max(0, +(100 - x.pct).toFixed(1))) + ").</div>"
+      : '<div class="ap-estado">' + mut("Define el límite en GB (Conexiones) para ver el porcentaje.") + "</div>") + "</div>";
   };
-  const fallo = txt => paneles.forEach(el => { el.querySelector(".alm-proy-cuerpo").innerHTML = mut(txt); });
-  const cargar = (forzar) =>
-    fetch("/api/almacenamiento/proyectos" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" })
+  const tileR2 = (lista, cuenta, u) => {
+    const ok = lista.filter(e => e.estado === "ok");
+    const mio = ok.reduce((a, e) => a + (e.bytes || 0), 0), objs = ok.reduce((a, e) => a + (e.objetos || 0), 0);
+    const pm = cuenta.limite ? +(mio * 100 / cuenta.limite).toFixed(1) : null;
+    return '<div class="luxury-card ap-tile"><h3 class="stat-label">Cloudflare R2 · este proyecto</h3><div class="ap-big">' + fmt(mio) + "</div>" +
+      barra(cuenta.pct, u) + '<div class="ap-estado">' + num(objs) + " archivo(s) · usa <b>" + fpct(pm) + "</b> del plan de " + fmt(cuenta.limite) + ".<br>" +
+      "Toda tu cuenta R2: " + fmt(cuenta.total) + " (<b>" + fpct(cuenta.pct) + "</b>). Quedan <b>" + fmt(cuenta.restante) + "</b>.</div></div>";
+  };
+  const tileCld = (x, cuenta, u) => {
+    const cr = cuenta.creditos || {};
+    return '<div class="luxury-card ap-tile"><h3 class="stat-label">Cloudinary · ' + esc(x.carpeta) + '</h3><div class="ap-big">' + fmt(x.bytes) + "</div>" +
+      barra(cuenta.pct, u) + '<div class="ap-estado">' + num(x.archivos) + " archivo(s) en esta carpeta.<br>" +
+      (cuenta.limite ? "Cuenta: " + fmt(cuenta.total) + " de " + fmt(cuenta.limite) + " (<b>" + fpct(cuenta.pct) + "</b>). Quedan <b>" + fmt(cuenta.restante) + "</b>."
+        : "Créditos usados: <b>" + fpct(cr.pct) + "</b>" + (cr.limite != null ? " de " + num(cr.limite) : "") + ".") + "</div></div>";
+  };
+
+  /* ---------- detalle por servicio ---------- */
+  const detalleNeon = (x, u) => {
+    const filas = (x.detalle_ramas || []).map(b =>
+      "<tr><td>" + esc(b.nombre) + (b.principal ? ' <span class="ap-chip">principal</span>' : "") + "</td><td>" + esc(b.estado || "—") + "</td>" +
+      '<td class="n">' + fmt(b.bytes) + '</td><td style="min-width:140px;">' + (b.pct != null ? barra(b.pct, u, true) : "") + '</td><td class="n">' + fpct(b.pct) + "</td><td>" + fecha(b.creada) + "</td></tr>");
+    return tarjeta("Neon · base de datos «" + esc(x.nombre) + "»",
+      '<div class="ap-datos">' +
+        dato("Tamaño total", fmt(x.bytes)) + dato("Límite del plan", x.limite != null ? fmt(x.limite) : "—") +
+        dato("Te quedan", x.restante != null ? fmt(x.restante) : "—") + dato("Porcentaje ocupado", fpct(x.pct)) +
+        dato("Ramas", num(x.ramas)) + dato("Bases de datos", num((x.bases || []).length)) +
+        dato("Región", esc(x.region || "—")) + dato("Creado", fecha(x.creado)) +
+        dato("Cómputo del periodo", horas(x.compute_s)) + dato("Tiempo activo", horas(x.activo_s)) +
+        dato("Datos escritos", fmt(x.escrito)) + dato("Transferencia de salida", fmt(x.transferencia)) +
+      "</div>" +
+      (x.aviso ? '<div class="ap-aviso">' + esc(x.aviso) + "</div>" : "") +
+      '<div class="ap-sub">Bases de datos</div>' + ((x.bases || []).length ? x.bases.map(b => '<span class="ap-chip">' + esc(b) + "</span>").join("") : mut("Sin datos.")) +
+      '<div class="ap-sub">Ramas</div>' +
+      tabla([{t:"Rama"},{t:"Estado"},{t:"Tamaño",n:1},{t:"Uso del límite"},{t:"%",n:1},{t:"Creada"}], filas, "Sin ramas.") +
+      '<p class="ap-mut" style="margin:10px 0 0;">El porcentaje usa el límite que tienes en Conexiones (Neon gratis = 1 GB por proyecto).</p>');
+  };
+
+  const filaCarpeta = (c, base, claveN) => {
+    const p = base ? +(c.bytes * 100 / base).toFixed(1) : null;
+    return "<tr><td><code>" + esc(c.ruta) + "</code></td><td class='n'>" + num(c[claveN]) + "</td><td class='n'>" + fmt(c.bytes) + "</td>" +
+      "<td style='min-width:140px;'>" + barra(p, 101, true) + "</td><td class='n'>" + fpct(p) + "</td></tr>";
+  };
+
+  const detalleR2 = (e, cuenta, u) => {
+    const carps = (e.carpetas || []).map(c => filaCarpeta(c, e.bytes, "objetos"));
+    const arch = (e.grandes || []).map(g =>
+      "<tr><td><code>" + esc(g.key) + "</code></td><td>" + fecha(g.fecha) + "</td><td class='n'>" + fmt(g.bytes) + "</td>" +
+      "<td class='n'><button type='button' class='btn alm-del ap-del' data-tipo='r2' data-bucket='" + esc(e.bucket) + "' data-key='" + esc(g.key) + "'>Eliminar</button></td></tr>");
+    return tarjeta("Cloudflare R2 · " + esc(e.entrada),
+      '<div class="ap-datos">' +
+        dato("Ocupa este proyecto", fmt(e.bytes)) + dato("Archivos", num(e.objetos) + (e.estimado ? "+" : "")) +
+        dato("% del plan de R2", fpct(e.pct_cuenta)) + dato("Plan (límite de cuenta)", cuenta && cuenta.limite ? fmt(cuenta.limite) : "—") +
+        dato("Cuenta usada en total", cuenta ? fmt(cuenta.total) : "—") + dato("Quedan en la cuenta", cuenta && cuenta.restante != null ? fmt(cuenta.restante) : "—") +
+        dato("Bucket completo", fmt(e.bytes_bucket)) + dato("Buckets en la cuenta", cuenta ? num(cuenta.buckets) : "—") +
+      "</div>" +
+      (e.estimado ? '<div class="ap-aviso">El bucket tiene muchísimos archivos: el conteo es parcial (estimado).</div>' : "") +
+      '<div class="ap-sub">Carpetas (desglose por cliente / negocio)</div>' +
+      tabla([{t:"Carpeta"},{t:"Archivos",n:1},{t:"Tamaño",n:1},{t:"Parte del proyecto"},{t:"%",n:1}], carps, "Sin subcarpetas.") +
+      '<div class="ap-sub">Archivos más pesados</div>' +
+      tabla([{t:"Archivo"},{t:"Modificado"},{t:"Tamaño",n:1},{t:""}], arch, "No hay archivos."));
+  };
+
+  const detalleCld = (x, cuenta, u) => {
+    const cr = (cuenta && cuenta.creditos) || {};
+    const carps = (x.carpetas || []).map(c => filaCarpeta(c, x.bytes, "archivos"));
+    const arch = (x.grandes || []).map(g =>
+      "<tr><td><code>" + esc(g.public_id) + "</code><div class='ap-mut'>" + esc(g.tipo || "") + (g.formato ? " · " + esc(g.formato) : "") + "</div></td>" +
+      "<td class='n'>" + fmt(g.bytes) + "</td><td class='n'>" +
+      (g.url && /^https:\/\//.test(g.url) ? "<a href='" + esc(g.url) + "' target='_blank' rel='noopener' class='mono' style='font-size:12px;margin-right:10px;'>Ver</a>" : "") +
+      "<button type='button' class='btn alm-del ap-del' data-tipo='cld' data-id='" + esc(g.public_id) + "' data-rt='" + esc(g.tipo) + "'>Eliminar</button></td></tr>");
+    return tarjeta("Cloudinary · carpeta «" + esc(x.carpeta) + "»",
+      (x.vacia ? '<div class="ap-aviso">No hay archivos en esa carpeta de Cloudinary.</div>' : "") +
+      '<div class="ap-datos">' +
+        dato("Ocupa este proyecto", fmt(x.bytes)) + dato("Archivos", num(x.archivos)) +
+        dato("Plan", esc((cuenta && cuenta.plan) || "—")) + dato("Almacenamiento de la cuenta", cuenta ? fmt(cuenta.total) : "—") +
+        dato("Límite de almacenamiento", cuenta && cuenta.limite ? fmt(cuenta.limite) : "—") + dato("Quedan", cuenta && cuenta.restante != null ? fmt(cuenta.restante) : "—") +
+        dato("Créditos usados", cr.usado != null ? num(cr.usado) + (cr.limite != null ? " / " + num(cr.limite) : "") : "—") +
+        dato("% de créditos", fpct(cr.pct)) +
+        dato("Ancho de banda", fmt(cuenta && cuenta.ancho_banda)) + dato("Transformaciones", num(cuenta && cuenta.transformaciones)) +
+        dato("Recursos en la cuenta", num(cuenta && cuenta.recursos)) + dato("Derivados", num(cuenta && cuenta.derivados)) +
+      "</div>" +
+      (x.muestra ? '<div class="ap-aviso">Hay demasiados archivos: los totales por carpeta salen de una muestra.</div>' : "") +
+      '<div class="ap-sub">Subcarpetas</div>' +
+      tabla([{t:"Carpeta"},{t:"Archivos",n:1},{t:"Tamaño",n:1},{t:"Parte del proyecto"},{t:"%",n:1}], carps, "Sin subcarpetas.") +
+      '<div class="ap-sub">Archivos más pesados</div>' +
+      tabla([{t:"Archivo"},{t:"Tamaño",n:1},{t:""}], arch, "No hay archivos."));
+  };
+
+  /* ---------- pintar todo ---------- */
+  const pintar = r => {
+    const u = r.umbral || 80, tiles = [], det = [], avisos = [];
+    if (r.neon) {
+      if (r.neon.estado === "ok") {
+        tiles.push(tileNeon(r.neon, u));
+        det.push(detalleNeon(r.neon, u));
+        if (r.neon.pct != null && r.neon.pct >= u) avisos.push("Neon está al " + r.neon.pct + "% de su límite: quedan " + fmt(r.neon.restante) + ".");
+      } else det.push(problema("Neon · base de datos", r.neon));
+    }
+    if ((r.r2 || []).length) {
+      if (r.r2.some(e => e.estado === "ok") && r.r2_cuenta) {
+        tiles.push(tileR2(r.r2, r.r2_cuenta, u));
+        if (r.r2_cuenta.pct != null && r.r2_cuenta.pct >= u) avisos.push("Cloudflare R2 está al " + r.r2_cuenta.pct + "% del plan: quedan " + fmt(r.r2_cuenta.restante) + ".");
+      }
+      r.r2.forEach(e => det.push(e.estado === "ok" ? detalleR2(e, r.r2_cuenta, u) : problema("Cloudflare R2", e)));
+    }
+    if (r.cloudinary) {
+      if (r.cloudinary.estado === "ok" && r.cld_cuenta) {
+        tiles.push(tileCld(r.cloudinary, r.cld_cuenta, u));
+        det.push(detalleCld(r.cloudinary, r.cld_cuenta, u));
+        if (r.cld_cuenta.pct != null && r.cld_cuenta.pct >= u) avisos.push("Cloudinary está al " + r.cld_cuenta.pct + "% de su límite.");
+      } else det.push(problema("Cloudinary", r.cloudinary));
+    }
+    $(".ap-avisos").innerHTML = avisos.map(t => '<div class="ap-aviso">' + esc(t) + "</div>").join("");
+    $(".ap-tiles").innerHTML = tiles.join("");
+    $(".ap-detalle").innerHTML = det.join("") || '<div class="luxury-card">' + mut("Sin vínculos.") + "</div>";
+  };
+
+  const hace = iso => {
+    const d = iso ? new Date(iso) : null; if (!d || isNaN(d)) return "";
+    const m = Math.max(0, Math.round((Date.now() - d) / 60000));
+    return m < 1 ? "Actualizado hace unos segundos" : "Actualizado hace " + m + " min (el caché se renueva cada 5 min)";
+  };
+  const fallo = txt => { $(".ap-detalle").innerHTML = '<div class="luxury-card"><div class="ap-aviso error">' + esc(txt) + "</div></div>"; $(".ap-tiles").innerHTML = ""; };
+
+  const cargar = forzar => {
+    $(".ap-generado").textContent = "Consultando…";
+    return fetch("/api/almacenamiento/proyectos" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" })
       .then(r => r.status === 403 ? { ok: false, error: "Solo administradores." } : r.json())
       .then(d => {
         if (!d.ok) throw new Error(d.error || "Error");
-        paneles.forEach(el => {
-          const r = d.proyectos[el.dataset.pid];
-          if (r) pintar(el, r); else el.querySelector(".alm-proy-cuerpo").innerHTML = mut("Sin vínculos.");
-        });
+        const r = d.proyectos[pid];
+        if (!r) return fallo("Este proyecto no tiene vínculos guardados todavía.");
+        pintar(r);
+        $(".ap-generado").textContent = hace(d.generado);
       })
-      .catch(e => fallo("No se pudo consultar el almacenamiento (" + esc(e.message) + ")."));
+      .catch(e => fallo("No se pudo consultar el almacenamiento (" + e.message + ")."));
+  };
   cargar(false);
 
-  paneles.forEach(el => {
-    el.querySelector(".alm-proy-refrescar").addEventListener("click", e => { e.preventDefault(); cargar(true); });
-    el.addEventListener("click", async e => {
-      const b = e.target.closest(".alm-del");
-      if (!b) return;
-      const esR2 = b.dataset.tipo === "r2";
-      const nombre = esR2 ? b.dataset.key : b.dataset.id;
-      if (!confirm("¿Eliminar «" + nombre + "»? No se puede deshacer.")) return;
-      b.disabled = true;
-      const url = "/api/almacenamiento/proyectos/" + el.dataset.pid + (esR2 ? "/r2/eliminar" : "/cloudinary/eliminar");
-      const cuerpo = esR2 ? { bucket: b.dataset.bucket, key: b.dataset.key, confirmar: true }
-                          : { public_id: b.dataset.id, resource_type: b.dataset.rt, confirmar: true };
-      try {
-        const r = await fetch(url, { method: "POST", credentials: "same-origin",
-          headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
-        const d = await r.json();
-        if (!d.ok) { alert("No se pudo eliminar: " + (d.error || "error")); b.disabled = false; return; }
-        cargar(true);
-      } catch (err) { alert("No se pudo eliminar."); b.disabled = false; }
-    });
+  $(".alm-proy-refrescar").addEventListener("click", e => { e.preventDefault(); cargar(true); });
+  raiz.addEventListener("click", async e => {
+    const b = e.target.closest(".alm-del");
+    if (!b) return;
+    const esR2 = b.dataset.tipo === "r2";
+    const nombre = esR2 ? b.dataset.key : b.dataset.id;
+    if (!confirm("¿Eliminar «" + nombre + "»? No se puede deshacer.")) return;
+    b.disabled = true;
+    const url = "/api/almacenamiento/proyectos/" + pid + (esR2 ? "/r2/eliminar" : "/cloudinary/eliminar");
+    const cuerpo = esR2 ? { bucket: b.dataset.bucket, key: b.dataset.key, confirmar: true }
+                        : { public_id: b.dataset.id, resource_type: b.dataset.rt, confirmar: true };
+    try {
+      const r = await fetch(url, { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+      const d = await r.json();
+      if (!d.ok) { alert("No se pudo eliminar: " + (d.error || "error")); b.disabled = false; return; }
+      cargar(true);
+    } catch (err) { alert("No se pudo eliminar."); b.disabled = false; }
   });
 })();
 </script>
 {% endraw %}
+{% else %}
+<div class="luxury-card">
+  <p style="margin:0 0 10px;">Esta plataforma todavía no tiene vinculada su base de datos ni su almacenamiento.</p>
+  <p style="margin:0 0 14px; font-size:13px; color:var(--text-muted);">Vincula el proyecto de Neon, el bucket de R2 y/o la carpeta de Cloudinary para ver aquí cuánto ocupa, el porcentaje usado y cuánto te queda.</p>
+  <a class="btn btn-primary" href="/proyectos/{{ p.id }}/editar">Vincular ahora</a>
+</div>
 {% endif %}

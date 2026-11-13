@@ -64,7 +64,10 @@ def _gb(nombre, defecto=""):
 
 
 def _pct(usado, limite):
-    return round(usado * 100 / limite, 1) if limite else None
+    if not limite:
+        return None
+    p = round(usado * 100 / limite, 1)
+    return 0.01 if (usado and p == 0) else p      # algo usado pero minúsculo: se muestra como "<0.1%"
 
 
 def _http(url, metodo="GET", headers=None, timeout=20):
@@ -88,13 +91,21 @@ def _neon(ruta):
 def _neon_proyecto(p):
     pid = p["id"]
     info = {"id": pid, "nombre": p.get("name"), "region": p.get("region_id"),
-            "bytes": p.get("synthetic_storage_size") or 0, "ramas": [], "bases": []}
+            "bytes": p.get("synthetic_storage_size") or 0, "ramas": [], "bases": [],
+            "creado": p.get("created_at"), "actualizado": p.get("updated_at"),
+            "compute_s": p.get("compute_time_seconds"), "activo_s": p.get("active_time_seconds"),
+            "escrito": p.get("written_data_bytes"), "transferencia": p.get("data_transfer_bytes")}
     try:
         for r in _neon(f"/projects/{pid}/branches").get("branches", []):
             info["ramas"].append({"id": r["id"], "nombre": r.get("name"),
                                   "principal": bool(r.get("default") or r.get("primary")),
-                                  "bytes": r.get("logical_size") or 0, "estado": r.get("current_state")})
+                                  "bytes": r.get("logical_size") or 0, "estado": r.get("current_state"),
+                                  "creada": r.get("created_at")})
         info["ramas"].sort(key=lambda r: r["bytes"], reverse=True)
+        # synthetic_storage_size (lo facturable) llega en 0/null en proyectos chicos o recién creados:
+        # en ese caso el tamaño real es la suma del tamaño lógico de las ramas.
+        if not info["bytes"]:
+            info["bytes"] = sum(r["bytes"] for r in info["ramas"])
         prin = next((r for r in info["ramas"] if r["principal"]), info["ramas"][0] if info["ramas"] else None)
         if prin:
             dbs = _neon(f"/projects/{pid}/branches/{prin['id']}/databases").get("databases", [])
@@ -113,12 +124,12 @@ def datos_neon():
     proyectos = _neon(ruta).get("projects", [])
     with ThreadPoolExecutor(max_workers=4) as ex:
         filas = list(ex.map(_neon_proyecto, proyectos))
-    limite = _gb("NEON_LIMITE_GB")            # límite POR PROYECTO (según tu plan), opcional
+    limite = _gb("NEON_LIMITE_GB", "1")       # límite POR PROYECTO: plan gratuito de Neon = 1 GB; cámbialo en Conexiones
     for f in filas:
         f["limite"] = limite
         f["pct"] = _pct(f["bytes"], limite)
     filas.sort(key=lambda f: f["bytes"], reverse=True)
-    return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas)}
+    return {"configurado": True, "proyectos": filas, "total": sum(f["bytes"] for f in filas), "limite": limite}
 
 
 def tablas_locales(db):
@@ -271,7 +282,7 @@ def datos_cloudinary():
             "recursos": uso.get("resources"), "derivados": uso.get("derived_resources"),
             "ancho_banda": (uso.get("bandwidth") or {}).get("usage"),
             "transformaciones": (uso.get("transformations") or {}).get("usage"),
-            "grandes": grandes[:15], "muestra": muestra,
+            "grandes": grandes[:40], "muestra": muestra,
             "carpetas": {k: {"bytes": v[0], "archivos": v[1]} for k, v in carp.items()}}
 
 
@@ -311,6 +322,8 @@ def _publico(d):
         o["r2"] = dict(o["r2"], buckets=[{k: v for k, v in b.items() if k != "carpetas"} for b in o["r2"]["buckets"]])
     if isinstance(o.get("cloudinary"), dict):
         o["cloudinary"] = {k: v for k, v in o["cloudinary"].items() if k != "carpetas"}
+        if isinstance(o["cloudinary"].get("grandes"), list):
+            o["cloudinary"]["grandes"] = o["cloudinary"]["grandes"][:15]
     return o
 
 
@@ -362,9 +375,26 @@ def _busca(dic, clave):
     return next((v for k, v in dic.items() if k.lower() == bajo), None)
 
 
+def _restante(usado, limite):
+    return max(limite - usado, 0) if limite else None
+
+
+def _hijos(carpetas, prefijo, cuenta_clave, maximo=25):
+    """Subcarpetas (hasta 2 niveles por debajo del prefijo) de un diccionario carpeta -> totales."""
+    pre = (prefijo + "/") if prefijo else ""
+    filas = []
+    for k, v in (carpetas or {}).items():
+        if not k.startswith(pre) or k == prefijo:
+            continue
+        filas.append({"ruta": k, "bytes": v["bytes"], cuenta_clave: v[cuenta_clave]})
+    filas.sort(key=lambda x: x["bytes"], reverse=True)
+    return filas[:maximo]
+
+
 def _por_proyecto(d, f):
-    """Lo que ocupa UN proyecto, a partir del resumen completo (con carpetas)."""
-    res = {"nombre": f["nombre"], "neon": None, "r2": [], "cloudinary": None}
+    """Lo que ocupa UN proyecto, a partir del resumen completo (con carpetas), con límites y lo que sobra."""
+    res = {"nombre": f["nombre"], "neon": None, "r2": [], "cloudinary": None, "r2_cuenta": None,
+           "cld_cuenta": None, "umbral": UMBRAL_ALERTA}
     if f["neon"]:
         n = d.get("neon") or {}
         if n.get("error"):
@@ -373,11 +403,19 @@ def _por_proyecto(d, f):
             res["neon"] = {"estado": "sin_conectar"}
         else:
             p = next((x for x in n.get("proyectos", []) if str(x.get("nombre", "")).lower() == f["neon"].lower()), None)
-            res["neon"] = ({"estado": "ok", "nombre": p["nombre"], "bytes": p["bytes"], "pct": p.get("pct"),
-                            "ramas": len(p["ramas"]), "bases": p["bases"], "aviso": p.get("aviso"),
-                            "detalle_ramas": [{"nombre": r["nombre"], "bytes": r["bytes"], "principal": r["principal"]}
-                                              for r in p["ramas"]]}
-                           if p else {"estado": "no_encontrado", "buscado": f["neon"]})
+            if p:
+                lim = p.get("limite")
+                res["neon"] = {"estado": "ok", "nombre": p["nombre"], "bytes": p["bytes"], "pct": p.get("pct"),
+                               "limite": lim, "restante": _restante(p["bytes"], lim),
+                               "region": p.get("region"), "creado": p.get("creado"), "actualizado": p.get("actualizado"),
+                               "compute_s": p.get("compute_s"), "activo_s": p.get("activo_s"),
+                               "escrito": p.get("escrito"), "transferencia": p.get("transferencia"),
+                               "ramas": len(p["ramas"]), "bases": p["bases"], "aviso": p.get("aviso"),
+                               "detalle_ramas": [{"nombre": r["nombre"], "bytes": r["bytes"], "principal": r["principal"],
+                                                  "estado": r.get("estado"), "creada": r.get("creada"),
+                                                  "pct": _pct(r["bytes"], lim)} for r in p["ramas"]]}
+            else:
+                res["neon"] = {"estado": "no_encontrado", "buscado": f["neon"]}
     entradas = _entradas_r2(f["r2"])
     if entradas:
         r = d.get("r2") or {}
@@ -386,6 +424,9 @@ def _por_proyecto(d, f):
         elif not r.get("configurado"):
             res["r2"] = [{"estado": "sin_conectar"}]
         else:
+            lim = r.get("limite")
+            res["r2_cuenta"] = {"total": r.get("total", 0), "limite": lim, "pct": r.get("pct"),
+                                "restante": _restante(r.get("total", 0), lim), "buckets": len(r.get("buckets", []))}
             for bucket, carpeta in entradas:
                 etiqueta = bucket + ("/" + carpeta if carpeta else "")
                 b = next((x for x in r.get("buckets", []) if str(x.get("nombre", "")).lower() == bucket.lower()), None)
@@ -396,10 +437,12 @@ def _por_proyecto(d, f):
                 else:
                     c = None if not carpeta else _busca(b.get("carpetas") or {}, carpeta)
                     grandes = [g for g in b.get("grandes", []) if not carpeta or g["key"].startswith(carpeta + "/")]
-                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bucket": b["nombre"],
-                                      "bytes": b["bytes"] if not carpeta else (c["bytes"] if c else 0),
+                    usado = b["bytes"] if not carpeta else (c["bytes"] if c else 0)
+                    res["r2"].append({"estado": "ok", "entrada": etiqueta, "bucket": b["nombre"], "bytes": usado,
                                       "objetos": b["objetos"] if not carpeta else (c["objetos"] if c else 0),
-                                      "estimado": b["estimado"], "grandes": grandes[:8]})
+                                      "pct_cuenta": _pct(usado, lim), "bytes_bucket": b["bytes"],
+                                      "estimado": b["estimado"], "grandes": grandes[:15],
+                                      "carpetas": _hijos(b.get("carpetas"), carpeta, "objetos")})
     if f["cld"]:
         c = d.get("cloudinary") or {}
         if c.get("error"):
@@ -407,13 +450,22 @@ def _por_proyecto(d, f):
         elif not c.get("configurado"):
             res["cloudinary"] = {"estado": "sin_conectar"}
         else:
+            lim = c.get("limite")
+            cred = c.get("creditos") or {}
+            res["cld_cuenta"] = {"plan": c.get("plan"), "total": c.get("total", 0), "limite": lim, "pct": c.get("pct"),
+                                 "restante": _restante(c.get("total", 0), lim), "creditos": cred,
+                                 "recursos": c.get("recursos"), "derivados": c.get("derivados"),
+                                 "ancho_banda": c.get("ancho_banda"), "transformaciones": c.get("transformaciones")}
             x = _busca(c.get("carpetas") or {}, f["cld"])
-            res["cloudinary"] = {"estado": "ok", "carpeta": f["cld"], "bytes": x["bytes"] if x else 0,
+            usado = x["bytes"] if x else 0
+            res["cloudinary"] = {"estado": "ok", "carpeta": f["cld"], "bytes": usado,
                                  "archivos": x["archivos"] if x else 0, "muestra": c.get("muestra", False),
-                                 "vacia": x is None,
-                                 "grandes": [{"public_id": g["public_id"], "tipo": g["tipo"], "bytes": g["bytes"]}
+                                 "vacia": x is None, "pct_cuenta": _pct(usado, lim),
+                                 "carpetas": _hijos(c.get("carpetas"), f["cld"], "archivos"),
+                                 "grandes": [{"public_id": g["public_id"], "tipo": g["tipo"], "bytes": g["bytes"],
+                                              "formato": g.get("formato"), "url": g.get("url")}
                                              for g in c.get("grandes", [])
-                                             if g["public_id"].startswith(f["cld"] + "/")][:8]}
+                                             if g["public_id"].startswith(f["cld"] + "/")][:15]}
     return res
 
 

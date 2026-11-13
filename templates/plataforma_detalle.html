@@ -16,13 +16,15 @@
     <div class="luxury-card"><h3 class="stat-label">Ganancia mensual{% if fin.margen is not none %} · margen {{ fin.margen }}%{% endif %}</h3><div class="stat-value {{ 'pos' if fin.ganancia > 0 else 'neg' if fin.ganancia < 0 }}">{{ '${:,.0f}'.format(fin.ganancia) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Último respaldo correcto</h3><div class="stat-value" style="font-size:24px;">{{ ultimo or 'Sin respaldos' }}</div></div>
 </div>
+{% include '_almacenamiento_proyecto.html' %}
+
+<div class="section-title">Infraestructura</div>
 <div class="luxury-card">
     <h3 class="stat-label">Infraestructura</h3>
     <div class="grid-2" style="font-size:14px; gap:10px 24px;">
         {% for t,v in [('Dominio / registrador',p.dominio_registrador),('Stack',p.stack),('Frontend',p.frontend_plataforma),('Backend',p.backend_plataforma),('Base de datos y storage',p.bd_storage),('Cuentas de IA',p.ia_cuentas),('Repositorio',p.repo_url),('Rama de producción',p.rama_produccion),('Bóveda de credenciales',p.boveda_ref)] %}
         <div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v or '—' }}</div></div>{% endfor %}
     </div>
-    {% include '_almacenamiento_proyecto.html' %}
 </div>
 
 <div class="section-title">Finanzas de la plataforma</div>
