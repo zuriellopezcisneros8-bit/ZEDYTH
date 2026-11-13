@@ -24,6 +24,15 @@
   .alm-tabla table { min-width:520px; }
   td.num, th.num { text-align:right; white-space:nowrap; }
   code { word-break:break-all; font-size:13px; }
+  .alm-rojo-t { color:#f87171; } .alm-ambar-t { color:#f5b94c; } .alm-verde-t { color:#4ade80; }
+  .alm-spark { color:var(--accent, #7aa2ff); vertical-align:middle; }
+  .alm-umbral { font-size:22px; font-weight:700; margin:6px 0 2px; }
+  .alm-ctl { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 12px; }
+  .alm-ctl input { width:90px; }
+  .alm-chip { cursor:pointer; }
+  tr.alm-propio td { background:rgba(122,162,255,.10); }
+  details.alm-tarifas { margin-top:12px; }
+  details.alm-tarifas summary { cursor:pointer; font-weight:600; }
 </style>
 
 <section class="hero">
@@ -40,6 +49,26 @@
 <div class="section-title">Resumen de espacio</div>
 <div class="alm-grid" id="tarjetas"></div>
 <div style="margin:6px 0 0;"><button class="btn" id="btn-recargar" type="button">Actualizar ahora</button></div>
+
+<div class="section-title">Crecimiento diario y días al límite</div>
+<p class="alm-mut" style="margin-top:0;" id="hist-nota">Se guarda una lectura por día. El ritmo se calcula con los últimos 30 días.</p>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="historial"></div></div>
+
+<div class="section-title">Costos si tus apps crecen</div>
+<p class="alm-mut" style="margin-top:0;" id="costos-nota">Estimación mensual del almacenamiento extra.</p>
+<div class="alm-grid" id="umbrales"></div>
+<div class="alm-ctl">
+  <span class="alm-mut">¿Y si el uso actual se multiplica por</span>
+  <input class="field" id="factor" type="number" min="1" max="1000" step="any" placeholder="ej. 8">
+  <button class="btn btn-primary" type="button" id="btn-factor">Calcular</button>
+</div>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="costos"></div></div>
+<div class="section-title" style="font-size:15px;">Al ritmo real de crecimiento</div>
+<div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="costos-tiempo"></div></div>
+<details class="alm-tarifas luxury-card" id="tarifas-det">
+  <summary>Tarifas usadas en el cálculo (editables)</summary>
+  <div id="tarifas"></div>
+</details>
 
 <div class="section-title">Neon · proyectos y ramas</div>
 <div class="luxury-card alm-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="neon"></div></div>
@@ -286,6 +315,163 @@ function verCld(d) {
     (c.muestra ? `<div class="alm-vacio">Hay más archivos de los analizados; la lista corresponde a una muestra.</div>` : "");
 }
 
+/* ---------------- Historial y proyección ---------------- */
+const fmtN = n => Number(n).toLocaleString("es-MX", { maximumFractionDigits: 0 });
+const fmtFecha = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }) : "";
+const fmtVal = (v, u) => u === "creditos" ? Number(v).toFixed(1) + " créd." : fmt(v);
+const signo = (v, u) => (v < 0 ? "−" : "+") + fmtVal(Math.abs(v), u);
+
+function spark(serie) {
+  if (serie.length < 2) return `<span class="alm-mut">—</span>`;
+  const W = 120, H = 32, t = serie.map(x => Date.parse(x[0] + "T12:00:00")), v = serie.map(x => x[1]);
+  const t0 = t[0], dt = (t[t.length - 1] - t0) || 1, mn = Math.min(...v), rg = (Math.max(...v) - mn) || 1;
+  const p = serie.map((x, i) => [2 + (t[i] - t0) / dt * (W - 4), H - 3 - (v[i] - mn) / rg * (H - 6)]);
+  const u = p[p.length - 1];
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tendencia de los últimos días"><polyline fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" points="${p.map(q => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ")}"/><circle cx="${u[0].toFixed(1)}" cy="${u[1].toFixed(1)}" r="2.6" fill="currentColor"/></svg>`;
+}
+
+function celdaDias(i) {
+  const fe = i.fecha ? `<div class="alm-mut">${fmtFecha(i.fecha)}</div>` : "";
+  switch (i.estado) {
+    case "superado": return `<strong class="alm-rojo-t">Límite superado</strong>`;
+    case "crece": {
+      const d = Math.max(1, Math.round(i.dias)), c = d < 30 ? "alm-rojo-t" : d < 90 ? "alm-ambar-t" : "alm-verde-t";
+      return `<strong class="${c}">~${fmtN(d)} días</strong>${fe}`;
+    }
+    case "estable": return `<span class="alm-verde-t">Sin crecimiento</span>`;
+    case "lejano": return `<span class="alm-verde-t">Más de 10 años</span>`;
+    case "sin_limite": return `<span class="alm-mut">Sin límite configurado</span>`;
+    default: return `<span class="alm-mut">Recopilando datos…</span>`;
+  }
+}
+
+async function cargarHistorial() {
+  try {
+    const r = await fetch("/api/almacenamiento/historial", { credentials: "same-origin" });
+    const h = await r.json();
+    if (!h.ok) throw new Error();
+    if (!h.items.length) {
+      $("#historial").innerHTML = `<div class="alm-vacio">Aún no hay historial. Se guarda una lectura al día (cuando abres esta página y de forma automática); vuelve mañana.</div>`;
+      return;
+    }
+    const dias = Math.max(...h.items.map(i => i.dias_datos));
+    $("#hist-nota").textContent = dias < 7
+      ? `Llevas ${dias} día(s) de historial: la proyección es solo orientativa hasta juntar una semana.`
+      : `Ritmo calculado con los últimos ${h.ventana} días (${dias} con datos).`;
+    const filas = h.items.map(i => `<tr>
+      <td><strong>${esc(i.nombre)}</strong></td>
+      <td class="num">${fmtVal(i.actual, i.unidad)}${i.limite ? `<div class="alm-mut">de ${fmtVal(i.limite, i.unidad)}</div>` : ""}</td>
+      <td class="num">${i.por_dia != null ? `${signo(i.por_dia, i.unidad)}/día<div class="alm-mut">${signo(i.cambio, i.unidad)} en ${i.dias_datos} días</div>` : `<span class="alm-mut">—</span>`}</td>
+      <td class="num">${celdaDias(i)}</td>
+      <td class="num"><span class="alm-spark">${spark(i.serie)}</span></td></tr>`);
+    $("#historial").innerHTML = tabla([{t:"Servicio"},{t:"Hoy",num:1},{t:"Crece",num:1},{t:"Días al límite",num:1},{t:"Tendencia",num:1}], filas, "Sin datos.");
+  } catch (err) { $("#historial").innerHTML = `<div class="alm-vacio">No se pudo cargar el historial.</div>`; }
+}
+
+/* ---------------- Costos de escalamiento ---------------- */
+const NOMBRE_SERV = { neon: "Neon", r2: "Cloudflare R2", cloudinary: "Cloudinary" };
+const TARIFA_ET = [
+  ["COSTO_USD_MXN", "Tipo de cambio (MXN por US$)"], ["R2_PRECIO_GB", "R2 · US$ por GB-mes"], ["R2_GRATIS_GB", "R2 · GB gratis al mes"],
+  ["NEON_PRECIO_GB", "Neon · US$ por GB-mes (plan de pago)"], ["NEON_GRATIS_TOTAL_GB", "Neon · GB gratis en total (plan gratuito)"],
+  ["NEON_OTROS_USD", "Neon · otros cargos fijos al mes si pasas a pago (cómputo), US$"]];
+let factorPropio = null, cambioActual = 18.7;
+const mxn = usd => "$" + fmtN(usd * cambioActual) + " MXN";
+const usdTxt = usd => `<div class="alm-mut">≈ US$${usd.toFixed(2)}</div>`;
+
+function celdaCosto(k, c) {
+  if (!c) return `<span class="alm-mut">No conectado</span>`;
+  if (k === "cloudinary") {
+    const cred = `<div class="alm-mut">${Number(c.creditos).toFixed(1)} créditos</div>`;
+    if (c.cotizar) return `<strong class="alm-rojo-t">A cotizar</strong><div class="alm-mut">Más de 600 créditos: Enterprise</div>${cred}`;
+    return c.paga ? `<strong>Plan ${esc(c.plan)}</strong><div>${mxn(c.usd)}</div>${usdTxt(c.usd)}${cred}`
+                  : `<span class="badge badge-green">Gratis</span><div class="alm-mut">Plan Free</div>${cred}`;
+  }
+  const gb = `<div class="alm-mut">${c.gb.toFixed(2)} GB</div>`;
+  return c.paga ? `<strong>${mxn(c.usd)}</strong>${usdTxt(c.usd)}${gb}` : `<span class="badge badge-green">Gratis</span>${gb}`;
+}
+
+function tablaEscenarios(lista) {
+  const filas = lista.map(e => `<tr class="${e.propio ? "alm-propio" : ""}"><td><strong>${esc(e.etiqueta)}</strong></td>
+    <td>${celdaCosto("neon", e.neon)}</td><td>${celdaCosto("r2", e.r2)}</td><td>${celdaCosto("cloudinary", e.cloudinary)}</td>
+    <td class="num">${e.total_usd > 0 || e.cotizar ? `<strong>${mxn(e.total_usd)}</strong>${usdTxt(e.total_usd)}${e.cotizar ? `<div class="alm-mut">+ Cloudinary a cotizar</div>` : ""}` : `<span class="badge badge-green">$0</span>`}</td></tr>`);
+  return tabla([{t:"Escenario"},{t:"Neon"},{t:"Cloudflare R2"},{t:"Cloudinary"},{t:"Total al mes",num:1}], filas, "Sin datos.");
+}
+
+function verUmbrales(c) {
+  const gratis = { neon: `${c.neon_gratis_proyecto} GB por proyecto · ${c.tarifas.NEON_GRATIS_TOTAL_GB} GB en total`,
+                   r2: `${c.tarifas.R2_GRATIS_GB} GB gratis`, cloudinary: `${c.planes_cloudinary[0].creditos} créditos del plan Free` };
+  const tarjetas = Object.entries(c.umbrales).map(([k, u]) => {
+    let grande, extra = "";
+    if (u.ya) grande = `<span class="alm-ambar-t">Ya superaste lo gratis</span>`;
+    else if (u.factor == null) grande = `<span class="alm-mut">Sin uso todavía</span>`;
+    else {
+      grande = `×${u.factor}`;
+      extra = u.dias != null ? `<div class="alm-mut">Al ritmo actual: en ~${fmtN(Math.max(1, Math.round(u.dias)))} días (${fmtFecha(u.fecha)})</div>`
+                             : `<div class="alm-mut">Sin historial suficiente para estimar la fecha.</div>`;
+    }
+    return `<div class="luxury-card"><h3 class="stat-label">${NOMBRE_SERV[k]} · empiezas a pagar con</h3><div class="alm-umbral">${grande}</div>
+      <div class="alm-mut">${u.ya ? "" : "veces el uso de hoy · "}${gratis[k]}</div>${extra}</div>`;
+  });
+  $("#umbrales").innerHTML = tarjetas.join("") || `<div class="alm-aviso">Conecta al menos un servicio (arriba) para estimar costos.</div>`;
+}
+
+function verTarifas(c) {
+  if (document.querySelector("#tarifas :focus")) return;            // no pisar lo que se está escribiendo
+  const campos = TARIFA_ET.map(([n, et]) => `<label class="lbl">${et}${c.propias.includes(n) ? ` <span class="alm-tag">personalizada</span>` : ""}
+    <input class="field" data-tarifa="${n}" data-orig="${c.tarifas[n]}" type="number" min="0" step="any" value="${c.tarifas[n]}"></label>`).join("");
+  const planes = c.planes_cloudinary.map(p => `${p.plan}: ${p.creditos} créditos · US$${p.usd}/mes`).join(" — ");
+  $("#tarifas").innerHTML = `<p class="alm-ayuda" style="margin-top:10px">Tarifas de referencia (${esc(c.tarifas_fecha)}): confírmalas en la página de precios de cada servicio, porque cambian. El límite gratis de Neon <em>por proyecto</em> es el de Conexiones → Neon (hoy ${c.neon_gratis_proyecto} GB).
+    Cloudinary cobra por créditos (1 crédito = 1 GB almacenado = 1 GB de ancho de banda = 1,000 transformaciones) con planes fijos: ${esc(planes)}. Más de 600 créditos requiere cotizar con ellos.</p>
+    <div class="alm-grid" style="margin-top:10px">${campos}</div>
+    <div class="alm-botones"><button class="btn btn-primary" type="button" id="btn-tarifas">Guardar tarifas</button>
+      ${c.propias.length ? `<button class="btn" type="button" id="btn-tarifas-reset">Volver a las de referencia</button>` : ""}</div>
+    <div class="alm-msg" id="tarifas-msg"></div>`;
+}
+
+async function cargarCostos(f) {
+  if (f !== undefined) factorPropio = f;
+  try {
+    const r = await fetch("/api/almacenamiento/costos" + (factorPropio ? "?factor=" + encodeURIComponent(factorPropio) : ""), { credentials: "same-origin" });
+    const c = await r.json();
+    if (!c.ok) throw new Error();
+    cambioActual = c.tarifas.COSTO_USD_MXN;
+    $("#costos-nota").textContent = `Costo mensual del almacenamiento. Tarifas de referencia ${c.tarifas_fecha}; tipo de cambio $${cambioActual} MXN por US$. ` +
+      `Solo almacenamiento: en R2 las operaciones y la salida de datos no se cobran dentro del uso normal, y en Neon el cómputo no se incluye salvo que lo captures en las tarifas.`;
+    verUmbrales(c);
+    $("#costos").innerHTML = tablaEscenarios(c.escenarios);
+    $("#costos-tiempo").innerHTML = c.tiempo
+      ? tablaEscenarios(c.tiempo) + (c.sin_ritmo.length ? `<div class="alm-vacio">Sin historial suficiente de: ${c.sin_ritmo.map(esc).join(", ")} (se supone que no crece).</div>` : "")
+      : `<div class="alm-vacio">Esta tabla aparece cuando haya al menos 2 días de historial.</div>`;
+    verTarifas(c);
+  } catch (err) { $("#costos").innerHTML = `<div class="alm-vacio">No se pudieron calcular los costos.</div>`; }
+}
+
+async function guardarTarifas(restablecer) {
+  const msg = $("#tarifas-msg"), valores = {};
+  document.querySelectorAll("[data-tarifa]").forEach(i => {
+    if (restablecer) valores[i.dataset.tarifa] = "";
+    else if (i.value.trim() !== i.dataset.orig) valores[i.dataset.tarifa] = i.value.trim();      // solo lo que cambió; vacío = referencia
+  });
+  if (!Object.keys(valores).length) { msg.textContent = "No hay cambios."; msg.className = "alm-msg"; return; }
+  try {
+    const d = await post("/api/almacenamiento/conexiones/guardar", { servicio: "costos", valores, confirmar: true });
+    if (!d.ok) { msg.textContent = d.error || "No se pudo guardar."; msg.className = "alm-msg mal"; return; }
+    await cargarCostos();
+    const m2 = $("#tarifas-msg"); m2.textContent = restablecer ? "Tarifas restablecidas." : "Guardado."; m2.className = "alm-msg ok";
+  } catch (err) { msg.textContent = "Error de conexión. Intenta de nuevo."; msg.className = "alm-msg mal"; }
+}
+
+document.addEventListener("click", e => {
+  if (e.target.closest("#btn-tarifas")) guardarTarifas(false);
+  else if (e.target.closest("#btn-tarifas-reset")) { if (confirm("¿Volver a las tarifas de referencia?")) guardarTarifas(true); }
+  else if (e.target.closest("#btn-factor")) aplicarFactor();
+});
+function aplicarFactor() {
+  const v = parseFloat($("#factor").value);
+  cargarCostos(isFinite(v) && v > 0 && v <= 1000 ? v : null);
+}
+$("#factor").addEventListener("keydown", e => { if (e.key === "Enter") aplicarFactor(); });
+
 async function cargar(forzar) {
   const btn = $("#btn-recargar"); btn.disabled = true; $("#estado").textContent = "Consultando las APIs…";
   try {
@@ -294,6 +480,7 @@ async function cargar(forzar) {
     if (!d.ok) throw new Error(d.error || "Error");
     $("#alertas").innerHTML = d.alertas.map(a => `<div class="alm-aviso ${a.nivel === "error" ? "error" : ""}">${esc(a.texto)}</div>`).join("");
     tarjetas(d); verNeon(d); verTablas(d); verR2(d); verCld(d);
+    cargarHistorial(); cargarCostos();
     $("#estado").textContent = "Actualizado " + new Date(d.generado).toLocaleString();
   } catch (err) {
     $("#estado").textContent = "No se pudo cargar (¿sesión vencida?). Recarga la página.";

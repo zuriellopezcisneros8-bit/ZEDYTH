@@ -15,11 +15,12 @@ import base64
 import hashlib
 import heapq
 import json
+import math
 import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib import error as _uerr, parse as _uparse, request as _ureq
 
 from flask import Blueprint, current_app, jsonify, render_template, request
@@ -39,10 +40,34 @@ CAMPOS = {
     "R2_BUCKETS": ("r2", False), "R2_LIMITE_GB": ("r2", False),
     "CLOUDINARY_CLOUD_NAME": ("cloudinary", False), "CLOUDINARY_API_KEY": ("cloudinary", True),
     "CLOUDINARY_API_SECRET": ("cloudinary", True), "CLOUDINARY_LIMITE_GB": ("cloudinary", False),
+    # tarifas del estimador de costos (se editan en la sección "Costos"; vacío = valor de referencia)
+    "COSTO_USD_MXN": ("costos", False), "R2_PRECIO_GB": ("costos", False), "R2_GRATIS_GB": ("costos", False),
+    "NEON_PRECIO_GB": ("costos", False), "NEON_GRATIS_TOTAL_GB": ("costos", False), "NEON_OTROS_USD": ("costos", False),
 }
-SERVICIOS = ("neon", "r2", "cloudinary")
+SERVICIOS = ("neon", "r2", "cloudinary", "costos")
 _guardadas = {}           # valores guardados desde el panel (ya descifrados, solo en memoria)
-_estado = {"tabla": False, "ilegibles": 0}
+_estado = {"tabla": False, "tabla_h": False, "limpieza": None, "ilegibles": 0}
+
+# --- historial y costos: constantes -------------------------------------------
+VENTANA_DIAS = 30         # días que se usan para calcular el ritmo de crecimiento
+HISTORIAL_DIAS = 90       # días que se devuelven para dibujar la tendencia
+CONSERVAR_DIAS = 400      # lo más viejo se borra
+DIAS_AVISO = 30           # alerta si, al ritmo actual, el límite llega en menos de estos días
+MAX_DIAS_PROYECCION = 3650
+GIB = 1024 ** 3
+# Tarifas de referencia (nov 2026). Se pueden cambiar desde el panel sin tocar el código.
+TARIFAS_FECHA = "nov 2026"
+TARIFAS = {
+    "COSTO_USD_MXN": 18.7,          # Banxico (interbancario) 10-nov-2026
+    "R2_PRECIO_GB": 0.015,          # R2 Standard: US$0.015 por GB-mes, salida de datos gratis
+    "R2_GRATIS_GB": 10.0,           # R2: 10 GB-mes gratis
+    "NEON_PRECIO_GB": 0.35,         # Neon Launch/Scale: US$0.35 por GB-mes (sin GB incluidos)
+    "NEON_GRATIS_TOTAL_GB": 20.0,   # Neon Free: 1 GB por proyecto (NEON_LIMITE_GB) y 20 GB en total
+    "NEON_OTROS_USD": 0.0,          # cómputo u otros cargos mensuales de Neon al pasar a plan de pago
+}
+# Cloudinary cobra por créditos (1 crédito = 1 GB almacenado = 1 GB de ancho de banda = 1,000 transformaciones)
+PLANES_CLD = (("Free", 25, 0.0), ("Plus", 225, 99.0), ("Advanced", 600, 249.0))
+FACTORES = (1, 2, 5, 10, 25)
 
 
 def _env(nombre, defecto=""):
@@ -510,13 +535,272 @@ def _probar(servicio):
     raise RuntimeError("Servicio desconocido.")
 
 
+# --- historial diario y proyección ---------------------------------------------
+def _hoy():
+    """Fecha en México (UTC-6, sin horario de verano): el 'día' del historial coincide con el del usuario."""
+    return (datetime.utcnow() - timedelta(hours=6)).date()
+
+
+def _etiqueta(clave):
+    if clave == "r2":
+        return "Cloudflare R2"
+    if clave == "cloudinary":
+        return "Cloudinary · almacenamiento"
+    if clave == "cloudinary:creditos":
+        return "Cloudinary · créditos"
+    if clave.startswith("neon:"):
+        return "Neon · " + clave[5:]
+    return clave
+
+
+def _lecturas(d):
+    """Lo que se guarda cada día: [(clave, valor, limite, unidad)]. Solo de servicios que respondieron bien."""
+    out = []
+    n = d.get("neon") or {}
+    if n.get("configurado") and not n.get("error"):
+        for p in n.get("proyectos", []):
+            out.append(("neon:" + str(p["nombre"]), p["bytes"], p.get("limite"), "bytes"))
+    r = d.get("r2") or {}
+    # si algún bucket falló, el total estaría incompleto y parecería que el espacio bajó: no se guarda
+    if r.get("configurado") and not r.get("error") and not any(b.get("error") for b in r.get("buckets", [])):
+        out.append(("r2", r.get("total", 0), r.get("limite"), "bytes"))
+    c = d.get("cloudinary") or {}
+    if c.get("configurado") and not c.get("error"):
+        out.append(("cloudinary", c.get("total") or 0, c.get("limite"), "bytes"))
+        cred = c.get("creditos") or {}
+        if cred.get("usado") is not None:
+            out.append(("cloudinary:creditos", float(cred["usado"]), cred.get("limite"), "creditos"))
+    return out
+
+
+def proyectar(serie, limite, hoy):
+    """serie = [(fecha, valor)] ordenada. El ritmo es una recta de mínimos cuadrados sobre los últimos
+    VENTANA_DIAS días (más estable que comparar solo dos puntos). Estados: sin_datos, pocos_datos, sin_limite,
+    superado, estable, crece, lejano."""
+    r = {"actual": None, "por_dia": None, "dias": None, "fecha": None, "estado": "sin_datos",
+         "dias_datos": 0, "cambio": None}
+    if not serie:
+        return r
+    actual = serie[-1][1]
+    r["actual"] = actual
+    pts = [(f, v) for f, v in serie if (hoy - f).days <= VENTANA_DIAS]
+    if pts:
+        r["dias_datos"] = (pts[-1][0] - pts[0][0]).days + 1
+    pendiente = None
+    if len(pts) >= 2 and pts[-1][0] > pts[0][0]:
+        xs = [(f - pts[0][0]).days for f, _ in pts]
+        ys = [v for _, v in pts]
+        mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+        var = sum((x - mx) ** 2 for x in xs)
+        pendiente = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / var
+        r["por_dia"] = pendiente
+        r["cambio"] = ys[-1] - ys[0]
+    if not limite or limite <= 0:
+        r["estado"] = "sin_limite" if pendiente is not None else "pocos_datos"
+    elif actual >= limite:
+        r["estado"], r["dias"] = "superado", 0
+    elif pendiente is None:
+        r["estado"] = "pocos_datos"
+    elif pendiente <= 0:
+        r["estado"] = "estable"
+    else:
+        dias = (limite - actual) / pendiente
+        if dias > MAX_DIAS_PROYECCION:
+            r["estado"] = "lejano"
+        else:
+            r["estado"], r["dias"] = "crece", dias
+            r["fecha"] = (hoy + timedelta(days=dias)).isoformat()
+    return r
+
+
+def _ordenar_items(items):
+    items.sort(key=lambda i: (i["dias"] is None, i["dias"] if i["dias"] is not None else 0, i["nombre"]))
+    return items
+
+
+def _alertas_historial(items):
+    return [{"nivel": "alerta",
+             "texto": f"{i['nombre']}: al ritmo actual llega a su límite en ~{max(1, round(i['dias']))} días ({i['fecha']})."}
+            for i in items if i["estado"] == "crece" and i["dias"] is not None and i["dias"] <= DIAS_AVISO]
+
+
+# --- costos --------------------------------------------------------------------
+def _tarifa(nombre):
+    try:
+        v = float(_env(nombre, str(TARIFAS[nombre])))
+    except ValueError:
+        return TARIFAS[nombre]
+    if not math.isfinite(v) or v < 0 or (nombre == "COSTO_USD_MXN" and v == 0):
+        return TARIFAS[nombre]
+    return v
+
+
+def _tarifas():
+    return {k: _tarifa(k) for k in TARIFAS}
+
+
+def _gratis_neon_proyecto():
+    """GB gratis por proyecto de Neon: es el mismo 'límite por proyecto' de la tarjeta de conexión."""
+    b = _gb("NEON_LIMITE_GB", "1")
+    return (b if b and math.isfinite(b) else GIB) / GIB
+
+
+def costo_neon(gbs, t, gratis_proyecto):
+    """Neon: gratis mientras ningún proyecto pase de su GB y el total de la cuenta de 20 GB.
+    Al pasar a plan de pago, TODO el almacenamiento se cobra (el plan de pago no incluye GB)."""
+    total = sum(gbs)
+    paga = any(g > gratis_proyecto for g in gbs) or total > t["NEON_GRATIS_TOTAL_GB"]
+    usd = total * t["NEON_PRECIO_GB"] + t["NEON_OTROS_USD"] if paga else 0.0
+    return {"gb": total, "paga": paga, "usd": usd}
+
+
+def costo_r2(gb, t):
+    extra = max(gb - t["R2_GRATIS_GB"], 0.0)
+    return {"gb": gb, "paga": extra > 0, "extra_gb": extra, "usd": extra * t["R2_PRECIO_GB"]}
+
+
+def costo_cld(creditos):
+    for nombre, cred, usd in PLANES_CLD:
+        if creditos <= cred:
+            return {"creditos": creditos, "plan": nombre, "paga": usd > 0, "usd": usd, "cotizar": False}
+    return {"creditos": creditos, "plan": "Enterprise", "paga": True, "usd": None, "cotizar": True}
+
+
+def _base_costos(d):
+    """Uso actual en las unidades en que cobra cada servicio. None = servicio no disponible."""
+    b = {"neon": None, "r2": None, "cloudinary": None}
+    n = d.get("neon") or {}
+    if n.get("configurado") and not n.get("error"):
+        b["neon"] = [(str(p["nombre"]), p["bytes"] / GIB) for p in n.get("proyectos", [])]
+    r = d.get("r2") or {}
+    if r.get("configurado") and not r.get("error"):
+        b["r2"] = (r.get("total") or 0) / GIB
+    c = d.get("cloudinary") or {}
+    if c.get("configurado") and not c.get("error"):
+        usado = (c.get("creditos") or {}).get("usado")
+        # los créditos incluyen almacenamiento + ancho de banda + transformaciones; si no vienen, solo el almacenamiento
+        b["cloudinary"] = float(usado) if usado is not None else (c.get("total") or 0) / GIB
+    return b
+
+
+def _escenario(etiqueta, neon_gbs, r2_gb, cld_cred, t, gp, **extra):
+    e = {"etiqueta": etiqueta, "neon": None, "r2": None, "cloudinary": None, "total_usd": 0.0, "cotizar": False}
+    e.update(extra)
+    if neon_gbs is not None:
+        e["neon"] = costo_neon(neon_gbs, t, gp)
+    if r2_gb is not None:
+        e["r2"] = costo_r2(r2_gb, t)
+    if cld_cred is not None:
+        e["cloudinary"] = costo_cld(cld_cred)
+    for k in ("neon", "r2", "cloudinary"):
+        if e[k]:
+            if e[k].get("cotizar"):
+                e["cotizar"] = True
+            e["total_usd"] += e[k]["usd"] or 0.0
+    e["total_mxn"] = e["total_usd"] * t["COSTO_USD_MXN"]
+    return e
+
+
+def calcular_costos(base, series, t, gp, hoy, factor=None):
+    """Escenarios de costo mensual: (a) multiplicando el uso actual y (b) a 1/3/6/12 meses al ritmo real
+    medido en el historial. También cuándo empiezas a pagar en cada servicio."""
+    nb, rb, cb = base["neon"], base["r2"], base["cloudinary"]
+    factores = list(FACTORES)
+    if factor and factor not in factores:
+        factores = sorted(factores + [factor])
+    escenarios = []
+    for f in factores:
+        et = "Hoy" if f == 1 else (f"×{f:g} el uso actual" + (" (tu escenario)" if f == factor else ""))
+        escenarios.append(_escenario(
+            et, None if nb is None else [g * f for _, g in nb], None if rb is None else rb * f,
+            None if cb is None else cb * f, t, gp, factor=f, propio=bool(factor and f == factor)))
+
+    def ritmo(clave):
+        s = series.get(clave)
+        return proyectar(s["serie"], None, hoy)["por_dia"] if s else None
+
+    r_neon = {n: ritmo("neon:" + n) for n, _ in (nb or [])}
+    r_r2, r_cld = ritmo("r2"), ritmo("cloudinary:creditos")
+    sin_ritmo = []
+    if nb is not None and any(v is None for v in r_neon.values()):
+        sin_ritmo.append("Neon")
+    if rb is not None and r_r2 is None:
+        sin_ritmo.append("Cloudflare R2")
+    if cb is not None and r_cld is None:
+        sin_ritmo.append("Cloudinary")
+    hay_ritmo = any(v is not None for v in list(r_neon.values()) + [r_r2, r_cld])
+    tiempo = None
+    if hay_ritmo:
+        tiempo = []
+        for m in (1, 3, 6, 12):
+            dias = 30 * m
+            tiempo.append(_escenario(
+                f"En {m} mes{'es' if m > 1 else ''}", None if nb is None else [g + max(r_neon[n] or 0, 0) * dias / GIB for n, g in nb],
+                None if rb is None else rb + max(r_r2 or 0, 0) * dias / GIB,
+                None if cb is None else cb + max(r_cld or 0, 0) * dias, t, gp, meses=m))
+
+    def dias_a(clave, gratis):
+        s = series.get(clave)
+        return proyectar(s["serie"], gratis, hoy) if s else None
+
+    umbrales = {}
+    if nb:
+        fs = [gp / g for _, g in nb if g > 0] + ([t["NEON_GRATIS_TOTAL_GB"] / sum(g for _, g in nb)] if sum(g for _, g in nb) > 0 else [])
+        ps = [dias_a("neon:" + n, gp * GIB) for n, _ in nb]
+        umbrales["neon"] = _umbral(min(fs) if fs else None, [p for p in ps if p])
+    if rb is not None:
+        p = dias_a("r2", t["R2_GRATIS_GB"] * GIB)
+        umbrales["r2"] = _umbral(t["R2_GRATIS_GB"] / rb if rb > 0 else None, [p] if p else [])
+    if cb is not None:
+        p = dias_a("cloudinary:creditos", PLANES_CLD[0][1])
+        umbrales["cloudinary"] = _umbral(PLANES_CLD[0][1] / cb if cb > 0 else None, [p] if p else [])
+    return {"escenarios": escenarios, "tiempo": tiempo, "sin_ritmo": sin_ritmo, "umbrales": umbrales}
+
+
+def _umbral(factor, proyecciones):
+    """Cuándo se deja de ser gratis: cuántas veces el uso actual y (si hay historial) en cuántos días."""
+    ya = factor is not None and factor <= 1
+    dias = [p["dias"] for p in proyecciones if p["estado"] in ("crece", "superado") and p["dias"] is not None]
+    fechas = [p["fecha"] for p in proyecciones if p["estado"] == "crece" and p["fecha"]]
+    return {"factor": None if factor is None else round(factor, 1), "ya": ya,
+            "dias": min(dias) if dias else None, "fecha": min(fechas) if fechas else None}
+
+
 # --- Blueprint ----------------------------------------------------------------
 _Modelo = None
+_ModeloH = None
+_tarea = {"fn": None, "dia": None, "intento": 0.0}
+
+
+def instantanea_diaria():
+    """Para el vigilante / cron de app.py: guarda UNA lectura por día aunque nadie abra el panel.
+    Es barata de llamar seguido (si ya hay lectura de hoy, no hace nada). Debe llamarse dentro de un app_context."""
+    fn = _tarea["fn"]
+    if not fn or _tarea["dia"] == _hoy() or time.time() - _tarea["intento"] < 3 * 3600:
+        return
+    _tarea["intento"] = time.time()
+    try:
+        if fn():
+            _tarea["dia"] = _hoy()
+    except Exception as e:
+        current_app.logger.warning("Instantánea diaria de almacenamiento: %s", e)
 
 
 def crear_blueprint(db, registrar):
-    global _Modelo
+    global _Modelo, _ModeloH
     bp = Blueprint("almacen", __name__)
+
+    if _ModeloH is None:
+        class HistorialAlmacen(db.Model):
+            """Una lectura por día y por servicio/proyecto (valor en bytes, o en créditos para Cloudinary)."""
+            __tablename__ = "historial_almacen"
+            fecha = db.Column(db.Date, primary_key=True)
+            clave = db.Column(db.String(160), primary_key=True)
+            valor = db.Column(db.Float, nullable=False)
+            limite = db.Column(db.Float)
+            unidad = db.Column(db.String(10), default="bytes")
+        _ModeloH = HistorialAlmacen
+    Historial = _ModeloH
 
     if _Modelo is None:
         class ConexionAlmacen(db.Model):
@@ -574,6 +858,68 @@ def crear_blueprint(db, registrar):
             return "Solo administradores.", 403
         return render_template("almacenamiento.html")
 
+    # --- historial diario ---------------------------------------------------------
+    def asegurar_tabla_historial():
+        if not _estado["tabla_h"]:
+            Historial.__table__.create(db.engine, checkfirst=True)
+            _estado["tabla_h"] = True
+
+    def guardar_instantanea(d):
+        """Guarda (o actualiza) la lectura de HOY. Un fallo aquí nunca debe romper el panel."""
+        lecturas = _lecturas(d)
+        if not lecturas:
+            return
+        try:
+            asegurar_tabla_historial()
+            hoy = _hoy()
+            for clave, valor, limite, unidad in lecturas:
+                clave = clave[:160]
+                fila = db.session.get(Historial, (hoy, clave))
+                if fila:
+                    fila.valor, fila.limite, fila.unidad = float(valor), limite, unidad
+                else:
+                    db.session.add(Historial(fecha=hoy, clave=clave, valor=float(valor), limite=limite, unidad=unidad))
+            if _estado["limpieza"] != hoy:
+                Historial.query.filter(Historial.fecha < hoy - timedelta(days=CONSERVAR_DIAS)).delete()
+                _estado["limpieza"] = hoy
+            db.session.commit()
+        except Exception as e:                      # p. ej. dos workers guardando a la vez: gana el primero
+            db.session.rollback()
+            current_app.logger.warning("Historial de almacenamiento: %s", e)
+
+    def leer_series():
+        """{clave: {"serie": [(fecha, valor)], "limite", "unidad"}} de los últimos HISTORIAL_DIAS días.
+        Se ocultan las claves sin lectura en los últimos 3 días (proyectos que ya no existen)."""
+        asegurar_tabla_historial()
+        hoy = _hoy()
+        filas = (Historial.query.filter(Historial.fecha >= hoy - timedelta(days=HISTORIAL_DIAS))
+                 .order_by(Historial.fecha).all())
+        series = {}
+        for f in filas:
+            s = series.setdefault(f.clave, {"serie": [], "limite": None, "unidad": f.unidad or "bytes"})
+            s["serie"].append((f.fecha, f.valor))
+            s["limite"], s["unidad"] = f.limite, f.unidad or "bytes"
+        return {k: v for k, v in series.items() if (hoy - v["serie"][-1][0]).days <= 3}
+
+    def items_historial():
+        hoy = _hoy()
+        try:
+            series = leer_series()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.warning("Leer historial de almacenamiento: %s", e)
+            return []
+        items = []
+        for clave, s in series.items():
+            p = proyectar(s["serie"], s["limite"], hoy)
+            items.append(dict(p, clave=clave, nombre=_etiqueta(clave), servicio=clave.split(":")[0],
+                              unidad=s["unidad"], limite=s["limite"],
+                              serie=[[f.isoformat(), v] for f, v in s["serie"]]))
+        # sin límite en GB configurado, lo que importa en Cloudinary son los créditos: se oculta la fila duplicada
+        if any(i["clave"] == "cloudinary:creditos" for i in items):
+            items = [i for i in items if not (i["clave"] == "cloudinary" and not i["limite"])]
+        return _ordenar_items(items)
+
     def datos_cacheados(forzar=False):
         cargar_guardadas()
         with _lock:
@@ -584,8 +930,20 @@ def crear_blueprint(db, registrar):
                 except Exception as e:
                     db.session.rollback()
                     datos["tablas"] = {"error": str(e)[:200]}
+                guardar_instantanea(datos)
                 _cache["datos"], _cache["t"] = datos, time.time()
             return _cache["datos"]
+
+    def tomar_si_falta():
+        """Usada por instantanea_diaria(): True si ya hay (o se logró guardar) la lectura de hoy."""
+        asegurar_tabla_historial()
+        hay = lambda: db.session.query(Historial.fecha).filter(Historial.fecha == _hoy()).first() is not None
+        if hay():
+            return True
+        datos_cacheados(True)
+        return hay()
+
+    _tarea["fn"] = tomar_si_falta
 
     @bp.route("/api/almacenamiento/resumen")
     def resumen():
@@ -593,7 +951,41 @@ def crear_blueprint(db, registrar):
             return negado()
         d = _publico(datos_cacheados(request.args.get("forzar") == "1"))
         d["vinculos"] = _vinculos(_filas_proyectos(db))
+        d["alertas"] = list(d.get("alertas") or []) + _alertas_historial(items_historial())   # copia: no tocar el caché
         return jsonify(ok=True, **d)
+
+    @bp.route("/api/almacenamiento/historial")
+    def historial():
+        """Crecimiento diario por servicio/proyecto y en cuántos días se llega al límite."""
+        if not es_admin():
+            return negado()
+        datos_cacheados()                       # asegura que exista al menos la lectura de hoy
+        return jsonify(ok=True, items=items_historial(), hoy=_hoy().isoformat(), ventana=VENTANA_DIAS)
+
+    @bp.route("/api/almacenamiento/costos")
+    def costos():
+        """Cuánto costaría el almacenamiento extra si el uso crece (multiplicando el uso o al ritmo real)."""
+        if not es_admin():
+            return negado()
+        try:
+            factor = float(request.args.get("factor", ""))
+            factor = factor if math.isfinite(factor) and 0 < factor <= 1000 else None
+        except ValueError:
+            factor = None
+        d = datos_cacheados()
+        base = _base_costos(d)
+        try:
+            series = leer_series()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.warning("Leer historial de almacenamiento: %s", e)
+            series = {}
+        t, gp = _tarifas(), _gratis_neon_proyecto()
+        res = calcular_costos(base, series, t, gp, _hoy(), factor)
+        return jsonify(ok=True, tarifas=t, tarifas_defecto=TARIFAS, tarifas_fecha=TARIFAS_FECHA,
+                       propias=[k for k in TARIFAS if _origen(k) == "panel"], neon_gratis_proyecto=gp,
+                       disponible={k: v is not None for k, v in base.items()},
+                       planes_cloudinary=[{"plan": n, "creditos": c, "usd": u} for n, c, u in PLANES_CLD], **res)
 
     @bp.route("/api/almacenamiento/proyectos")
     def por_proyecto():
@@ -745,7 +1137,7 @@ def crear_blueprint(db, registrar):
             origen = _origen(nombre)
             campos.append({"nombre": nombre, "servicio": serv, "secreto": secreto, "origen": origen,
                            "valor": None if (secreto or not origen) else _env(nombre)})
-        listo = {"neon": bool(_env("NEON_API_KEY")), "r2": _r2_configurado(), "cloudinary": _cld_configurado()}
+        listo = {"neon": bool(_env("NEON_API_KEY")), "r2": _r2_configurado(), "cloudinary": _cld_configurado()}   # "costos" no es una conexión
         return jsonify(ok=True, campos=campos, conectado=listo, ilegibles=_estado["ilegibles"])
 
     @bp.route("/api/almacenamiento/conexiones/guardar", methods=["POST"])
@@ -770,10 +1162,17 @@ def crear_blueprint(db, registrar):
                 continue                                   # secreto vacío = conservar el que ya está
             if v and nombre.endswith("_LIMITE_GB"):
                 try:
-                    if float(v) <= 0:
+                    if not math.isfinite(float(v)) or float(v) <= 0:
                         raise ValueError
                 except ValueError:
                     return jsonify(ok=False, error="El límite debe ser un número de GB mayor que 0."), 400
+            if v and nombre in TARIFAS:
+                try:
+                    x = float(v)
+                    if not math.isfinite(x) or x < 0 or (x == 0 and nombre == "COSTO_USD_MXN"):
+                        raise ValueError
+                except ValueError:
+                    return jsonify(ok=False, error=f"La tarifa {nombre} debe ser un número válido (no negativo)."), 400
             cambios.append((nombre, v))
         if not cambios:
             return jsonify(ok=False, error="No hay nada nuevo que guardar."), 400

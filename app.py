@@ -2372,6 +2372,7 @@ def _vigilante():
                 if time.time() - ultima_revision > 1800 and _hora_de_avisar():
                     ultima_revision = time.time()
                     revisar_alertas()
+                almacenamiento.instantanea_diaria()      # una lectura al día del historial de almacenamiento
         except Exception as e:
             app.logger.error("Vigilante de alertas: %s", e)
 
@@ -2441,6 +2442,7 @@ def push_revisar():
     reintentados = reintentar_pendientes()
     if _hora_de_avisar():
         revisar_alertas()
+    almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
     return {"ok": True, "reintentados": reintentados}
 
 import almacenamiento
