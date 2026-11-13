@@ -146,7 +146,35 @@ def _ruta_proyectos(org):
     return "/projects?limit=100" + ("&org_id=" + _uparse.quote(org) if org else "")
 
 
+_CONSUMO = ("compute_time_seconds", "active_time_seconds", "written_data_bytes", "data_transfer_bytes",
+            "consumption_period_start", "consumption_period_end")
+
+
+def _con_consumo(p, clave=None):
+    """El listado de proyectos de Neon suele traer solo un resumen (sin el consumo del periodo). Si faltan los datos de
+    cómputo, se pide el detalle del proyecto y se completan; si Neon tampoco los da ahí, quedan en None (el panel muestra «—»)."""
+    if p.get("compute_time_seconds") is not None or p.get("active_time_seconds") is not None:
+        return p
+    out = dict(p)
+    try:
+        det = _neon(f"/projects/{p['id']}", clave).get("project") or {}
+    except RuntimeError:
+        det = {}
+    for k in _CONSUMO:
+        if det.get(k) is not None:
+            out[k] = det[k]
+    # nombres antiguos de la misma métrica (CPU-segundos y segundos activos)
+    if out.get("compute_time_seconds") is None:
+        v = det.get("cpu_used_sec", p.get("cpu_used_sec"))
+        out["compute_time_seconds"] = v if isinstance(v, (int, float)) else None
+    if out.get("active_time_seconds") is None:
+        v = det.get("active_time", p.get("active_time"))
+        out["active_time_seconds"] = v if isinstance(v, (int, float)) else None
+    return out
+
+
 def _neon_proyecto(p, clave=None):
+    p = _con_consumo(p, clave)
     pid = p["id"]
     info = {"id": pid, "nombre": p.get("name"), "region": p.get("region_id"),
             "bytes": p.get("synthetic_storage_size") or 0, "ramas": [], "bases": [],

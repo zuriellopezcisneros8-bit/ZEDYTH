@@ -118,6 +118,7 @@
         dato("Cómputo del periodo", horas(x.compute_s)) + dato("Tiempo activo", horas(x.activo_s)) +
         dato("Datos escritos", fmt(x.escrito)) + dato("Transferencia de salida", fmt(x.transferencia)) +
       "</div>" +
+      (x.compute_s == null && x.activo_s == null ? '<p class="ap-mut" style="margin:8px 0 0;">Neon no entregó las métricas de cómputo de este proyecto (depende del plan y de la API). El tamaño y las ramas sí son reales.</p>' : "") +
       (x.aviso ? '<div class="ap-aviso">' + esc(x.aviso) + "</div>" : "") +
       '<div class="ap-sub">Bases de datos</div>' + ((x.bases || []).length ? x.bases.map(b => '<span class="ap-chip">' + esc(b) + "</span>").join("") : mut("Sin datos.")) +
       '<div class="ap-sub">Ramas</div>' +
