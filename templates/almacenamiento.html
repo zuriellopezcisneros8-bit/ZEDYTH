@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Almacenamiento · Zedyth</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --txt:#1c2330; --mut:#6b7585; --brd:#e3e7ee; --ac:#4f46e5;
+          --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --track:#e9edf3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1218; --card:#171c25; --txt:#e8ecf3; --mut:#93a0b5; --brd:#262d3a; --ac:#818cf8; --track:#262d3a; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:20px 16px 60px; }
+  header { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  h1 { font-size:22px; margin:0; } h2 { font-size:17px; margin:28px 0 10px; }
+  .muted { color:var(--mut); font-size:13px; }
+  a { color:var(--ac); }
+  button { font:inherit; cursor:pointer; border:1px solid var(--brd); background:var(--card); color:var(--txt); padding:7px 12px; border-radius:8px; }
+  button:hover { border-color:var(--ac); } button:disabled { opacity:.5; cursor:wait; }
+  button.del { color:var(--bad); padding:3px 9px; font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--brd); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 4px; font-size:14px; color:var(--mut); font-weight:600; }
+  .big { font-size:28px; font-weight:700; }
+  .barra { height:9px; background:var(--track); border-radius:99px; overflow:hidden; margin:10px 0 4px; }
+  .barra div { height:100%; border-radius:99px; } .verde { background:var(--ok); } .ambar { background:var(--warn); } .rojo { background:var(--bad); }
+  .aviso { border-radius:10px; padding:10px 14px; margin-bottom:8px; border:1px solid var(--warn); background:rgba(217,119,6,.12); }
+  .aviso.error { border-color:var(--bad); background:rgba(220,38,38,.1); }
+  .tabla { overflow-x:auto; background:var(--card); border:1px solid var(--brd); border-radius:12px; }
+  table { width:100%; border-collapse:collapse; min-width:520px; }
+  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--brd); font-size:14px; vertical-align:top; }
+  th { color:var(--mut); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  tr:last-child td { border-bottom:0; }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:var(--track); color:var(--mut); margin:1px 2px 1px 0; }
+  .vacio { padding:16px; color:var(--mut); }
+  code { font-size:13px; word-break:break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Almacenamiento</h1>
+      <div class="muted" id="estado">Cargando…</div>
+    </div>
+    <div><button id="btn-recargar" type="button">Actualizar ahora</button></div>
+  </header>
+
+  <div id="alertas"></div>
+  <div class="grid" id="tarjetas"></div>
+
+  <h2>Neon · proyectos y ramas</h2>
+  <div class="tabla" id="neon"></div>
+
+  <h2>Neon · tablas más pesadas de esta base</h2>
+  <div class="tabla" id="tablas"></div>
+
+  <h2>Cloudflare R2 · buckets y archivos más pesados</h2>
+  <div id="r2"></div>
+
+  <h2>Cloudinary · archivos más pesados</h2>
+  <div class="tabla" id="cld"></div>
+</div>
+
+{% raw %}
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function fmt(b) {
+  if (b == null) return "—";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0; b = Number(b);
+  while (b >= 1024 && i < 4) { b /= 1024; i++; }
+  return (i ? b.toFixed(b >= 100 ? 0 : 1) : b) + " " + u[i];
+}
+function barra(pct, sinLimite) {
+  if (pct == null) return `<div class="muted">${sinLimite || "Sin límite configurado"}</div>`;
+  const c = pct >= 90 ? "rojo" : pct >= 80 ? "ambar" : "verde";
+  return `<div class="barra"><div class="${c}" style="width:${Math.min(pct,100)}%"></div></div><div class="muted">${pct}% usado</div>`;
+}
+function tabla(cabeceras, filas, vacio) {
+  if (!filas.length) return `<div class="vacio">${vacio}</div>`;
+  const th = cabeceras.map(h => `<th class="${h.num ? "num" : ""}">${h.t}</th>`).join("");
+  return `<table><thead><tr>${th}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
+}
+function errorOSinConfig(s, nombre, que) {
+  if (s.error) return `<div class="vacio">No se pudo leer ${nombre}: ${esc(s.error)}</div>`;
+  if (!s.configurado) return `<div class="vacio">${nombre} no está conectado. Agrega ${que} en las variables de entorno.</div>`;
+  return null;
+}
+
+function tarjetas(d) {
+  const n = d.neon, r = d.r2, c = d.cloudinary, h = [];
+  h.push(`<div class="card"><h3>Neon</h3>` + (n.error ? `<div class="muted">Error: ${esc(n.error)}</div>` :
+    !n.configurado ? `<div class="muted">Sin conectar</div>` :
+    `<div class="big">${fmt(n.total)}</div><div class="muted">${n.proyectos.length} proyecto(s)</div>` +
+    barra(Math.max(0, ...n.proyectos.map(p => p.pct || 0)) || null, "Define NEON_LIMITE_GB para ver el %")) + `</div>`);
+  h.push(`<div class="card"><h3>Cloudflare R2</h3>` + (r.error ? `<div class="muted">Error: ${esc(r.error)}</div>` :
+    !r.configurado ? `<div class="muted">Sin conectar</div>` :
+    `<div class="big">${fmt(r.total)}</div><div class="muted">${r.buckets.length} bucket(s) · límite ${fmt(r.limite)}</div>` + barra(r.pct)) + `</div>`);
+  h.push(`<div class="card"><h3>Cloudinary${c.plan ? " · " + esc(c.plan) : ""}</h3>` + (c.error ? `<div class="muted">Error: ${esc(c.error)}</div>` :
+    !c.configurado ? `<div class="muted">Sin conectar</div>` :
+    `<div class="big">${fmt(c.total)}</div><div class="muted">${c.recursos ?? "—"} archivos · ${c.derivados ?? "—"} derivados</div>` +
+    barra(c.pct, "Sin porcentaje disponible") +
+    (c.creditos && c.creditos.limite ? `<div class="muted">Créditos: ${c.creditos.usado} de ${c.creditos.limite}</div>` : "")) + `</div>`);
+  $("#tarjetas").innerHTML = h.join("");
+}
+
+function verNeon(d) {
+  const n = d.neon, e = errorOSinConfig(n, "Neon", "NEON_API_KEY");
+  if (e) { $("#neon").innerHTML = e; return; }
+  const filas = n.proyectos.map(p => `<tr>
+    <td><strong>${esc(p.nombre)}</strong><div class="muted">${esc(p.region || "")}</div>${p.aviso ? `<div class="muted">${esc(p.aviso)}</div>` : ""}</td>
+    <td>${p.bases.map(b => `<span class="tag">${esc(b)}</span>`).join("") || "—"}</td>
+    <td>${p.ramas.map(r => `<span class="tag">${esc(r.nombre)}${r.principal ? " ★" : ""} · ${fmt(r.bytes)}</span>`).join("") || "—"}</td>
+    <td class="num">${fmt(p.bytes)}${p.pct != null ? `<div class="muted">${p.pct}%</div>` : ""}</td></tr>`);
+  $("#neon").innerHTML = tabla([{t:"Proyecto"},{t:"Bases (rama principal)"},{t:"Ramas"},{t:"Espacio",num:1}], filas, "No hay proyectos.");
+}
+
+function verTablas(d) {
+  const t = d.tablas;
+  if (!t) { $("#tablas").innerHTML = `<div class="vacio">Esta app usa SQLite local; las tablas se ven cuando está conectada a Neon.</div>`; return; }
+  if (t.error) { $("#tablas").innerHTML = `<div class="vacio">No se pudo leer: ${esc(t.error)}</div>`; return; }
+  const filas = t.tablas.map(x => `<tr><td><code>${esc(x.nombre)}</code></td><td class="num">${fmt(x.bytes)}</td></tr>`);
+  $("#tablas").innerHTML = `<div class="vacio" style="padding-bottom:0">Tamaño total de la base: <strong>${fmt(t.base)}</strong></div>` +
+    tabla([{t:"Tabla"},{t:"Tamaño (con índices)",num:1}], filas, "Sin tablas.");
+}
+
+function verR2(d) {
+  const r = d.r2, e = errorOSinConfig(r, "Cloudflare R2", "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY");
+  if (e) { $("#r2").innerHTML = `<div class="tabla">${e}</div>`; return; }
+  $("#r2").innerHTML = r.buckets.map(b => {
+    if (b.error) return `<div class="tabla" style="margin-bottom:12px"><div class="vacio"><strong>${esc(b.nombre)}</strong>: ${esc(b.error)}</div></div>`;
+    const filas = b.grandes.map(o => `<tr><td><code>${esc(o.key)}</code></td><td class="num">${fmt(o.bytes)}</td>
+      <td class="num"><button class="del" data-del="r2" data-bucket="${esc(b.nombre)}" data-key="${esc(o.key)}" data-nombre="${esc(b.nombre + "/" + o.key)}">Eliminar</button></td></tr>`);
+    return `<div style="margin-bottom:14px"><div class="muted" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong> · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
+      <div class="tabla">${tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "Bucket vacío.")}</div></div>`;
+  }).join("") || `<div class="tabla"><div class="vacio">No hay buckets.</div></div>`;
+}
+
+function verCld(d) {
+  const c = d.cloudinary, e = errorOSinConfig(c, "Cloudinary", "CLOUDINARY_URL");
+  if (e) { $("#cld").innerHTML = e; return; }
+  const filas = c.grandes.map(a => `<tr><td><code>${esc(a.public_id)}</code><div class="muted">${esc(a.tipo)}${a.formato ? " · " + esc(a.formato) : ""}</div></td>
+    <td class="num">${fmt(a.bytes)}</td>
+    <td class="num"><button class="del" data-del="cld" data-id="${esc(a.public_id)}" data-rt="${esc(a.tipo)}" data-nombre="${esc(a.tipo + "/" + a.public_id)}">Eliminar</button></td></tr>`);
+  $("#cld").innerHTML = tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "No hay archivos.") +
+    (c.muestra ? `<div class="vacio">Hay más archivos de los analizados; la lista corresponde a una muestra.</div>` : "");
+}
+
+async function cargar(forzar) {
+  const btn = $("#btn-recargar"); btn.disabled = true; $("#estado").textContent = "Consultando las APIs…";
+  try {
+    const r = await fetch("/api/almacenamiento/resumen" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "Error");
+    $("#alertas").innerHTML = d.alertas.map(a => `<div class="aviso ${a.nivel === "error" ? "error" : ""}">${esc(a.texto)}</div>`).join("");
+    tarjetas(d); verNeon(d); verTablas(d); verR2(d); verCld(d);
+    $("#estado").textContent = "Actualizado " + new Date(d.generado).toLocaleString();
+  } catch (err) {
+    $("#estado").textContent = "No se pudo cargar (¿sesión vencida?). Recarga la página.";
+  }
+  btn.disabled = false;
+}
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-del]");
+  if (!b) return;
+  if (!confirm("¿Eliminar definitivamente?\n\n" + b.dataset.nombre + "\n\nNo se puede deshacer.")) return;
+  b.disabled = true;
+  const esR2 = b.dataset.del === "r2";
+  const url = esR2 ? "/api/almacenamiento/r2/eliminar" : "/api/almacenamiento/cloudinary/eliminar";
+  const cuerpo = esR2 ? { bucket: b.dataset.bucket, key: b.dataset.key, confirmar: true }
+                      : { public_id: b.dataset.id, resource_type: b.dataset.rt, confirmar: true };
+  try {
+    const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+    const d = await r.json();
+    if (!d.ok) { alert("No se pudo eliminar: " + (d.error || "error")); b.disabled = false; return; }
+    cargar(true);
+  } catch (err) { alert("No se pudo eliminar."); b.disabled = false; }
+});
+
+$("#btn-recargar").addEventListener("click", () => cargar(true));
+cargar(false);
+</script>
+{% endraw %}
+</body>
+</html>
