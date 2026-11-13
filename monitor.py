@@ -19,6 +19,7 @@ Para vigilar al propio servidor sigue usando un monitor externo (UptimeRobot) ap
 import http.client
 import ipaddress
 import os
+import re
 import socket
 import ssl
 import threading
@@ -47,6 +48,19 @@ USER_AGENT = "ZEDYTH-Monitor/1.0"
 def _hoy():
     """Fecha en México (UTC-6): el 'día' del conteo coincide con el del usuario."""
     return (datetime.utcnow() - timedelta(hours=6)).date()
+
+
+def _host(u):
+    """Nombre de host de una URL o dominio (minúsculas, sin puerto ni ruta)."""
+    u = (u or "").strip().lower()
+    if not u:
+        return ""
+    if "//" not in u:
+        u = "//" + u
+    try:
+        return urlsplit(u).hostname or ""
+    except ValueError:
+        return ""
 
 
 def _iso(dt):
@@ -552,6 +566,68 @@ def crear_blueprint(app, db, registrar, avisar):
         lista = [{"sitio": nombres.get(c.sitio_id, "(eliminado)"), "inicio": _iso(c.inicio), "fin": _iso(c.fin),
                   "motivo": c.motivo, "duracion_s": ((c.fin or datetime.utcnow()) - c.inicio).total_seconds()} for c in caidas]
         return jsonify(ok=True, sitios=res, caidas=lista)
+
+    @bp.route("/api/monitor/proyecto/<int:pid>")
+    def api_proyecto(pid):
+        """Lo que ve NUESTRO bot (monitor propio) de UN proyecto: los sitios vigilados cuyo host coincide con la URL de
+        producción o los subdominios del proyecto (o cuyo nombre contiene el del proyecto)."""
+        if not es_admin():
+            return negado()
+        _iniciar()
+        from sqlalchemy import text
+        try:
+            fila = db.session.execute(text("SELECT nombre, url_produccion FROM proyecto WHERE id = :i"), {"i": pid}).first()
+            subs = [r[0] for r in db.session.execute(text("SELECT nombre FROM subdominio WHERE proyecto_id = :i"), {"i": pid}).all()]
+        except Exception:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo leer el proyecto."), 500
+        if not fila:
+            return jsonify(ok=False, error="Proyecto no encontrado."), 404
+        hosts = {x for x in [_host(fila[1])] + [_host(z) for z in subs] if x}
+        clave = re.sub(r"[^a-z0-9]", "", (fila[0] or "").lower())
+
+        def es_mio(s):
+            h = _host(s["url"])
+            por_host = bool(h) and any(h == x or h.endswith("." + x) for x in hosts)
+            por_nombre = len(clave) >= 4 and clave in re.sub(r"[^a-z0-9]", "", str(s["nombre"] or "").lower())
+            return por_host or por_nombre
+
+        with lock:
+            mios = [s for s in sitios.values() if es_mio(s)]
+            lista = sorted((publico(s) for s in mios), key=lambda x: x["nombre"].lower())
+            hoy_mem = {s["id"]: dict(s["dia"]) for s in mios}
+        for x in lista:
+            x.pop("serie", None)
+        if not lista:
+            return jsonify(ok=True, estado="sin_sitio", url=fila[1] or "", sitios=[], caidas=[], listo=estado["listo"])
+        ids = [x["id"] for x in lista]
+        hoy = _hoy()
+        try:
+            filas = MonitorDia.query.filter(MonitorDia.sitio_id.in_(ids), MonitorDia.fecha >= hoy - timedelta(days=30),
+                                            MonitorDia.fecha < hoy).all()
+            caidas = MonitorCaida.query.filter(MonitorCaida.sitio_id.in_(ids)).order_by(MonitorCaida.inicio.desc()).limit(5).all()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo leer el historial: " + str(e)[:150]), 500
+        acum = {i: {"t7": 0, "o7": 0, "t30": 0, "o30": 0, "ms": 0.0} for i in ids}
+        for d in filas:
+            a = acum[d.sitio_id]
+            a["t30"] += d.checks or 0; a["o30"] += d.ok or 0; a["ms"] += d.ms_total or 0
+            if d.fecha >= hoy - timedelta(days=7):
+                a["t7"] += d.checks or 0; a["o7"] += d.ok or 0
+        for i, dia in hoy_mem.items():                  # lo de hoy aún puede estar solo en memoria
+            if dia["fecha"] == hoy:
+                a = acum[i]
+                a["t7"] += dia["n"]; a["o7"] += dia["ok"]; a["t30"] += dia["n"]; a["o30"] += dia["ok"]; a["ms"] += dia["ms"]
+        pct = lambda o, t: round(o * 100 / t, 2) if t else None
+        for x in lista:
+            a = acum[x["id"]]
+            x["u7"], x["u30"] = pct(a["o7"], a["t7"]), pct(a["o30"], a["t30"])
+            x["ms30"] = round(a["ms"] / a["o30"]) if a["o30"] else None
+        cl = [{"sitio": next((x["nombre"] for x in lista if x["id"] == c.sitio_id), ""), "inicio": _iso(c.inicio),
+               "fin": _iso(c.fin), "motivo": c.motivo,
+               "duracion_s": ((c.fin or datetime.utcnow()) - c.inicio).total_seconds()} for c in caidas]
+        return jsonify(ok=True, estado="ok", url=fila[1] or "", sitios=lista, caidas=cl, listo=estado["listo"])
 
     @bp.route("/api/monitor/probar", methods=["POST"])
     def api_probar():

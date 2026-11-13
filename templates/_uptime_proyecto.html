@@ -1,0 +1,146 @@
+<!-- templates/_uptime_proyecto.html : informe de disponibilidad de ESTE proyecto: bot propio + UptimeRobot -->
+<div class="section-title">Disponibilidad y peticiones del bot</div>
+{% raw %}
+<style>
+  .up-dos { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; margin-bottom:16px; }
+  .up-tit { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:4px; }
+  .up-tit h3 { margin:0; font-size:16px; font-weight:600; }
+  .up-tag { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:2px 9px; border-radius:99px; }
+  .up-tag.propio { background:rgba(96,165,250,.18); color:#60a5fa; }
+  .up-tag.externo { background:rgba(167,139,250,.18); color:#a78bfa; }
+  .up-quien { color:var(--text-muted,#9aa3b2); font-size:12px; line-height:1.5; margin:0 0 12px; }
+  .up-mon { border-top:1px solid rgba(128,128,128,.2); padding:14px 0; }
+  .up-mon:first-of-type { border-top:0; padding-top:0; }
+  .up-cab { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px; }
+  .up-badge { font-size:12px; font-weight:700; padding:2px 10px; border-radius:99px; }
+  .up-ok { background:rgba(74,222,128,.18); color:#4ade80; }
+  .up-mal { background:rgba(248,113,113,.18); color:#f87171; }
+  .up-gris { background:rgba(128,128,128,.22); color:var(--text-muted,#9aa3b2); }
+  .up-datos { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px 18px; }
+  .up-datos span { display:block; color:var(--text-muted,#9aa3b2); font-size:12px; margin-bottom:2px; }
+  .up-datos strong { font-size:16px; font-weight:600; }
+  .up-nota { color:var(--text-muted,#9aa3b2); font-size:13px; line-height:1.5; }
+  .up-caidas { margin:10px 0 0; padding-left:18px; font-size:13px; }
+  .up-form { margin-top:6px; }
+  .up-form .field { width:100%; margin:6px 0 10px; }
+  .up-fila { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .up-msg { font-size:13px; min-height:18px; margin-top:8px; }
+  .up-msg.ok { color:#4ade80; } .up-msg.mal { color:#f87171; }
+  .up-pie { display:flex; flex-wrap:wrap; gap:16px; margin-top:12px; font-size:13px; }
+</style>
+{% endraw %}
+<div class="up-dos" id="up-{{ p.id }}" data-pid="{{ p.id }}">
+
+  <div class="luxury-card">
+    <div class="up-tit"><h3>Bot propio · ZEDYTH Monitor</h3><span class="up-tag propio">Propio</span></div>
+    <p class="up-quien">Es el bot de tu propio panel: corre dentro de tu servidor y no necesita llave. Si Render duerme o apaga el servidor, este bot se detiene con él y no avisa.</p>
+    <div class="up-propio"><span class="up-nota">Consultando…</span></div>
+  </div>
+
+  <div class="luxury-card">
+    <div class="up-tit"><h3>UptimeRobot</h3><span class="up-tag externo">Externo</span></div>
+    <p class="up-quien">Es el servicio uptimerobot.com: su robot visita tu sitio desde afuera, aunque tu servidor esté dormido. Aquí solo se leen sus reportes con una API key de solo lectura.</p>
+    <div class="up-ur"><span class="up-nota">Consultando…</span></div>
+    <div class="up-msg-global"></div>
+  </div>
+
+</div>
+{% raw %}
+<script>
+(function () {
+  const raiz = document.currentScript.previousElementSibling;
+  if (!raiz || !raiz.dataset.pid) return;
+  const pid = raiz.dataset.pid;
+  const $ = s => raiz.querySelector(s);
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pct = v => v == null ? "—" : v + "%";
+  const ms = v => v == null ? "—" : v + " ms";
+  const dur = s => s == null ? "" : s < 60 ? Math.round(s) + " s" : s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
+  const fecha = iso => new Date(iso).toLocaleString("es-MX");
+  const nota = t => '<p class="up-nota" style="margin:0;">' + t + "</p>";
+  const aviso = t => '<div class="ap-aviso error" style="margin:0 0 10px;">' + esc(t) + "</div>";
+  const clase = (caido, ok) => caido ? "up-mal" : ok ? "up-ok" : "up-gris";
+  const json = (url, cuerpo) => fetch(url, cuerpo ? { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) } : { credentials: "same-origin" })
+    .then(r => r.status === 403 ? { ok: false, error: "Solo administradores." } : r.json());
+  const lista = cs => (cs || []).length
+    ? '<ul class="up-caidas">' + cs.map(c => "<li>" + (c.sitio ? esc(c.sitio) + " · " : "") + fecha(c.inicio || c.fecha) +
+        (c.duracion_s != null ? " · duró " + dur(c.duracion_s) : "") + (c.motivo ? " · " + esc(c.motivo) : "") + "</li>").join("") + "</ul>"
+    : '<p class="up-nota" style="margin:10px 0 0;">Sin caídas registradas recientemente.</p>';
+
+  // ---- bot propio ----
+  const pintarPropio = d => {
+    if (d.estado === "sin_sitio") return nota("Este proyecto no está vigilado por el bot propio" +
+      (d.url ? " (<code>" + esc(d.url) + "</code>)" : " (falta la URL de producción en el proyecto)") +
+      '. <a href="/monitor">Registrar la dirección en el monitor</a>.');
+    return d.sitios.map(s => '<div class="up-mon"><div class="up-cab"><strong>' + esc(s.nombre) + "</strong>" +
+      '<span class="up-badge ' + clase(s.estado === "abajo", s.estado === "arriba") + '">' + esc(s.estado === "arriba" ? "en línea" : s.estado === "abajo" ? "caído" : "sin datos aún") + "</span>" +
+      '<span class="up-nota">Revisa cada ' + s.intervalo_min + " min</span></div>" +
+      '<div class="up-datos"><div><span>Hoy</span><strong>' + pct(s.hoy) + "</strong></div>" +
+      "<div><span>7 días</span><strong>" + pct(s.u7) + "</strong></div><div><span>30 días</span><strong>" + pct(s.u30) + "</strong></div>" +
+      "<div><span>Última respuesta</span><strong>" + ms(s.ms) + "</strong></div></div></div>").join("") +
+      lista(d.caidas) + '<div class="up-pie"><a href="/monitor">Administrar el monitor propio</a></div>';
+  };
+  const cargarPropio = () => json("/api/monitor/proyecto/" + pid)
+    .then(d => { if (!d.ok) throw new Error(d.error || "Error"); $(".up-propio").innerHTML = pintarPropio(d); })
+    .catch(e => { $(".up-propio").innerHTML = aviso("No se pudo consultar el bot propio (" + e.message + ")."); });
+
+  // ---- UptimeRobot ----
+  const formulario = conAviso => (conAviso || "") +
+    '<div class="up-form"><p class="up-nota" style="margin:0;">En uptimerobot.com entra a <strong>Integrations &amp; API → API</strong> y copia la ' +
+    '<strong>Read-only API key</strong> (solo lectura: no puede pausar ni borrar monitores). Se guarda cifrada y sirve para todos los proyectos.</p>' +
+    '<input class="field up-key" type="password" autocomplete="off" placeholder="Read-only API key de UptimeRobot">' +
+    '<div class="up-fila"><button class="btn btn-primary up-conectar" type="button">Conectar</button></div></div>';
+  const pintarUR = d => {
+    if (d.estado === "sin_conectar") return formulario(nota("UptimeRobot aún no está conectado."));
+    if (d.estado === "error") return formulario(aviso(d.error));
+    let h;
+    if (d.estado === "sin_monitor") h = nota("Este proyecto no tiene un monitor en UptimeRobot" +
+      (d.url ? " para <code>" + esc(d.url) + "</code>" : " (falta la URL de producción en el proyecto)") +
+      ". Crea uno con esa dirección (o con su <code>/healthz</code>) y aparecerá aquí.");
+    else h = d.monitores.map(m => '<div class="up-mon"><div class="up-cab"><strong>' + esc(m.nombre) + "</strong>" +
+      '<span class="up-badge ' + clase(m.caido, m.codigo === 2) + '">' + esc(m.estado) + "</span>" +
+      (m.intervalo_s ? '<span class="up-nota">Revisa cada ' + Math.round(m.intervalo_s / 60) + " min</span>" : "") + "</div>" +
+      '<div class="up-datos"><div><span>24 h</span><strong>' + pct(m.uptime["24h"]) + "</strong></div>" +
+      "<div><span>7 días</span><strong>" + pct(m.uptime["7d"]) + "</strong></div><div><span>30 días</span><strong>" + pct(m.uptime["30d"]) + "</strong></div>" +
+      "<div><span>Respuesta prom.</span><strong>" + ms(m.respuesta_ms) + "</strong></div></div>" + lista(m.caidas) + "</div>").join("");
+    return h + '<div class="up-pie"><a href="#" class="up-probar">Probar conexión</a><a href="#" class="up-refrescar">Actualizar ahora</a>' +
+      '<a href="#" class="up-desconectar" style="color:#f87171;">Desconectar</a></div>';
+  };
+  const mensaje = (t, ok) => { const e = $(".up-msg-global"); e.className = "up-msg-global up-msg " + (ok ? "ok" : "mal"); e.textContent = t; };
+  const cargarUR = forzar => json("/api/almacenamiento/proyectos/" + pid + "/disponibilidad" + (forzar ? "?forzar=1" : ""))
+    .then(d => { if (!d.ok) throw new Error(d.error || "Error"); $(".up-ur").innerHTML = pintarUR(d); })
+    .catch(e => { $(".up-ur").innerHTML = aviso("No se pudo consultar UptimeRobot (" + e.message + ")."); });
+
+  raiz.addEventListener("click", async e => {
+    const a = e.target.closest("a, button"); if (!a) return;
+    if (a.classList.contains("up-refrescar")) { e.preventDefault(); mensaje("", true); cargarUR(true); }
+    if (a.classList.contains("up-probar")) {
+      e.preventDefault(); mensaje("Probando…", true);
+      const r = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(() => ({ ok: false, error: "Sin respuesta." }));
+      mensaje(r.ok ? r.mensaje : r.error, r.ok);
+    }
+    if (a.classList.contains("up-desconectar")) {
+      e.preventDefault();
+      if (!confirm("¿Desconectar UptimeRobot? Se borra la API key guardada (afecta a todos los proyectos).")) return;
+      const r = await json("/api/almacenamiento/conexiones/desconectar", { servicio: "uptimerobot", confirmar: true }).catch(() => ({ ok: false, error: "Sin respuesta." }));
+      if (!r.ok) return mensaje(r.error, false);
+      mensaje("", true); cargarUR(true);
+    }
+    if (a.classList.contains("up-conectar")) {
+      const llave = $(".up-key").value.trim();
+      if (!llave) return mensaje("Pega primero la API key.", false);
+      a.disabled = true; mensaje("Guardando…", true);
+      const g = await json("/api/almacenamiento/conexiones/guardar", { servicio: "uptimerobot", valores: { UPTIMEROBOT_API_KEY: llave }, confirmar: true }).catch(() => ({ ok: false, error: "Sin respuesta." }));
+      if (!g.ok) { a.disabled = false; return mensaje(g.error, false); }
+      const p = await json("/api/almacenamiento/conexiones/probar", { servicio: "uptimerobot" }).catch(() => ({ ok: false, error: "Sin respuesta." }));
+      mensaje(p.ok ? "Conectado. " + (p.mensaje || "") : "Se guardó, pero la prueba falló: " + p.error, p.ok);
+      cargarUR(true);
+    }
+  });
+
+  cargarPropio();
+  cargarUR(false);
+})();
+</script>
+{% endraw %}

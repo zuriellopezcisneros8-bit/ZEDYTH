@@ -17,6 +17,7 @@ import heapq
 import json
 import math
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -410,6 +411,38 @@ def datos_uptime():
     mons.sort(key=lambda m: (not m["caido"], m["nombre"].lower()))
     return {"configurado": True, "monitores": mons, "total": len(mons), "caidos": sum(1 for m in mons if m["caido"]),
             "pausados": sum(1 for m in mons if m["codigo"] == 0)}
+
+
+def _host(u):
+    """Nombre de host de una URL o dominio (minúsculas, sin puerto ni ruta)."""
+    u = (u or "").strip().lower()
+    if not u:
+        return ""
+    if "//" not in u:
+        u = "//" + u
+    try:
+        return _uparse.urlparse(u).hostname or ""
+    except ValueError:
+        return ""
+
+
+def _uptime_de_proyecto(ur, nombre, url_prod, subdominios):
+    """Monitores de UptimeRobot que pertenecen a UN proyecto: por host (URL de producción o subdominios)
+    o, si el monitor apunta a otro host (ej. xxx.onrender.com), porque su nombre contiene el del proyecto."""
+    if not ur.get("configurado"):
+        return {"estado": "sin_conectar", "monitores": []}
+    if ur.get("error"):
+        return {"estado": "error", "error": ur["error"], "monitores": []}
+    hosts = {h for h in [_host(url_prod)] + [_host(x) for x in (subdominios or [])] if h}
+    clave = re.sub(r"[^a-z0-9]", "", (nombre or "").lower())
+    out = []
+    for m in ur.get("monitores") or []:
+        h = _host(m.get("url"))
+        por_host = bool(h) and any(h == x or h.endswith("." + x) for x in hosts)
+        por_nombre = len(clave) >= 4 and clave in re.sub(r"[^a-z0-9]", "", str(m.get("nombre") or "").lower())
+        if por_host or por_nombre:
+            out.append(m)
+    return {"estado": "ok" if out else "sin_monitor", "monitores": out}
 
 
 # --- resumen general ----------------------------------------------------------
@@ -1150,6 +1183,24 @@ def crear_blueprint(db, registrar):
         d = datos_cacheados(request.args.get("forzar") == "1")
         return jsonify(ok=True, generado=d["generado"],
                        proyectos={str(f["id"]): _por_proyecto(d, f) for f in _filas_proyectos(db)})
+
+    @bp.route("/api/almacenamiento/proyectos/<int:pid>/disponibilidad")
+    def disponibilidad_proyecto(pid):
+        """Informe del bot de UptimeRobot (estado, % de disponibilidad, caídas) SOLO de este proyecto."""
+        if not es_admin():
+            return negado()
+        from sqlalchemy import text
+        try:
+            fila = db.session.execute(text("SELECT nombre, url_produccion FROM proyecto WHERE id = :i"), {"i": pid}).first()
+            subs = [r[0] for r in db.session.execute(text("SELECT nombre FROM subdominio WHERE proyecto_id = :i"), {"i": pid}).all()]
+        except Exception:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo leer el proyecto."), 500
+        if not fila:
+            return jsonify(ok=False, error="Proyecto no encontrado."), 404
+        d = datos_cacheados(request.args.get("forzar") == "1")
+        return jsonify(ok=True, generado=d["generado"], url=fila[1] or "",
+                       **_uptime_de_proyecto(d.get("uptimerobot") or {}, fila[0], fila[1], subs))
 
     @bp.route("/api/almacenamiento/opciones")
     def opciones():
