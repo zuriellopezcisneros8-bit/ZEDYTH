@@ -28,13 +28,11 @@
 <nav class="mt-tabs" aria-label="Secciones de la plataforma">
     <button type="button" class="mt-tab {{ 'on' if tab == 'resumen' }}" data-tab="resumen">Resumen</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'finanzas' }}" data-tab="finanzas">Finanzas</button>
-    <button type="button" class="mt-tab {{ 'on' if tab == 'infra' }}" data-tab="infra">Repositorio e infraestructura</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'infra' }}" data-tab="infra">Repositorio</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'almacenamiento' }}" data-tab="almacenamiento">Almacenamiento</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'monitor' }}" data-tab="monitor">Monitor</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'seguridad' }}" data-tab="seguridad">Ciberseguridad{% if abiertos %}<span class="mt-n">{{ abiertos }}</span>{% endif %}</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'alertas' }}" data-tab="alertas">Alertas{% if alertas|length %}<span class="mt-n">{{ alertas|length }}</span>{% endif %}</button>
-    <button type="button" class="mt-tab {{ 'on' if tab == 'resenas' }}" data-tab="resenas">Reseñas{% if (pubs|map(attribute='resenas')|sum(start=[])|rejectattr('aprobada')|list|length) %}<span class="mt-n">{{ (pubs|map(attribute='resenas')|sum(start=[])|rejectattr('aprobada')|list|length) }}</span>{% endif %}</button>
-    <button type="button" class="mt-tab {{ 'on' if tab == 'pedidos' }}" data-tab="pedidos">Pedidos{% if (leads_p|selectattr('estado','equalto','Nuevo')|list|length) %}<span class="mt-n">{{ (leads_p|selectattr('estado','equalto','Nuevo')|list|length) }}</span>{% endif %}</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'inteligencia' }}" data-tab="inteligencia">Inteligencia</button>
 </nav>
 <div class="mt-panel {{ 'on' if tab == 'resumen' }}" data-panel="resumen">
@@ -103,12 +101,22 @@
 
 </div>
 <div class="mt-panel {{ 'on' if tab == 'infra' }}" data-panel="infra">
-<div class="section-title">Infraestructura</div>
+<div class="section-title">Repositorio</div>
 <div class="luxury-card">
-    <h3 class="stat-label">Infraestructura</h3>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px;">
+        <div>
+            {% if p.repo_url %}<a href="{{ p.repo_url }}" target="_blank" rel="noopener" style="font-size:17px; text-decoration:underline; word-break:break-all;">{{ p.repo_url|replace('https://','')|replace('http://','') }}</a>
+            <div class="mono" style="margin-top:4px;">Rama de producción: {{ p.rama_produccion or 'main' }}</div>
+            {% else %}<div style="color:var(--text-muted);">Sin repositorio registrado todavía.</div>{% endif %}
+        </div>
+        <div class="toolbar" style="margin:0;">
+            {% if p.repo_url %}<a class="btn btn-primary" href="{{ p.repo_url }}" target="_blank" rel="noopener">Abrir en GitHub</a>{% endif %}
+            <a class="btn" href="/proyectos/{{ p.id }}/editar">{{ 'Editar datos' if p.repo_url else 'Agregar repositorio' }}</a>
+        </div>
+    </div>
     <div class="grid-2" style="font-size:14px; gap:10px 24px;">
-        {% for t,v in [('Dominio / registrador',p.dominio_registrador),('Stack',p.stack),('Frontend',p.frontend_plataforma),('Backend',p.backend_plataforma),('Base de datos y storage',p.bd_storage),('Cuentas de IA',p.ia_cuentas),('Repositorio',p.repo_url),('Carpeta local',p.carpeta_local),('Rama de producción',p.rama_produccion),('Bóveda de credenciales',p.boveda_ref)] %}
-        <div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v or '—' }}</div></div>{% endfor %}
+        {% for t,v in [('Carpeta local',p.carpeta_local),('Stack',p.stack),('Frontend',p.frontend_plataforma),('Backend',p.backend_plataforma),('Dominio / registrador',p.dominio_registrador),('Base de datos y storage',p.bd_storage),('Cuentas de IA',p.ia_cuentas),('Bóveda de credenciales',p.boveda_ref)] %}
+        <div><span style="color:var(--text-muted);">{{ t }}</span><div class="{{ 'mono' if t == 'Carpeta local' }}">{{ v or '—' }}</div></div>{% endfor %}
     </div>
 </div>
 

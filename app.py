@@ -268,7 +268,6 @@ class Lead(db.Model):
     plazo = db.Column(db.String(100))
     resumen = db.Column(db.Text)
     estado = db.Column(db.String(20), default="Nuevo")     # Nuevo, Contactado, Cerrado, Descartado
-    plataforma_id = db.Column(db.Integer)                  # plataforma propia a la que pertenece (opcional)
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -337,7 +336,6 @@ class ProyectoPublico(db.Model):
     descripcion = db.Column(db.Text, nullable=False)
     tecnologias = db.Column(db.String(200))
     visible = db.Column(db.Boolean, default=True)
-    plataforma_id = db.Column(db.Integer)                  # plataforma propia a la que pertenece (opcional)
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
     resenas = db.relationship('Resena', backref='proyecto', lazy=True, cascade='all, delete-orphan')
 
@@ -446,8 +444,6 @@ def migrar_columnas():
     """Agrega columnas nuevas a una base existente (SQLite o PostgreSQL) sin perder datos."""
     pg = db.engine.dialect.name == "postgresql"
     nuevas = {
-        "proyecto_publico": [("plataforma_id", "INTEGER")],
-        "lead": [("plataforma_id", "INTEGER")],
         "inteligencia": [("plataforma_id", "INTEGER")],
         "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
                  ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
@@ -1187,7 +1183,7 @@ def plataforma_nueva():
     return render_template('plataforma_form.html')
 
 
-TABS_PLATAFORMA = ["resumen", "finanzas", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "resenas", "pedidos", "inteligencia"]
+TABS_PLATAFORMA = ["resumen", "finanzas", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "inteligencia"]
 
 
 def alertas_plataforma(p):
@@ -1228,15 +1224,6 @@ def plataforma_detalle(pid):
         return redirect(url_for('cliente_detalle', cid=p.cliente_id))
     tab = request.args.get('tab') if request.args.get('tab') in TABS_PLATAFORMA else "resumen"
     venc = sorted(p.vencimientos, key=lambda v: v.fecha or date.max)
-    leads_p = Lead.query.filter_by(plataforma_id=p.id).order_by(Lead.id.desc()).all()
-    for l in leads_p:
-        l.hora = l.creado_en - timedelta(hours=6)
-        if "@" in (l.contacto or ""):
-            l.enlace = f"mailto:{l.contacto}"
-        else:
-            tel = re.sub(r"\D", "", l.contacto or "")
-            tel = "52" + tel if len(tel) == 10 else tel
-            l.enlace = f"https://wa.me/{tel}" if len(tel) >= 10 else None
     notifs = (Notificacion.query.filter(db.or_(Notificacion.url.like(f"/proyectos/{p.id}/%"),
                                                 Notificacion.url.like(f"/plataformas/{p.id}%")))
               .order_by(Notificacion.id.desc()).limit(15).all())
@@ -1253,11 +1240,6 @@ def plataforma_detalle(pid):
         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
         cumplidos=sum(1 for c in p.checks if c.cumplido),
         alertas=alertas_plataforma(p), notifs=notifs,
-        pubs=ProyectoPublico.query.filter_by(plataforma_id=p.id).order_by(ProyectoPublico.id.desc()).all(),
-        pubs_libres=ProyectoPublico.query.filter(ProyectoPublico.plataforma_id.is_(None),
-                                                 ProyectoPublico.categoria != CAT_GENERAL).order_by(ProyectoPublico.nombre).all(),
-        leads_p=leads_p, lead_estados=["Nuevo", "Contactado", "Cerrado", "Descartado"],
-        leads_libres=Lead.query.filter(Lead.plataforma_id.is_(None)).order_by(Lead.id.desc()).limit(100).all(),
         intel_p=Inteligencia.query.filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
         intel_libres=Inteligencia.query.filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
         intel_estados=INTEL_ESTADOS)
@@ -1265,9 +1247,9 @@ def plataforma_detalle(pid):
 
 @app.route('/plataformas/<int:pid>/vinculo', methods=['POST'])
 def plataforma_vinculo(pid):
-    """Asigna (o quita) a esta plataforma un proyecto público con reseñas, un pedido o un registro de inteligencia."""
+    """Asigna (o quita) a esta plataforma un registro de inteligencia."""
     p = db.get_or_404(Proyecto, pid)
-    modelos = {"resenas": ProyectoPublico, "pedidos": Lead, "inteligencia": Inteligencia}
+    modelos = {"inteligencia": Inteligencia}
     tipo = campo('tipo')
     modelo = modelos.get(tipo)
     try:
