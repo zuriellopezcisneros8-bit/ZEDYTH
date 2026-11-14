@@ -3,31 +3,59 @@
 <label class="lbl">{{ label }}<input class="field" type="{{ type }}" name="{{ name }}" {{ 'required' if req }}></label>
 {% endmacro %}
 {% block content %}
+<style>
+  .mt-tabs { display:flex; gap:8px; overflow-x:auto; padding:2px 0 14px; margin-bottom:8px; scrollbar-width:thin; position:sticky; top:0; z-index:5; background:var(--bg,#000); }
+  .mt-tab { flex:0 0 auto; display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:999px; border:1px solid rgba(255,255,255,.15); background:transparent; color:var(--text-muted,#9aa3b2); font:500 14px Inter,sans-serif; cursor:pointer; white-space:nowrap; }
+  .mt-tab:hover { color:#fff; border-color:rgba(255,255,255,.35); }
+  .mt-tab.on { background:#fff; color:#000; border-color:#fff; }
+  .mt-n { min-width:20px; padding:1px 7px; border-radius:99px; font-size:12px; font-weight:700; background:#f87171; color:#000; text-align:center; }
+  .mt-panel { display:none; } .mt-panel.on { display:block; }
+  .mt-fila { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; padding:14px 0; border-top:1px solid rgba(255,255,255,.08); }
+  .mt-fila:first-child { border-top:0; }
+  .mt-fila select.field, .mt-vinc select.field { margin:0; width:auto; min-width:180px; }
+  .mt-vinc { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:16px; }
+  .mt-acc { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .mt-acc form { margin:0; }
+</style>
 <section class="hero">
     <h1>{{ p.nombre }}</h1>
     <p><span class="badge {{ 'badge-green' if p.estado in ['Activo','Mantenido'] else 'badge-amber' if p.estado == 'Desarrollo' else 'badge-red' }}">{{ p.estado }}</span>
        {% if p.version %} · versión {{ p.version }}{% endif %}
-       {% if p.url_produccion %} · <a href="{{ p.url_produccion }}" target="_blank" rel="noopener" style="text-decoration:underline;">{{ p.url_produccion|replace('https://','')|replace('http://','') }}</a>{% endif %}</p>
-    <div class="toolbar"><a class="btn" href="/plataformas">Volver</a><a class="btn" href="/proyectos/{{ p.id }}/editar">Editar</a><a class="btn" href="/proyectos/{{ p.id }}/seguridad">Seguridad y vencimientos</a></div>
+       {% if p.url_produccion %} · <a href="{{ p.url_produccion }}" target="_blank" rel="noopener" style="text-decoration:underline;">{{ p.url_produccion|replace('https://','')|replace('http://','') }}</a>{% endif %}
+       {% if p.repo_url %} · <a href="{{ p.repo_url }}" target="_blank" rel="noopener" style="text-decoration:underline;">Repositorio</a>{% endif %}</p>
+    <div class="toolbar"><a class="btn" href="/plataformas">Volver</a><a class="btn" href="/proyectos/{{ p.id }}/editar">Editar</a></div>
 </section>
+<nav class="mt-tabs" aria-label="Secciones de la plataforma">
+    <button type="button" class="mt-tab {{ 'on' if tab == 'resumen' }}" data-tab="resumen">Resumen</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'finanzas' }}" data-tab="finanzas">Finanzas</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'infra' }}" data-tab="infra">Repositorio e infraestructura</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'almacenamiento' }}" data-tab="almacenamiento">Almacenamiento</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'monitor' }}" data-tab="monitor">Monitor</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'seguridad' }}" data-tab="seguridad">Ciberseguridad{% if abiertos %}<span class="mt-n">{{ abiertos }}</span>{% endif %}</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'alertas' }}" data-tab="alertas">Alertas{% if alertas|length %}<span class="mt-n">{{ alertas|length }}</span>{% endif %}</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'resenas' }}" data-tab="resenas">Reseñas{% if (pubs|map(attribute='resenas')|sum(start=[])|rejectattr('aprobada')|list|length) %}<span class="mt-n">{{ (pubs|map(attribute='resenas')|sum(start=[])|rejectattr('aprobada')|list|length) }}</span>{% endif %}</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'pedidos' }}" data-tab="pedidos">Pedidos{% if (leads_p|selectattr('estado','equalto','Nuevo')|list|length) %}<span class="mt-n">{{ (leads_p|selectattr('estado','equalto','Nuevo')|list|length) }}</span>{% endif %}</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'inteligencia' }}" data-tab="inteligencia">Inteligencia</button>
+</nav>
+<div class="mt-panel {{ 'on' if tab == 'resumen' }}" data-panel="resumen">
 <div class="grid-2" style="gap:20px; margin-bottom:20px;">
     <div class="luxury-card"><h3 class="stat-label">Gasto mensual en servicios</h3><div class="stat-value">{{ '${:,.0f}'.format(gasto) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Ingresos (últimos 30 días)</h3><div class="stat-value">{{ '${:,.0f}'.format(fin.ingreso_30d) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Ganancia mensual{% if fin.margen is not none %} · margen {{ fin.margen }}%{% endif %}</h3><div class="stat-value {{ 'pos' if fin.ganancia > 0 else 'neg' if fin.ganancia < 0 }}">{{ '${:,.0f}'.format(fin.ganancia) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Último respaldo correcto</h3><div class="stat-value" style="font-size:24px;">{{ ultimo or 'Sin respaldos' }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Alertas activas</h3><div class="stat-value {{ 'neg' if alertas }}">{{ alertas|length }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Checklist de seguridad</h3><div class="stat-value">{{ cumplidos }}/{{ checklist|length }}</div></div>
 </div>
-{% include '_almacenamiento_proyecto.html' %}
-{% include '_uptime_proyecto.html' %}
-
-<div class="section-title">Infraestructura</div>
-<div class="luxury-card">
-    <h3 class="stat-label">Infraestructura</h3>
-    <div class="grid-2" style="font-size:14px; gap:10px 24px;">
-        {% for t,v in [('Dominio / registrador',p.dominio_registrador),('Stack',p.stack),('Frontend',p.frontend_plataforma),('Backend',p.backend_plataforma),('Base de datos y storage',p.bd_storage),('Cuentas de IA',p.ia_cuentas),('Repositorio',p.repo_url),('Rama de producción',p.rama_produccion),('Bóveda de credenciales',p.boveda_ref)] %}
-        <div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v or '—' }}</div></div>{% endfor %}
-    </div>
+<div class="section-title">Requiere atención</div>
+{% include '_plat_lista_alertas.html' %}
+<div class="section-title">Próximos vencimientos</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Tipo</th><th>Nombre</th><th>Vence</th></tr></thead><tbody>
+    {% for v in vencimientos[:5] %}<tr><td>{{ v.tipo }}</td><td>{{ v.nombre }}</td><td class="mono">{{ v.fecha }}</td></tr>
+    {% else %}<tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Sin vencimientos. Regístralos en la pestaña Ciberseguridad.</td></tr>{% endfor %}
+</tbody></table></div></div>
 </div>
-
+<div class="mt-panel {{ 'on' if tab == 'finanzas' }}" data-panel="finanzas">
 <div class="section-title">Finanzas de la plataforma</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
     <thead><tr><th>Mes</th><th>Ingresos</th><th>Costo de servicios</th><th>Neto</th><th style="width:30%;"></th></tr></thead><tbody>
@@ -54,25 +82,6 @@
         <div><button class="btn btn-primary" type="submit">Guardar</button></div>
     </form></details>
 
-<div class="section-title">Dominios y subdominios</div>
-<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-    <thead><tr><th>Nombre</th><th>Propósito</th><th>Apunta a</th><th>Estado</th><th></th></tr></thead><tbody>
-    {% for s in subdominios %}
-    <tr><td class="mono">{{ s.nombre }}</td><td>{{ s.proposito or '—' }}</td><td style="color:var(--text-muted);">{{ s.destino or '—' }}</td>
-        <td><span class="badge {{ 'badge-green' if s.estado == 'Activo' else 'badge-red' }}">{{ s.estado }}</span></td>
-        <td style="text-align:right;"><form method="post" action="/subdominios/{{ s.id }}/eliminar" onsubmit="return confirm('¿Eliminar este subdominio?')"><button class="btn btn-sm" type="submit">Eliminar</button></form></td></tr>
-    {% else %}<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Sin subdominios registrados.</td></tr>{% endfor %}
-</tbody></table></div></div>
-<details class="luxury-card" style="margin-top:16px;"><summary>+ Agregar dominio o subdominio</summary>
-    <form method="post" action="/plataformas/{{ p.id }}/subdominio" class="grid-2">
-        {{ entrada('nombre', 'Nombre (api.ejemplo.com)', req=True) }}
-        {{ entrada('proposito', 'Propósito (sitio, API, panel…)') }}
-        {{ entrada('destino', 'Apunta a (Vercel, Render, Cloudflare…)') }}
-        <label class="lbl">Estado<select class="field" name="estado"><option>Activo</option><option>Inactivo</option></select></label>
-        {{ entrada('notas', 'Notas') }}
-        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
-    </form></details>
-
 <div class="section-title">Servicios que pagamos</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
     <thead><tr><th>Proveedor</th><th>Concepto</th><th>Periodo</th><th>Monto</th><th>Equiv. mensual</th><th>Próximo pago</th></tr></thead><tbody>
@@ -92,10 +101,76 @@
         <div><button class="btn btn-primary" type="submit">Guardar</button></div>
     </form></details>
 
-<div class="section-title">Próximos vencimientos</div>
+</div>
+<div class="mt-panel {{ 'on' if tab == 'infra' }}" data-panel="infra">
+<div class="section-title">Infraestructura</div>
+<div class="luxury-card">
+    <h3 class="stat-label">Infraestructura</h3>
+    <div class="grid-2" style="font-size:14px; gap:10px 24px;">
+        {% for t,v in [('Dominio / registrador',p.dominio_registrador),('Stack',p.stack),('Frontend',p.frontend_plataforma),('Backend',p.backend_plataforma),('Base de datos y storage',p.bd_storage),('Cuentas de IA',p.ia_cuentas),('Repositorio',p.repo_url),('Carpeta local',p.carpeta_local),('Rama de producción',p.rama_produccion),('Bóveda de credenciales',p.boveda_ref)] %}
+        <div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v or '—' }}</div></div>{% endfor %}
+    </div>
+</div>
+
+<div class="section-title">Dominios y subdominios</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-    <thead><tr><th>Tipo</th><th>Nombre</th><th>Vence</th></tr></thead><tbody>
-    {% for v in vencimientos %}<tr><td>{{ v.tipo }}</td><td>{{ v.nombre }}</td><td class="mono">{{ v.fecha }}</td></tr>
-    {% else %}<tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Sin vencimientos. Regístralos en «Seguridad y vencimientos».</td></tr>{% endfor %}
+    <thead><tr><th>Nombre</th><th>Propósito</th><th>Apunta a</th><th>Estado</th><th></th></tr></thead><tbody>
+    {% for s in subdominios %}
+    <tr><td class="mono">{{ s.nombre }}</td><td>{{ s.proposito or '—' }}</td><td style="color:var(--text-muted);">{{ s.destino or '—' }}</td>
+        <td><span class="badge {{ 'badge-green' if s.estado == 'Activo' else 'badge-red' }}">{{ s.estado }}</span></td>
+        <td style="text-align:right;"><form method="post" action="/subdominios/{{ s.id }}/eliminar" onsubmit="return confirm('¿Eliminar este subdominio?')"><button class="btn btn-sm" type="submit">Eliminar</button></form></td></tr>
+    {% else %}<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Sin subdominios registrados.</td></tr>{% endfor %}
 </tbody></table></div></div>
+<details class="luxury-card" style="margin-top:16px;"><summary>+ Agregar dominio o subdominio</summary>
+    <form method="post" action="/plataformas/{{ p.id }}/subdominio" class="grid-2">
+        {{ entrada('nombre', 'Nombre (api.ejemplo.com)', req=True) }}
+        {{ entrada('proposito', 'Propósito (sitio, API, panel…)') }}
+        {{ entrada('destino', 'Apunta a (Vercel, Render, Cloudflare…)') }}
+        <label class="lbl">Estado<select class="field" name="estado"><option>Activo</option><option>Inactivo</option></select></label>
+        {{ entrada('notas', 'Notas') }}
+        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form></details>
+
+</div>
+<div class="mt-panel {{ 'on' if tab == 'almacenamiento' }}" data-panel="almacenamiento">
+{% include '_almacenamiento_proyecto.html' %}
+</div>
+<div class="mt-panel {{ 'on' if tab == 'monitor' }}" data-panel="monitor">
+{% include '_uptime_proyecto.html' %}
+</div>
+<div class="mt-panel {{ 'on' if tab == 'seguridad' }}" data-panel="seguridad">
+{% include '_plat_seguridad.html' %}
+</div>
+<div class="mt-panel {{ 'on' if tab == 'alertas' }}" data-panel="alertas">
+<div class="section-title">Alertas de esta plataforma</div>
+{% include '_plat_lista_alertas.html' %}
+<div class="section-title">Notificaciones enviadas al celular</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Aviso</th><th>Tipo</th><th>Fecha</th></tr></thead><tbody>
+    {% for n in notifs %}<tr><td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 400 if n.leida else 600 }};">{{ n.titulo }}</a><div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div></td>
+        <td><span class="badge {{ 'badge-red' if n.urgente else 'badge-amber' }}">{{ 'Urgente' if n.urgente else n.tipo }}</span></td>
+        <td class="mono">{{ n.hora.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+    {% else %}<tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Sin notificaciones de esta plataforma.</td></tr>{% endfor %}
+</tbody></table></div></div>
+</div>
+{% include '_plat_negocio.html' %}
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.mt-tab'), paneles = document.querySelectorAll('.mt-panel');
+  function ir(t, empujar) {
+    tabs.forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); });
+    paneles.forEach(function (p) { p.classList.toggle('on', p.dataset.panel === t); });
+    if (empujar) { var u = new URL(location.href); u.searchParams.set('tab', t); history.replaceState(null, '', u); }
+  }
+  tabs.forEach(function (b) { b.onclick = function () { ir(b.dataset.tab, true); b.scrollIntoView({ inline: 'center', block: 'nearest' }); }; });
+  var on = document.querySelector('.mt-tab.on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+  // cualquier formulario POST de un panel regresa a esa misma pestaña
+  document.addEventListener('submit', function (e) {
+    var f = e.target, p = f.closest && f.closest('.mt-panel');
+    if (!p || (f.method || '').toLowerCase() !== 'post' || f.querySelector('input[name=volver]')) return;
+    var i = document.createElement('input'); i.type = 'hidden'; i.name = 'volver';
+    i.value = '/plataformas/{{ p.id }}?tab=' + p.dataset.panel; f.appendChild(i);
+  }, true);
+})();
+</script>
 {% endblock %}

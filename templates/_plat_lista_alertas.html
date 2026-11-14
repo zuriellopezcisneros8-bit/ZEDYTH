@@ -1,0 +1,10 @@
+<!-- templates/_plat_lista_alertas.html : alertas de UNA plataforma (se usa en Resumen y en Alertas) -->
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Tipo</th><th>Detalle</th><th>Fecha</th><th></th></tr></thead><tbody>
+    {% for a in alertas %}
+    <tr><td><span class="badge {{ 'badge-red' if a.grave else 'badge-amber' }}">{{ a.tipo }}</span></td>
+        <td>{{ a.detalle }}</td>
+        <td class="mono">{% if a.fecha %}{{ a.fecha }}{% if a.tipo in ['Vencimiento','Pago'] %} · {{ 'vencido hace ' ~ (-a.dias) ~ ' d' if a.dias < 0 else ('hoy' if a.dias == 0 else 'en ' ~ a.dias ~ ' d') }}{% endif %}{% else %}—{% endif %}</td>
+        <td style="text-align:right;"><a class="btn btn-sm" href="/plataformas/{{ p.id }}?tab={{ a.tab }}">Atender</a></td></tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Todo en orden: sin vencimientos, pagos, respaldos ni incidentes pendientes.</td></tr>{% endfor %}
+</tbody></table></div></div>

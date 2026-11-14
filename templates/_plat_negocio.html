@@ -1,0 +1,83 @@
+<!-- templates/_plat_negocio.html : reseñas, pedidos e inteligencia ligados a esta plataforma -->
+<div class="mt-panel {{ 'on' if tab == 'resenas' }}" data-panel="resenas">
+<div class="section-title">Reseñas</div>
+<div class="luxury-card">
+    {% for pub in pubs %}
+    <div class="mt-fila" style="display:block;">
+        <div class="mt-fila" style="padding:0; border:0;">
+            <div><b>{{ pub.nombre }}</b> <span style="color:var(--text-muted); font-size:13px;">{{ pub.categoria }} · {{ 'visible' if pub.visible else 'oculto' }} en la web pública</span></div>
+            <div class="mt-acc">
+                <form method="post" action="/proyectos-publicos/{{ pub.id }}/visibilidad"><button class="btn btn-sm" type="submit">{{ 'Ocultar' if pub.visible else 'Mostrar' }}</button></form>
+                <form method="post" action="/plataformas/{{ p.id }}/vinculo"><input type="hidden" name="tipo" value="resenas"><input type="hidden" name="registro_id" value="{{ pub.id }}"><input type="hidden" name="accion" value="quitar"><button class="btn btn-sm" type="submit">Quitar de aquí</button></form>
+            </div>
+        </div>
+        {% for r in pub.resenas|sort(attribute='id', reverse=True) %}
+        <div class="mt-fila">
+            <div><b>{{ r.nombre }}</b> · {{ '★' * r.calificacion }} <span class="badge {{ 'badge-green' if r.aprobada else 'badge-amber' }}">{{ 'Aprobada' if r.aprobada else 'Pendiente' }}</span>
+                <div style="color:var(--text-muted); font-size:14px; margin-top:4px;">{{ r.comentario }}</div></div>
+            <div class="mt-acc">
+                {% if not r.aprobada %}<form method="post" action="/resenas/{{ r.id }}/aprobar"><button class="btn btn-sm btn-primary" type="submit">Aprobar</button></form>{% endif %}
+                <form method="post" action="/resenas/{{ r.id }}/borrar" onsubmit="return confirm('¿Borrar esta reseña?')"><button class="btn btn-sm" type="submit">Borrar</button></form>
+            </div>
+        </div>
+        {% else %}<p style="color:var(--text-muted); font-size:14px; margin:10px 0 0;">Aún sin reseñas.</p>{% endfor %}
+    </div>
+    {% else %}<p style="color:var(--text-muted); margin:0;">Esta plataforma no tiene proyectos públicos asignados.</p>{% endfor %}
+    <form method="post" action="/plataformas/{{ p.id }}/vinculo" class="mt-vinc">
+        <input type="hidden" name="tipo" value="resenas">
+        <select class="field" name="registro_id" required><option value="">Asignar proyecto público…</option>{% for x in pubs_libres %}<option value="{{ x.id }}">{{ x.nombre }}</option>{% endfor %}</select>
+        <button class="btn btn-sm btn-primary" type="submit">Asignar a esta plataforma</button>
+        <a class="btn btn-sm" href="/resenas">Crear proyecto público</a>
+    </form>
+</div>
+</div>
+
+<div class="mt-panel {{ 'on' if tab == 'pedidos' }}" data-panel="pedidos">
+<div class="section-title">Pedidos de Zedith</div>
+<div class="luxury-card">
+    {% for l in leads_p %}
+    <div class="mt-fila" style="align-items:flex-start;">
+        <div style="flex:1; min-width:260px;">
+            <b>{{ l.nombre }}</b> <span class="badge {{ 'badge-amber' if l.estado == 'Nuevo' else 'badge-green' if l.estado in ['Contactado','Cerrado'] }}">{{ l.estado }}</span>
+            <span class="mono"> · {{ l.hora.strftime('%d/%m/%Y %H:%M') }}</span>
+            <div style="font-size:14px; margin-top:6px;"><span style="color:var(--text-muted);">Contacto:</span> {{ l.contacto }}{% if l.negocio %} · <span style="color:var(--text-muted);">Negocio:</span> {{ l.negocio }}{% endif %}{% if l.sistema %} · <span style="color:var(--text-muted);">Sistema:</span> {{ l.sistema }}{% endif %}</div>
+            {% if l.funciones %}<div style="font-size:14px; margin-top:4px;"><span style="color:var(--text-muted);">Funciones:</span> {{ l.funciones }}</div>{% endif %}
+            {% if l.presupuesto or l.plazo %}<div style="font-size:14px; margin-top:4px;"><span style="color:var(--text-muted);">Presupuesto:</span> {{ l.presupuesto or '—' }} · <span style="color:var(--text-muted);">Plazo:</span> {{ l.plazo or '—' }}</div>{% endif %}
+            {% if l.resumen %}<div style="font-size:14px; margin-top:4px; color:var(--text-muted);">{{ l.resumen }}</div>{% endif %}
+        </div>
+        <div class="mt-acc">
+            {% if l.enlace %}<a class="btn btn-sm" href="{{ l.enlace }}" target="_blank" rel="noopener">{{ 'Correo' if l.enlace.startswith('mailto') else 'WhatsApp' }}</a>{% endif %}
+            <form method="post" action="/leads/{{ l.id }}/estado" class="mt-acc"><select class="field" name="estado" style="margin:0; width:auto;">{% for e in lead_estados %}<option {{ 'selected' if e == l.estado }}>{{ e }}</option>{% endfor %}</select><button class="btn btn-sm" type="submit">Guardar</button></form>
+            <form method="post" action="/plataformas/{{ p.id }}/vinculo"><input type="hidden" name="tipo" value="pedidos"><input type="hidden" name="registro_id" value="{{ l.id }}"><input type="hidden" name="accion" value="quitar"><button class="btn btn-sm" type="submit">Quitar</button></form>
+        </div>
+    </div>
+    {% else %}<p style="color:var(--text-muted); margin:0;">Esta plataforma no tiene pedidos asignados.</p>{% endfor %}
+    <form method="post" action="/plataformas/{{ p.id }}/vinculo" class="mt-vinc">
+        <input type="hidden" name="tipo" value="pedidos">
+        <select class="field" name="registro_id" required><option value="">Asignar pedido sin plataforma…</option>{% for l in leads_libres %}<option value="{{ l.id }}">{{ l.nombre }}{% if l.negocio %} · {{ l.negocio }}{% endif %} · {{ l.estado }}</option>{% endfor %}</select>
+        <button class="btn btn-sm btn-primary" type="submit">Asignar a esta plataforma</button>
+    </form>
+</div>
+</div>
+
+<div class="mt-panel {{ 'on' if tab == 'inteligencia' }}" data-panel="inteligencia">
+<div class="section-title">Inteligencia</div>
+<div class="luxury-card">
+    {% for r in intel_p %}
+    <div class="mt-fila">
+        <div style="min-width:240px;"><a href="/inteligencia/{{ r.id }}" style="font-weight:500;">{{ r.titulo }}</a>
+            <div style="color:var(--text-muted); font-size:13px; margin-top:4px;">{{ r.tipo }} · {{ r.prioridad }}{% if r.confidencial %} · Confidencial{% endif %}{% if r.entidad %} · {{ r.entidad }}{% endif %}{% if r.referencia %} · {{ r.referencia }}{% endif %} · {{ r.actualizado_en.strftime('%d/%m/%Y') }}</div></div>
+        <div class="mt-acc">
+            <form method="post" action="/inteligencia/{{ r.id }}/estado" class="mt-acc"><select class="field" name="estado" style="margin:0; width:auto;">{% for e in intel_estados %}<option {{ 'selected' if e == r.estado }}>{{ e }}</option>{% endfor %}</select><button class="btn btn-sm" type="submit">Guardar</button></form>
+            <form method="post" action="/plataformas/{{ p.id }}/vinculo"><input type="hidden" name="tipo" value="inteligencia"><input type="hidden" name="registro_id" value="{{ r.id }}"><input type="hidden" name="accion" value="quitar"><button class="btn btn-sm" type="submit">Quitar</button></form>
+        </div>
+    </div>
+    {% else %}<p style="color:var(--text-muted); margin:0;">Esta plataforma no tiene registros de inteligencia asignados.</p>{% endfor %}
+    <form method="post" action="/plataformas/{{ p.id }}/vinculo" class="mt-vinc">
+        <input type="hidden" name="tipo" value="inteligencia">
+        <select class="field" name="registro_id" required><option value="">Asignar registro existente…</option>{% for r in intel_libres %}<option value="{{ r.id }}">{{ r.tipo }} · {{ r.titulo }}</option>{% endfor %}</select>
+        <button class="btn btn-sm btn-primary" type="submit">Asignar a esta plataforma</button>
+        <a class="btn btn-sm" href="/inteligencia/nuevo">Nuevo registro</a>
+    </form>
+</div>
+</div>

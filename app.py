@@ -268,6 +268,7 @@ class Lead(db.Model):
     plazo = db.Column(db.String(100))
     resumen = db.Column(db.Text)
     estado = db.Column(db.String(20), default="Nuevo")     # Nuevo, Contactado, Cerrado, Descartado
+    plataforma_id = db.Column(db.Integer)                  # plataforma propia a la que pertenece (opcional)
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -336,6 +337,7 @@ class ProyectoPublico(db.Model):
     descripcion = db.Column(db.Text, nullable=False)
     tecnologias = db.Column(db.String(200))
     visible = db.Column(db.Boolean, default=True)
+    plataforma_id = db.Column(db.Integer)                  # plataforma propia a la que pertenece (opcional)
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
     resenas = db.relationship('Resena', backref='proyecto', lazy=True, cascade='all, delete-orphan')
 
@@ -376,6 +378,7 @@ class Inteligencia(db.Model):
     fuente = db.Column(db.String(300))
     resumen = db.Column(db.Text)
     hallazgos = db.Column(db.Text)
+    plataforma_id = db.Column(db.Integer)                       # plataforma propia relacionada (opcional)
     creado_en = db.Column(db.DateTime, default=datetime.utcnow)
     actualizado_en = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     notas = db.relationship('IntelNota', backref='registro', cascade='all, delete-orphan', order_by='IntelNota.id.desc()')
@@ -443,15 +446,18 @@ def migrar_columnas():
     """Agrega columnas nuevas a una base existente (SQLite o PostgreSQL) sin perder datos."""
     pg = db.engine.dialect.name == "postgresql"
     nuevas = {
-        "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)"), ("tipo", "VARCHAR(20) DEFAULT 'A medida'"),
-                      ("url_produccion", "VARCHAR(300)"), ("version", "VARCHAR(30)")],
+        "proyecto_publico": [("plataforma_id", "INTEGER")],
+        "lead": [("plataforma_id", "INTEGER")],
+        "inteligencia": [("plataforma_id", "INTEGER")],
         "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
                  ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
                  ("semilla", "VARCHAR(40)"),
                  ("nivel", "VARCHAR(30)"), ("cpu", "VARCHAR(30)"), ("ram", "VARCHAR(30)"),
                  ("transferencia", "VARCHAR(40)"), ("respaldos", "VARCHAR(40)"),
                  ("ficha_version", "INTEGER DEFAULT 0")],
-        "proyecto": [("neon_proyecto", "VARCHAR(150)"), ("r2_buckets", "VARCHAR(300)"),
+        "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)"), ("tipo", "VARCHAR(20) DEFAULT 'A medida'"),
+                     ("url_produccion", "VARCHAR(300)"), ("version", "VARCHAR(30)"),
+                     ("neon_proyecto", "VARCHAR(150)"), ("r2_buckets", "VARCHAR(300)"),
                      ("cloudinary_prefijo", "VARCHAR(150)")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
@@ -944,6 +950,14 @@ CAMPOS_PROYECTO = ["nombre", "estado", "repo_url", "rama_produccion", "stack", "
                    "url_produccion", "version"]
 
 
+def _destino(por_defecto):
+    """Si el formulario viene del maestro de una plataforma, vuelve a esa misma pestaña."""
+    v = request.form.get('volver') or ""
+    if v.startswith('/plataformas/') and '//' not in v and '\\' not in v:
+        return v
+    return por_defecto
+
+
 def campo(nombre):
     return (request.form.get(nombre) or "").strip()
 
@@ -1036,7 +1050,7 @@ def costo_nuevo(pid):
     registrar("crear", "CostoServicio", k.id, f"{k.proveedor} · proyecto {p.nombre}")
     db.session.commit()
     if p.tipo == PLAT:
-        return redirect(url_for('plataforma_detalle', pid=p.id))
+        return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
     return redirect(url_for('cliente_detalle', cid=p.cliente_id))
 
 
@@ -1081,7 +1095,7 @@ def pagar_costo(kid):
     k.proxima_fecha_pago = sumar_meses(k.proxima_fecha_pago or date.today(), MESES.get(k.periodicidad, 1))
     registrar("pago_proveedor", "CostoServicio", k.id, f"{k.proveedor} · {dinero(k.monto_periodo or k.monto_mensual)}")
     db.session.commit()
-    return redirect(request.referrer or url_for('cliente_detalle', cid=k.proyecto.cliente_id))
+    return redirect(_destino(request.referrer or url_for('cliente_detalle', cid=k.proyecto.cliente_id)))
 
 
 def _limite():
@@ -1173,19 +1187,103 @@ def plataforma_nueva():
     return render_template('plataforma_form.html')
 
 
+TABS_PLATAFORMA = ["resumen", "finanzas", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "resenas", "pedidos", "inteligencia"]
+
+
+def alertas_plataforma(p):
+    """Todo lo que requiere atención en UNA plataforma (misma lógica que /avisos y /ciberseguridad)."""
+    hoy = date.today()
+    lista = []
+    for v in p.vencimientos:
+        if v.fecha and v.fecha <= hoy + timedelta(days=DIAS_VENCIMIENTO):
+            d = (v.fecha - hoy).days
+            lista.append({"tipo": "Vencimiento", "detalle": f"{v.tipo}: {v.nombre}", "fecha": v.fecha, "dias": d,
+                          "grave": d <= 7, "tab": "seguridad"})
+    if p.estado in ("Activo", "Mantenido"):
+        ult = ultimo_respaldo(p)
+        if ult is None:
+            lista.append({"tipo": "Respaldo", "detalle": "Sin respaldos registrados", "fecha": None, "dias": -9999,
+                          "grave": True, "tab": "seguridad"})
+        elif (hoy - ult).days > DIAS_RESPALDO:
+            lista.append({"tipo": "Respaldo", "detalle": f"Último respaldo hace {(hoy - ult).days} días", "fecha": ult,
+                          "dias": -(hoy - ult).days, "grave": True, "tab": "seguridad"})
+    for k in p.costos:
+        if k.proxima_fecha_pago and k.proxima_fecha_pago <= _limite():
+            d = (k.proxima_fecha_pago - hoy).days
+            lista.append({"tipo": "Pago", "detalle": f"{k.proveedor}{' · ' + k.concepto if k.concepto else ''} · {dinero(k.monto_periodo or k.monto_mensual)}",
+                          "fecha": k.proxima_fecha_pago, "dias": d, "grave": d <= 3, "tab": "finanzas"})
+    for i in p.incidentes:
+        if i.estado == "Abierto":
+            lista.append({"tipo": "Incidente", "detalle": f"{i.gravedad}: {i.titulo}", "fecha": i.fecha, "dias": -9000,
+                          "grave": i.gravedad in ("Alta", "Crítica"), "tab": "seguridad"})
+    lista.sort(key=lambda a: a["dias"])
+    return lista
+
+
 @app.route('/plataformas/<int:pid>')
 def plataforma_detalle(pid):
+    """Sistema maestro de control: todo lo de una plataforma propia en una sola pantalla con pestañas."""
     p = db.get_or_404(Proyecto, pid)
     if p.tipo != PLAT:
         return redirect(url_for('cliente_detalle', cid=p.cliente_id))
-    return render_template('plataforma_detalle.html', p=p, hoy=date.today(),
-                           gasto=sum(float(k.monto_mensual or 0) for k in p.costos),
-                           subdominios=sorted(p.subdominios, key=lambda x: x.nombre),
-                           costos=sorted(p.costos, key=lambda k: k.proxima_fecha_pago or date.max),
-                           vencimientos=sorted(p.vencimientos, key=lambda v: v.fecha)[:5],
-                           ultimo=ultimo_respaldo(p), fin=finanzas_plataforma(p), categorias=INGRESO_CATEGORIAS,
-                           ingresos=sorted(p.ingresos, key=lambda i: (i.fecha or date.min, i.id), reverse=True)[:20],
-                           hoy_iso=date.today().isoformat())
+    tab = request.args.get('tab') if request.args.get('tab') in TABS_PLATAFORMA else "resumen"
+    venc = sorted(p.vencimientos, key=lambda v: v.fecha or date.max)
+    leads_p = Lead.query.filter_by(plataforma_id=p.id).order_by(Lead.id.desc()).all()
+    for l in leads_p:
+        l.hora = l.creado_en - timedelta(hours=6)
+        if "@" in (l.contacto or ""):
+            l.enlace = f"mailto:{l.contacto}"
+        else:
+            tel = re.sub(r"\D", "", l.contacto or "")
+            tel = "52" + tel if len(tel) == 10 else tel
+            l.enlace = f"https://wa.me/{tel}" if len(tel) >= 10 else None
+    notifs = (Notificacion.query.filter(db.or_(Notificacion.url.like(f"/proyectos/{p.id}/%"),
+                                                Notificacion.url.like(f"/plataformas/{p.id}%")))
+              .order_by(Notificacion.id.desc()).limit(15).all())
+    return render_template(
+        'plataforma_detalle.html', p=p, hoy=date.today(), hoy_iso=date.today().isoformat(), tab=tab,
+        gasto=sum(float(k.monto_mensual or 0) for k in p.costos),
+        subdominios=sorted(p.subdominios, key=lambda x: x.nombre),
+        costos=sorted(p.costos, key=lambda k: k.proxima_fecha_pago or date.max),
+        vencimientos=venc, ultimo=ultimo_respaldo(p), fin=finanzas_plataforma(p), categorias=INGRESO_CATEGORIAS,
+        ingresos=sorted(p.ingresos, key=lambda i: (i.fecha or date.min, i.id), reverse=True)[:20],
+        checklist=CHECKLIST, marcados={c.clave: c for c in p.checks}, tipos_venc=list(RENOVACION),
+        respaldos=sorted(p.respaldos, key=lambda r: (r.fecha or date.min, r.id), reverse=True)[:10],
+        incidentes=sorted(p.incidentes, key=lambda i: (i.estado != "Abierto", -(i.fecha or date.min).toordinal())),
+        abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
+        cumplidos=sum(1 for c in p.checks if c.cumplido),
+        alertas=alertas_plataforma(p), notifs=notifs,
+        pubs=ProyectoPublico.query.filter_by(plataforma_id=p.id).order_by(ProyectoPublico.id.desc()).all(),
+        pubs_libres=ProyectoPublico.query.filter(ProyectoPublico.plataforma_id.is_(None),
+                                                 ProyectoPublico.categoria != CAT_GENERAL).order_by(ProyectoPublico.nombre).all(),
+        leads_p=leads_p, lead_estados=["Nuevo", "Contactado", "Cerrado", "Descartado"],
+        leads_libres=Lead.query.filter(Lead.plataforma_id.is_(None)).order_by(Lead.id.desc()).limit(100).all(),
+        intel_p=Inteligencia.query.filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
+        intel_libres=Inteligencia.query.filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
+        intel_estados=INTEL_ESTADOS)
+
+
+@app.route('/plataformas/<int:pid>/vinculo', methods=['POST'])
+def plataforma_vinculo(pid):
+    """Asigna (o quita) a esta plataforma un proyecto público con reseñas, un pedido o un registro de inteligencia."""
+    p = db.get_or_404(Proyecto, pid)
+    modelos = {"resenas": ProyectoPublico, "pedidos": Lead, "inteligencia": Inteligencia}
+    tipo = campo('tipo')
+    modelo = modelos.get(tipo)
+    try:
+        r = db.session.get(modelo, int(campo('registro_id'))) if modelo else None
+    except (TypeError, ValueError):
+        r = None
+    if r is not None:
+        if campo('accion') == 'quitar':
+            if r.plataforma_id == p.id:
+                r.plataforma_id = None
+                registrar("desvincular", modelo.__name__, r.id, p.nombre)
+        else:
+            r.plataforma_id = p.id
+            registrar("vincular", modelo.__name__, r.id, p.nombre)
+        db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab=tipo if tipo in TABS_PLATAFORMA else None)))
 
 
 @app.route('/plataformas/<int:pid>/subdominio', methods=['POST'])
@@ -1199,7 +1297,7 @@ def subdominio_nuevo(pid):
         db.session.flush()
         registrar("crear", "Subdominio", s.id, f"{s.nombre} · {p.nombre}")
         db.session.commit()
-    return redirect(url_for('plataforma_detalle', pid=p.id))
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='infra')))
 
 
 @app.route('/subdominios/<int:sid>/eliminar', methods=['POST'])
@@ -1209,7 +1307,7 @@ def subdominio_eliminar(sid):
     registrar("eliminar", "Subdominio", s.id, s.nombre)
     db.session.delete(s)
     db.session.commit()
-    return redirect(url_for('plataforma_detalle', pid=pid))
+    return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='infra')))
 
 
 @app.route('/repositorios')
@@ -1299,6 +1397,8 @@ def ciberseguridad():
 @app.route('/proyectos/<int:pid>/seguridad')
 def proyecto_seguridad(pid):
     p = db.get_or_404(Proyecto, pid)
+    if p.tipo == PLAT:
+        return redirect(url_for('plataforma_detalle', pid=pid, tab='seguridad'))
     marcados = {c.clave: c for c in p.checks}
     return render_template('proyecto_seguridad.html', p=p, checklist=CHECKLIST, marcados=marcados,
                            vencimientos=sorted(p.vencimientos, key=lambda v: v.fecha),
@@ -1308,6 +1408,9 @@ def proyecto_seguridad(pid):
 
 
 def _volver(pid):
+    p = db.session.get(Proyecto, pid)
+    if p is not None and p.tipo == PLAT:
+        return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='seguridad')))
     return redirect(url_for('proyecto_seguridad', pid=pid))
 
 
@@ -1343,7 +1446,7 @@ def vencimiento_renovar(vid):
     v.fecha = sumar_meses(max(v.fecha, date.today()), RENOVACION.get(v.tipo, 12))
     registrar("renovar", "Vencimiento", v.id, f"{v.tipo} {v.nombre} → {v.fecha}")
     db.session.commit()
-    return redirect(request.referrer or url_for('proyecto_seguridad', pid=v.proyecto_id))
+    return redirect(_destino(request.referrer or url_for('proyecto_seguridad', pid=v.proyecto_id)))
 
 
 @app.route('/proyectos/<int:pid>/respaldo', methods=['POST'])
@@ -1480,7 +1583,7 @@ def ingreso_plataforma_nuevo(pid):
     try:
         monto, fecha = float(campo('monto') or 0), campo_fecha('fecha') or date.today()
     except ValueError:
-        return redirect(url_for('plataforma_detalle', pid=p.id))
+        return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
     if monto > 0:
         cat = campo('categoria') if campo('categoria') in INGRESO_CATEGORIAS else "Otro"
         i = IngresoPlataforma(proyecto_id=p.id, fecha=fecha, monto=monto, categoria=cat, concepto=campo('concepto') or None)
@@ -1488,7 +1591,7 @@ def ingreso_plataforma_nuevo(pid):
         db.session.flush()
         registrar("crear", "IngresoPlataforma", i.id, f"{dinero(monto)} · {cat} · {p.nombre}")
         db.session.commit()
-    return redirect(url_for('plataforma_detalle', pid=p.id))
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
 
 
 @app.route('/ingresos-plataforma/<int:iid>/eliminar', methods=['POST'])
@@ -1498,7 +1601,7 @@ def ingreso_plataforma_eliminar(iid):
     registrar("eliminar", "IngresoPlataforma", i.id, f"{dinero(i.monto)} · {i.proyecto.nombre}")
     db.session.delete(i)
     db.session.commit()
-    return redirect(url_for('plataforma_detalle', pid=pid))
+    return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='finanzas')))
 
 
 # --- VÍNCULOS ENTRE REGISTROS DE INTELIGENCIA ----------------------------------
@@ -1739,7 +1842,7 @@ def resena_moderar(rid, accion):
         db.session.delete(r)
     registrar(accion, "Resena", rid, "Moderación de reseña")
     db.session.commit()
-    return redirect(url_for('resenas_admin'))
+    return redirect(_destino(url_for('resenas_admin')))
 
 
 @app.route('/proyectos-publicos/<int:pid>/visibilidad', methods=['POST'])
@@ -1747,7 +1850,7 @@ def proyecto_publico_toggle(pid):
     p = db.get_or_404(ProyectoPublico, pid)
     p.visible = not p.visible
     db.session.commit()
-    return redirect(url_for('resenas_admin'))
+    return redirect(_destino(url_for('resenas_admin')))
 
 # --- ZEDITH (IA de la web pública) -----------------------------------------
 _zed_ip = {}                       # ip -> [fechas]; límite por visitante
@@ -2000,7 +2103,7 @@ def inteligencia_estado(iid):
         r.estado = campo('estado')
         registrar("estado", "Inteligencia", r.id, r.estado)
         db.session.commit()
-    return redirect(url_for('inteligencia_detalle', iid=r.id))
+    return redirect(_destino(url_for('inteligencia_detalle', iid=r.id)))
 
 
 @app.route('/leads')
@@ -2025,7 +2128,7 @@ def lead_estado(lid):
         l.estado = nuevo
         registrar("estado", "Lead", l.id, nuevo)
         db.session.commit()
-    return redirect(url_for('leads'))
+    return redirect(_destino(url_for('leads')))
 
 
 # --- APP INSTALABLE (PWA): sin barra del navegador -------------------------
