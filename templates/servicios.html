@@ -1,0 +1,170 @@
+<!-- templates/servicios.html -->
+{% extends "base.html" %}
+
+{% macro badge(nivel) -%}
+{%- if nivel == 'ok' %}<span class="badge badge-green">Operativo</span>
+{%- elif nivel == 'alerta' %}<span class="badge badge-amber">Atención</span>
+{%- elif nivel == 'falla' %}<span class="badge badge-red">Falla</span>
+{%- else %}<span class="badge" style="opacity:.7;">Sin datos</span>{% endif -%}
+{%- endmacro %}
+
+{% macro campos(s=none) %}
+<div class="grid-2" style="gap:12px;">
+    <label class="lbl">Nombre<input class="field" name="nombre" maxlength="100" required value="{{ s.nombre if s else '' }}" placeholder="Ej. Render · plan Starter"></label>
+    <label class="lbl">Proveedor<select class="field" name="proveedor">{% for p in proveedores %}<option {{ 'selected' if s and s.proveedor == p }}>{{ p }}</option>{% endfor %}</select></label>
+    <label class="lbl">Categoría<select class="field" name="categoria"><option value="">Automática según el proveedor</option>{% for c in categorias %}<option {{ 'selected' if s and s.categoria == c }}>{{ c }}</option>{% endfor %}</select></label>
+    <label class="lbl">Plataforma o negocio<select class="field" name="proyecto_id"><option value="">Compartido (todo el negocio)</option>{% for p in proyectos %}<option value="{{ p.id }}" {{ 'selected' if s and s.proyecto_id == p.id }}>{{ p.nombre }}</option>{% endfor %}</select></label>
+    <label class="lbl">Plan (opcional)<input class="field" name="plan" maxlength="80" value="{{ s.plan or '' if s else '' }}" placeholder="Ej. Starter, Free, Launch"></label>
+    <label class="lbl">Monto por periodo<input class="field" name="monto" inputmode="decimal" value="{{ '%.2f'|format(s.monto) if s and s.monto is not none else '' }}" placeholder="0 si es gratis"></label>
+    <label class="lbl">Moneda<select class="field" name="moneda">{% for m in monedas %}<option {{ 'selected' if s and s.moneda == m }}>{{ m }}</option>{% endfor %}</select></label>
+    <label class="lbl">Se paga<select class="field" name="periodicidad">{% for p in periodos %}<option {{ 'selected' if s and s.periodicidad == p }}>{{ p }}</option>{% endfor %}</select></label>
+    <label class="lbl">Próxima renovación<input class="field" type="date" name="proxima_renovacion" value="{{ s.proxima_renovacion or '' if s else '' }}"></label>
+    <label class="lbl">Último pago (opcional)<input class="field" type="date" name="ultimo_pago" value="{{ s.ultimo_pago or '' if s else '' }}"></label>
+    <label class="lbl">De dónde sale su estado<select class="field" name="fuente">{% for v, t in fuentes %}<option value="{{ v }}" {{ 'selected' if s and (s.fuente or '') == v }}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="lbl">Enlace a su consola (opcional)<input class="field" name="url_panel" maxlength="300" value="{{ s.url_panel or '' if s else '' }}" placeholder="https://dashboard.render.com"></label>
+    <label class="lbl">URL de estado (opcional)<input class="field" name="url_estado" maxlength="300" value="{{ s.url_estado or '' if s else '' }}" placeholder="https://… (página de estado o /healthz)" {{ 'disabled' if not hay_monitor }}></label>
+    <label class="lbl">Texto que debe aparecer (opcional)<input class="field" name="texto_estado" maxlength="80" value="{{ s.texto_estado or '' if s else '' }}" placeholder="Ej. All Systems Operational" {{ 'disabled' if not hay_monitor }}></label>
+</div>
+<label class="lbl" style="margin-top:12px;">Notas (opcional)<input class="field" name="notas" maxlength="300" value="{{ s.notas or '' if s else '' }}"></label>
+{% endmacro %}
+
+{% block content %}
+<section class="hero">
+    <h1>Servicios</h1>
+    <p>Estado, costo en MXN y renovaciones de todo lo que contratas, en un solo lugar. Los costos por plataforma siguen en cada plataforma; aquí va lo compartido.</p>
+</section>
+
+{% if mensaje %}<div class="luxury-card" style="border-color:#4ade80; margin-bottom:16px;"><p style="margin:0; font-size:14px;">{{ mensaje }}</p></div>{% endif %}
+{% for a in avisos %}<div class="luxury-card" style="border-color:#f5b94c; margin-bottom:12px;"><p style="margin:0; font-size:14px;">{{ a }}</p></div>{% endfor %}
+
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="luxury-card">
+        <h3 class="stat-label">Costo mensual de servicios</h3>
+        <div class="stat-value">{{ '${:,.0f}'.format(costos.total) }}</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">Catálogo {{ '${:,.0f}'.format(costos.fijo) }} · IA {{ '${:,.0f}'.format(costos.ia) }} · Almacenamiento est. {{ '${:,.0f}'.format(costos.almacenamiento) }}</p>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Estado</h3>
+        <div class="stat-value" style="font-size:22px; color:{{ '#f87171' if contador.falla else 'inherit' }};">{{ contador.falla }} con falla</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">{{ contador.alerta }} con atención · {{ contador.ok }} operativos · {{ contador.sin }} sin datos</p>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Próxima renovación</h3>
+        {% if siguiente %}
+        <div class="stat-value" style="font-size:22px;">{{ 'hoy' if siguiente.dias == 0 else ('en ' ~ siguiente.dias ~ ' d') }}</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">{{ siguiente.nombre }} · {{ siguiente.fecha.strftime('%d/%m/%Y') }}{% if vencidas %} · <span style="color:#f87171;">{{ vencidas }} vencida(s)</span>{% endif %}</p>
+        {% else %}
+        <div class="stat-value" style="font-size:22px;">—</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">Sin fechas registradas{% if vencidas %} · <span style="color:#f87171;">{{ vencidas }} vencida(s)</span>{% endif %}</p>
+        {% endif %}
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Tipo de cambio usado</h3>
+        <div class="stat-value" style="font-size:22px;">US$1 = ${{ '%.2f'|format(tc) }}</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">El mismo de Almacenamiento → Costos.</p>
+    </div>
+</div>
+
+<div class="toolbar" style="margin:16px 0; gap:8px; flex-wrap:wrap;">
+    {% if hay_monitor %}<form method="post" action="/servicios/verificar" style="display:inline;"><button class="btn btn-sm btn-primary" type="submit">Verificar URLs</button></form>{% endif %}
+    <button class="btn btn-sm" type="button" id="btn-alm">Actualizar lecturas</button>
+    <span style="font-size:12px; color:var(--text-muted); align-self:center;">{% if alm_edad %}Última lectura de Almacenamiento: {{ alm_edad }}.{% else %}Sin lectura de Almacenamiento en memoria.{% endif %}</span>
+</div>
+
+<details class="luxury-card" style="margin-bottom:20px;">
+    <summary style="cursor:pointer; font-weight:500;">Agregar servicio</summary>
+    <form method="post" action="/servicios/nuevo" style="margin-top:14px;" autocomplete="off">
+        {{ campos() }}
+        <div class="toolbar" style="margin-top:12px;"><button class="btn btn-primary" type="submit">Guardar servicio</button></div>
+        <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Regístralo aquí solo si NO está ya como costo de una plataforma, para no contar el mismo gasto dos veces. El estado automático sale de las lecturas de Almacenamiento, del pool de Llaves o de una URL que se visita cada pocas horas.</p>
+    </form>
+</details>
+
+<div class="section-title">Catálogo</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Servicio</th><th>Estado</th><th>Costo</th><th>Renueva</th><th>Acciones</th></tr></thead><tbody>
+    {% for r in filas %}{% set s = r.s %}
+    <tr id="s{{ s.id }}" style="{{ 'opacity:.55;' if not s.activo }}">
+        <td><strong>{{ s.nombre }}</strong>{% if not s.activo %} <span class="badge">Pausado</span>{% endif %}{% if r.dup %} <span class="badge badge-amber" title="Ya hay un costo de plataforma de un proveedor parecido: revisa que no cuentes el mismo gasto dos veces.">¿Duplicado?</span>{% endif %}
+            <div style="font-size:12px; color:var(--text-muted);">{{ s.proveedor }} · {{ s.categoria or 'Otro' }}{% if s.plan %} · {{ s.plan }}{% endif %}</div>
+            <div style="font-size:12px; color:var(--text-muted);">{{ s.proyecto.nombre if s.proyecto else 'Compartido' }}{% if s.url_panel %} · <a href="{{ s.url_panel }}" target="_blank" rel="noopener noreferrer">Consola ↗</a>{% endif %}</div></td>
+        <td>{{ badge(r.nivel if s.activo else 'sin') }}<div style="font-size:12px; color:var(--text-muted); max-width:260px;">{{ r.texto if s.activo else 'Pausado' }}</div></td>
+        <td style="font-size:13px;">{% if s.monto %}{{ s.moneda }} {{ '{:,.2f}'.format(s.monto) }} <span style="color:var(--text-muted);">/ {{ s.periodicidad|lower }}</span>
+            <div style="font-size:12px; color:var(--text-muted);">≈ {{ '${:,.0f}'.format(r.mes) }} MXN al mes</div>{% else %}<span class="badge badge-green">Gratis</span>{% endif %}</td>
+        <td class="mono" style="font-size:12px;">{% if s.proxima_renovacion %}{{ s.proxima_renovacion.strftime('%d/%m/%Y') }}
+            <div style="color:{{ '#f87171' if r.dias < 0 else ('#f5b94c' if r.dias <= 14 else 'var(--text-muted)') }};">{{ 'vencido hace ' ~ (-r.dias) ~ ' d' if r.dias < 0 else ('hoy' if r.dias == 0 else 'en ' ~ r.dias ~ ' d') }}</div>{% else %}<span style="color:var(--text-muted);">sin fecha</span>{% endif %}
+            {% if s.ultimo_pago %}<div style="color:var(--text-muted);">pagado {{ s.ultimo_pago.strftime('%d/%m/%Y') }}</div>{% endif %}</td>
+        <td>
+            <div class="toolbar" style="gap:6px; flex-wrap:wrap;">
+                {% if s.activo %}<form method="post" action="/servicios/{{ s.id }}/renovar" style="display:inline;"><button class="btn btn-sm btn-primary" type="submit" title="Marca el pago de hoy y mueve la próxima fecha un periodo">Ya pagué</button></form>{% endif %}
+                {% if s.url_estado and hay_monitor %}<form method="post" action="/servicios/{{ s.id }}/verificar" style="display:inline;"><button class="btn btn-sm" type="submit">Verificar</button></form>{% endif %}
+                <form method="post" action="/servicios/{{ s.id }}/activo" style="display:inline;"><button class="btn btn-sm" type="submit">{{ 'Pausar' if s.activo else 'Activar' }}</button></form>
+            </div>
+            <details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px;">Editar o eliminar</summary>
+                <form method="post" action="/servicios/{{ s.id }}/editar" style="margin-top:8px;" autocomplete="off">
+                    {{ campos(s) }}
+                    <button class="btn btn-sm btn-primary" type="submit" style="margin-top:10px;">Guardar cambios</button>
+                </form>
+                <form method="post" action="/servicios/{{ s.id }}/eliminar" style="margin-top:10px;">
+                    <p style="margin:0 0 6px; font-size:12px; color:#f87171;">Eliminar lo quita del catálogo y de los costos; queda en la bitácora.</p>
+                    <button class="btn btn-sm" type="submit" style="color:#f87171;">Eliminar servicio</button>
+                </form>
+            </details>
+        </td>
+    </tr>
+    {% else %}<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-muted);">Todavía no hay servicios en el catálogo. Agrega Render, Neon, tu dominio, Meta…</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-title" style="margin-top:24px;">Costos variables de este mes</div>
+<div class="grid-2" style="gap:20px;">
+    <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>IA por plataforma</th><th>MXN</th><th>USD</th></tr></thead><tbody>
+        {% for i in ia_filas %}<tr><td>{{ i.nombre }}</td><td>{{ '${:,.2f}'.format(i.mxn) }}</td><td style="color:var(--text-muted);">{{ '${:,.2f}'.format(i.usd) }}</td></tr>
+        {% else %}<tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Aún no hay costo de IA registrado este mes.</td></tr>{% endfor %}
+        <tr style="font-weight:600;"><td>Total IA</td><td>{{ '${:,.2f}'.format(costos.ia) }}</td><td></td></tr>
+    </tbody></table></div></div>
+    <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Almacenamiento (estimado por uso)</th><th>MXN al mes</th></tr></thead><tbody>
+        {% for clave, nombre in (('neon', 'Neon'), ('r2', 'Cloudflare R2'), ('cloudinary', 'Cloudinary')) %}
+            {% set e = costos.estimado.get(clave) %}
+            <tr><td>{{ nombre }}</td><td>{% if e is none %}<span style="color:var(--text-muted);">Ya tiene precio en el catálogo, o sin lectura</span>
+                {% elif e.cotizar %}<span class="badge badge-amber">A cotizar</span>
+                {% elif e.paga %}{{ '${:,.0f}'.format(e.usd * tc) }}{% else %}<span class="badge badge-green">Gratis</span>{% endif %}</td></tr>
+        {% endfor %}
+        <tr style="font-weight:600;"><td>Total estimado</td><td>{{ '${:,.0f}'.format(costos.almacenamiento) }}</td></tr>
+    </tbody></table></div></div>
+</div>
+<p style="color:var(--text-muted); font-size:13px; margin:8px 2px 0; line-height:1.6;">El estimado usa tus lecturas y tarifas de Almacenamiento; solo cuenta lo que pasaría de su plan gratis y solo para servicios sin precio en el catálogo. El costo de IA suma lo que registra cada llamada (convertido a MXN).</p>
+
+<div class="section-title" style="margin-top:24px;">Renovaciones de todas las fuentes</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Fecha</th><th>Cuándo</th><th>Qué</th><th>Plataforma</th><th>Origen</th><th>Monto</th></tr></thead><tbody>
+    {% for r in renovaciones %}
+    <tr>
+        <td class="mono" style="font-size:12px;">{{ r.fecha.strftime('%d/%m/%Y') }}</td>
+        <td class="mono" style="font-size:12px; color:{{ '#f87171' if r.dias < 0 else ('#f5b94c' if r.dias <= 7 else 'var(--text-muted)') }};">{{ 'vencido hace ' ~ (-r.dias) ~ ' d' if r.dias < 0 else ('hoy' if r.dias == 0 else 'en ' ~ r.dias ~ ' d') }}</td>
+        <td><a href="{{ r.enlace }}" style="font-weight:500;">{{ r.nombre }}</a>{% if r.detalle %}<div style="font-size:12px; color:var(--text-muted);">{{ r.detalle }}</div>{% endif %}
+            {% if r.dup %}<span class="badge badge-amber" title="Aparece en dos fuentes con fechas cercanas: puede ser la misma renovación.">¿Repetida?</span>{% endif %}</td>
+        <td style="font-size:13px;">{{ r.proyecto }}</td>
+        <td><span class="badge">{{ r.tipo }}</span></td>
+        <td>{% if r.monto %}{{ '${:,.0f}'.format(r.monto) }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">No hay renovaciones en los próximos 90 días.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin:8px 2px 0; line-height:1.6;">Junta el catálogo, los costos de cada plataforma y los vencimientos de dominio, SSL y hosting. {% if hay_mas %}<a href="/servicios?todas=1">Ver todas</a>.{% elif todas %}<a href="/servicios">Ver solo los próximos 90 días</a>.{% endif %}</p>
+
+<div class="section-title" style="margin-top:24px;">Últimos cambios</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Fecha (UTC)</th><th>Quién</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>
+    {% for b in bitacora %}<tr><td class="mono" style="font-size:12px;">{{ b.fecha.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ b.usuario }}</td><td>{{ b.accion }}</td><td style="font-size:13px;">{{ b.detalle }}</td></tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Sin cambios todavía.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<script>
+document.getElementById('btn-alm').addEventListener('click', async function () {
+    this.disabled = true; this.textContent = 'Actualizando…';
+    try { await fetch('/api/almacenamiento/resumen?forzar=1', { credentials: 'same-origin' }); } catch (e) {}
+    location.reload();
+});
+</script>
+{% endblock %}
