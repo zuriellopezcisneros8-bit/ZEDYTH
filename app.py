@@ -25,6 +25,7 @@ from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import zedith
+import ajustes
 import notificar
 import monitor
 import llaves
@@ -44,6 +45,8 @@ def _clave_secreta():
 
 
 app.config['SECRET_KEY'] = _clave_secreta()
+# Con SECRET_KEY fija las llaves guardadas desde la pantalla (Conexiones) se pueden volver a leer tras reiniciar.
+app.config['SECRET_KEY_FIJA'] = bool((os.environ.get("SECRET_KEY") or "").strip())
 
 # Cookies de sesión: solo por HTTPS en producción, no legibles por JavaScript y no enviadas desde otros sitios.
 _COOKIES_SEGURAS = EN_RENDER or os.environ.get("COOKIES_SEGURAS") == "1"
@@ -91,6 +94,7 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+ajustes.iniciar(app, db)          # llaves y configuración editables desde /conexiones (cifradas en la base)
 csrf = CSRFProtect(app)
 
 # Configuración de Flask-Login
@@ -989,7 +993,7 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios."))) and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios.", "ajustes."))) and rol != "admin":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
             and request.endpoint not in ('logout', 'seguridad'):
@@ -2428,16 +2432,16 @@ LEGAL = {"razon_social": os.environ.get("LEGAL_RAZON", "[COMPLETAR: razón socia
 
 def _site_url():
     """URL pública del sitio (define SITE_URL en producción, p. ej. https://tudominio.com)."""
-    base = (os.environ.get('SITE_URL') or request.url_root).rstrip('/')
+    base = (ajustes.valor('SITE_URL') or request.url_root).rstrip('/')
     if base.startswith('http://') and not re.match(r'http://(localhost|127\.|192\.168\.)', base):
         base = 'https://' + base[7:]
     return base
 
 
 def _ajustes_publicos():
-    """Opcionales por variable de entorno: Google Analytics (GA_ID) y agenda de llamadas (AGENDA_URL)."""
-    ga = os.environ.get('GA_ID', '').strip()
-    agenda = os.environ.get('AGENDA_URL', '').strip()
+    """Opcionales (se ponen en Conexiones): Google Analytics (GA_ID) y agenda de llamadas (AGENDA_URL)."""
+    ga = ajustes.valor('GA_ID')
+    agenda = ajustes.valor('AGENDA_URL')
     return {"ga_id": ga if re.fullmatch(r'[A-Za-z0-9-]{4,30}', ga) else None,
             "agenda_url": agenda if agenda.startswith('https://') else None,
             "site_url": _site_url()}
@@ -2610,9 +2614,9 @@ def hechos_zedith():
         "resenas": Resena.query.filter_by(aprobada=True).count(),
         "promedio": round(prom, 1) if prom else None,
         "proyectos": ProyectoPublico.query.filter_by(visible=True).filter(ProyectoPublico.categoria != CAT_GENERAL).count(),
-        "cupo": os.environ.get("ZEDITH_CUPO_MES"),
-        "promo": os.environ.get("ZEDITH_PROMO"),
-        "promo_hasta": os.environ.get("ZEDITH_PROMO_HASTA"),
+        "cupo": ajustes.valor("ZEDITH_CUPO_MES") or None,
+        "promo": ajustes.valor("ZEDITH_PROMO") or None,
+        "promo_hasta": ajustes.valor("ZEDITH_PROMO_HASTA") or None,
     }
 
 
@@ -3016,8 +3020,8 @@ def _limpiar_llave(v):
 
 
 def _vapid():
-    return (_limpiar_llave(os.environ.get("VAPID_PUBLIC_KEY")), _limpiar_llave(os.environ.get("VAPID_PRIVATE_KEY")),
-            (os.environ.get("VAPID_CONTACT") or "").strip() or "mailto:" + CONTACTO["email"])
+    return (_limpiar_llave(ajustes.valor("VAPID_PUBLIC_KEY")), _limpiar_llave(ajustes.valor("VAPID_PRIVATE_KEY")),
+            ajustes.valor("VAPID_CONTACT") or "mailto:" + CONTACTO["email"])
 
 
 def _b64u(texto):
@@ -3025,10 +3029,10 @@ def _b64u(texto):
 
 
 def vapid_diagnostico():
-    """None si las llaves VAPID están bien; si no, un texto que explica qué corregir en Render."""
+    """None si las llaves VAPID están bien; si no, un texto que explica qué corregir en Conexiones."""
     pub, priv, _ = _vapid()
     if not pub or not priv:
-        return "Faltan VAPID_PUBLIC_KEY y/o VAPID_PRIVATE_KEY en las variables de entorno de Render."
+        return "Faltan las llaves VAPID: genéralas con un botón en Conexiones → Alertas push."
     try:
         raw_priv = _b64u(priv)
     except Exception:
@@ -3036,24 +3040,24 @@ def vapid_diagnostico():
                 "generar_vapid.py (unos 43 caracteres), sin comillas ni «VAPID_PRIVATE_KEY=».")
     if len(raw_priv) != 32:
         return (f"VAPID_PRIVATE_KEY mide {len(raw_priv)} bytes y debe medir 32 (unos 43 caracteres; la tuya tiene {len(priv)}). "
-                "Corre python generar_vapid.py y copia solo el valor de la llave privada en Render.")
+                "Usa el botón «Generar par de llaves» en Conexiones.")
     try:
         raw_pub = _b64u(pub)
     except Exception:
         return "VAPID_PUBLIC_KEY no es válida: debe ser solo la cadena que imprime generar_vapid.py (unos 87 caracteres)."
     if len(raw_pub) != 65 or raw_pub[0] != 4:
         return (f"VAPID_PUBLIC_KEY mide {len(raw_pub)} bytes y debe medir 65 (unos 87 caracteres; la tuya tiene {len(pub)}). "
-                "Cópiala completa desde generar_vapid.py.")
+                "Cópiala completa o genera un par nuevo en Conexiones.")
     try:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import ec
         llave = ec.derive_private_key(int.from_bytes(raw_priv, "big"), ec.SECP256R1())
         esperada = llave.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
     except Exception:
-        return "VAPID_PRIVATE_KEY no es una llave EC P-256 válida. Genera un par nuevo con python generar_vapid.py."
+        return "VAPID_PRIVATE_KEY no es una llave EC P-256 válida. Genera un par nuevo en Conexiones."
     if esperada != raw_pub:
         return ("VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no son pareja (vienen de ejecuciones distintas de generar_vapid.py). "
-                "Pega las dos del mismo par en Render.")
+                "Pega las dos del mismo par, o genera un par nuevo en Conexiones.")
     return None
 
 
@@ -3117,7 +3121,7 @@ def _entregar(nid, externo=True):
 
 
 def SITE_URL_PUSH():
-    return (os.environ.get("SITE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+    return (ajustes.valor("SITE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
 
 
 def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clave=None, externo=True):
@@ -3393,8 +3397,8 @@ def healthz():
 @app.route('/api/push/revisar', methods=['GET', 'POST'])
 def push_revisar():
     """Para un cron externo (p. ej. cron-job.org cada 5 min): despierta el servidor, reintenta y revisa alertas.
-    Requiere la variable CRON_TOKEN: /api/push/revisar?token=..."""
-    token = (os.environ.get("CRON_TOKEN") or "").strip()
+    Requiere el token CRON_TOKEN (se genera en Conexiones): /api/push/revisar?token=..."""
+    token = ajustes.valor("CRON_TOKEN")
     if not token or not secrets.compare_digest(request.args.get('token', ''), token):
         return {"ok": False}, 404
     reintentados = reintentar_pendientes()
@@ -3412,9 +3416,10 @@ import almacenamiento
 app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
 app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
 app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
 
-# ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las variables GEMINI_KEY_* de Render.
+# ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
 zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]
 zedith.AL_FALLAR = llaves.reportar_fallo
 zedith.AL_USAR = llaves.registrar_uso

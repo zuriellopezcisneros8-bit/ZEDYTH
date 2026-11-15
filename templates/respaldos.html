@@ -9,14 +9,14 @@
 {% if not cfg.r2 %}
 <div class="luxury-card" style="border-color:#f87171; margin-bottom:20px;">
     <h3 class="stat-label" style="color:#f87171;">No hay respaldos: falta configurar R2</h3>
-    <p style="margin:0 0 8px; font-size:14px;">Crea un bucket solo para respaldos y un token de R2 exclusivo (Object Read &amp; Write sobre ese bucket) y ponlo en Render:</p>
-    <p class="mono" style="margin:0; font-size:12px; line-height:1.7;">BACKUP_R2_ACCOUNT_ID · BACKUP_R2_ACCESS_KEY_ID · BACKUP_R2_SECRET_ACCESS_KEY · BACKUP_R2_BUCKET</p>
+    <p style="margin:0 0 8px; font-size:14px;">Crea un bucket solo para respaldos y un token de R2 exclusivo (Object Read &amp; Write sobre ese bucket) y pégalo en la pantalla, sin entrar a Render:</p>
+    <p style="margin:0;"><a class="btn btn-sm btn-primary" href="/conexiones#respaldos">Conectar R2 en Conexiones</a></p>
 </div>
 {% endif %}
 {% if cfg.r2 and not cfg.cifrado %}
 <div class="luxury-card" style="border-color:#f5b94c; margin-bottom:20px;">
     <h3 class="stat-label" style="color:#f5b94c;">Los respaldos se suben SIN cifrar</h3>
-    <p style="margin:0; font-size:14px;">El volcado trae datos de clientes y hashes de contraseñas. Define <span class="mono">BACKUP_KEY</span> (una clave Fernet) y guárdala también fuera de Render: sin ella no podrás abrir los respaldos cifrados.</p>
+    <p style="margin:0; font-size:14px;">El volcado trae datos de clientes y hashes de contraseñas. Genera la clave de cifrado con un botón en <a href="/conexiones#respaldos">Conexiones</a> y guárdala también en tu gestor de contraseñas: sin ella no podrás abrir los respaldos cifrados.</p>
 </div>
 {% endif %}
 

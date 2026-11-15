@@ -1,6 +1,7 @@
 """Zedith: asistente de IA de ZEDYTH (Gemini por REST, solo librería estándar).
 
-Variables de entorno (Render -> Environment):
+Las llaves y opciones se ponen desde la pantalla Conexiones (/conexiones). Lo que no esté ahí se lee de las
+variables de entorno de Render (así lo que ya tienes sigue funcionando):
   GEMINI_KEY_1, GEMINI_KEY_2, ...  una llave por variable (o GEMINI_API_KEYS con varias separadas por coma);
                      se rotan si una falla o se agota
   GEMINI_MODEL       opcional, por defecto gemini-3.5-flash-lite
@@ -16,6 +17,8 @@ import urllib.error
 import urllib.request
 from datetime import date
 
+import ajustes
+
 log = logging.getLogger("zedith")
 
 # Conexión con el módulo de llaves (/llaves). app.py las asigna al arrancar. Si no están asignadas, o el pool está
@@ -23,11 +26,19 @@ log = logging.getLogger("zedith")
 PROVEEDOR_LLAVES = None   # callable() -> [(id, secreto), ...] en orden de pool
 AL_FALLAR = None          # callable(id, codigo_http): 429 = descansa, 401/403 = inválida
 AL_USAR = None            # callable(id, peticiones, tokens_in, tokens_out, costo_usd)
-# Precio por millón de tokens (USD). Pon los de tu modelo en Render; con 0 se registran tokens pero el costo queda en 0.
-PRECIO_IN_USD_M = float(os.environ.get("ZEDITH_PRECIO_IN", "0") or 0)
-PRECIO_OUT_USD_M = float(os.environ.get("ZEDITH_PRECIO_OUT", "0") or 0)
+# Precio por millón de tokens (USD). Se ponen en Conexiones; con 0 se registran tokens pero el costo queda en 0.
+def _precio(nombre):
+    try:
+        return float(ajustes.valor(nombre, "0") or 0)
+    except ValueError:
+        return 0.0
 
-MODELO = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
+MODELO = "gemini-3.5-flash-lite"      # modelo por defecto; se cambia en Conexiones (GEMINI_MODEL)
+
+
+def modelo():
+    return ajustes.valor("GEMINI_MODEL") or MODELO
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 # Mantén estos precios iguales a los de la web pública.
@@ -78,12 +89,13 @@ class ZedithError(Exception):
 
 
 def _llaves():
-    """Lee GEMINI_API_KEYS (varias, separadas por coma), GEMINI_API_KEY y cualquier GEMINI_KEY_1, GEMINI_KEY_2..."""
-    crudo = [os.environ.get("GEMINI_API_KEYS") or "", os.environ.get("GEMINI_API_KEY") or ""]
+    """Llaves guardadas en Conexiones y, además, GEMINI_API_KEYS / GEMINI_API_KEY / GEMINI_KEY_1... de Render."""
+    crudo = [ajustes.refrescar().get("GEMINI_API_KEYS") or "", os.environ.get("GEMINI_API_KEYS") or "",
+             os.environ.get("GEMINI_API_KEY") or ""]
     crudo += [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_KEY")]
     llaves = []
     for c in crudo:
-        for k in c.split(","):
+        for k in c.replace("\n", ",").split(","):
             k = k.strip().strip('"').strip("'")
             if k and k not in llaves:
                 llaves.append(k)
@@ -247,7 +259,7 @@ def _registrar_uso(lid, data):
     u = data.get("usageMetadata") or {}
     t_in = int(u.get("promptTokenCount") or 0)
     t_out = int(u.get("candidatesTokenCount") or 0) + int(u.get("thoughtsTokenCount") or 0)
-    costo = (t_in * PRECIO_IN_USD_M + t_out * PRECIO_OUT_USD_M) / 1_000_000
+    costo = (t_in * _precio("ZEDITH_PRECIO_IN") + t_out * _precio("ZEDITH_PRECIO_OUT")) / 1_000_000
     _llamar_hook(AL_USAR, lid, 1, t_in, t_out, costo)
 
 
@@ -262,7 +274,7 @@ def responder(mensajes, hechos):
     if not candidatas:
         candidatas = [(None, k) for k in _llaves()]    # respaldo: variables de entorno
     if not candidatas:
-        raise ZedithError("sin llaves de Gemini (registra una en /llaves o define GEMINI_API_KEYS)")
+        raise ZedithError("sin llaves de Gemini (agrega una en Conexiones o en /llaves)")
     cuerpo = json.dumps({
         "system_instruction": {"parts": [{"text": instrucciones(hechos)}]},
         "contents": _limpiar(mensajes),
@@ -272,7 +284,7 @@ def responder(mensajes, hechos):
     }).encode()
     ultimo = "sin intentos"
     for lid, llave in candidatas:
-        req = urllib.request.Request(URL.format(MODELO), data=cuerpo, method="POST",
+        req = urllib.request.Request(URL.format(modelo()), data=cuerpo, method="POST",
                                      headers={"Content-Type": "application/json", "x-goog-api-key": llave})
         try:
             with urllib.request.urlopen(req, timeout=25) as r:

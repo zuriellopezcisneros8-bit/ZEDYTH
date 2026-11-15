@@ -4,7 +4,9 @@ Se conecta en app.py igual que monitor.py:
     import llaves
     app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
 
-Variables de entorno (Render):
+Cifrado: ya NO hace falta ninguna variable nueva. Sin LLAVES_MASTER, las llaves se cifran con una clave derivada de
+SECRET_KEY (la que ya tienes en Render). Si defines LLAVES_MASTER, esa pasa a ser la principal y lo guardado antes
+sigue abriéndose. Opcionales (Render):
     LLAVES_MASTER       clave Fernet principal. Genérala con:
                         python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     LLAVES_MASTER_ANT   (opcional) claves anteriores separadas por coma, para rotar la maestra sin perder llaves.
@@ -21,6 +23,8 @@ Uso desde el resto de la app (dentro de un contexto de aplicación):
 
 El valor completo de una llave NUNCA se muestra ni se escribe en la bitácora: solo los últimos 4 caracteres.
 """
+import base64
+import hashlib
 import os
 from collections import namedtuple
 from datetime import date, datetime, timedelta
@@ -53,6 +57,7 @@ MENSAJES = {
 }
 
 _api = {}      # lo llena crear_blueprint (misma técnica que monitor.py)
+_base_cifrado = {"secreto": None}     # SECRET_KEY de la app (solo si es fija); la pone crear_blueprint
 
 
 # --- API pública (para el resto de app.py) ------------------------------------------------------
@@ -97,15 +102,19 @@ def revisar():
 
 # --- Cifrado ------------------------------------------------------------------------------------
 def _fernet():
-    """MultiFernet con la maestra actual primero y las anteriores después (para poder rotarla). None si no está configurada."""
+    """MultiFernet: LLAVES_MASTER primero (si existe), luego las anteriores y, al final, la clave derivada de SECRET_KEY.
+    Sin LLAVES_MASTER, la derivada es la principal. None solo si no hay ninguna (local sin SECRET_KEY fija)."""
+    claves = []
     principal = (os.environ.get("LLAVES_MASTER") or "").strip()
-    if not principal:
-        return None
     anteriores = [k.strip() for k in (os.environ.get("LLAVES_MASTER_ANT") or "").split(",") if k.strip()]
     try:
-        return MultiFernet([Fernet(k) for k in [principal] + anteriores])
+        claves += [Fernet(k) for k in ([principal] if principal else []) + anteriores]
     except (ValueError, TypeError):
         return None
+    base = _base_cifrado["secreto"]
+    if base:
+        claves.append(Fernet(base64.urlsafe_b64encode(hashlib.sha256(("llaves|" + base).encode()).digest())))
+    return MultiFernet(claves) if claves else None
 
 
 def cifrado_listo():
@@ -114,6 +123,8 @@ def cifrado_listo():
 
 def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     bp = Blueprint("llaves", __name__)
+    if app.config.get("SECRET_KEY_FIJA", True):          # una SECRET_KEY al azar por arranque no sirve para cifrar lo guardado
+        _base_cifrado["secreto"] = str(app.config["SECRET_KEY"])
 
     class LlaveApi(db.Model):
         __tablename__ = "llave_api"
@@ -403,7 +414,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     def nueva():
         asegurar()
         if not cifrado_listo():
-            return mal("Falta configurar LLAVES_MASTER en Render.")
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
         proveedor = request.form.get("proveedor", "")
         ambiente = request.form.get("ambiente", "")
         etiqueta = (request.form.get("etiqueta") or "").strip()
@@ -455,7 +466,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     def rotar(lid):
         asegurar()
         if not cifrado_listo():
-            return mal("Falta configurar LLAVES_MASTER en Render.")
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
         k = cargar(lid)
         if k.estado == "revocada" and not request.form.get("secreto"):
             return mal("falta el nuevo valor de la llave.")
@@ -556,7 +567,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         asegurar()
         f = _fernet()
         if f is None:
-            return mal("Falta configurar LLAVES_MASTER en Render.")
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
         n = 0
         for k in LlaveApi.query.filter(LlaveApi.secreto.isnot(None)).with_for_update().all():
             try:

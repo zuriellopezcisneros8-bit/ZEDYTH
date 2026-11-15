@@ -11,7 +11,7 @@ Qué hace:
   * Avisa (notificación + push) si falla, si no está configurado o si el último bueno tiene más de 36 h.
   * Antes de reescribir planes (aplicar_fichas) saca un respaldo y, si no puede, NO reescribe.
 
-Variables de entorno (Render):
+Todo lo siguiente se pone desde la pantalla Conexiones (/conexiones); lo que no esté ahí se lee de Render:
   BACKUP_R2_ACCOUNT_ID, BACKUP_R2_ACCESS_KEY_ID, BACKUP_R2_SECRET_ACCESS_KEY, BACKUP_R2_BUCKET
         Token de R2 EXCLUSIVO para respaldos (permiso Object Read & Write sobre un bucket solo para esto).
   BACKUP_R2_PREFIJO   carpeta dentro del bucket (por defecto "panel/")
@@ -38,6 +38,8 @@ import base64
 
 from flask import Blueprint, render_template, redirect, url_for, abort, request, Response
 from flask_login import current_user
+
+import ajustes
 
 CADA_HORAS = int(os.environ.get("BACKUP_CADA_HORAS", "24"))
 RETENER = int(os.environ.get("BACKUP_RETENER", "30"))
@@ -104,10 +106,10 @@ def _descifrar_archivo(origen, destino, clave):
 
 
 def _cfg():
-    c = {k: (os.environ.get(f"BACKUP_R2_{k}") or "").strip() for k in ("ACCOUNT_ID", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "BUCKET")}
+    c = {k: ajustes.valor(f"BACKUP_R2_{k}") for k in ("ACCOUNT_ID", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "BUCKET")}
     if not all(c.values()):
         return None
-    c["PREFIJO"] = (os.environ.get("BACKUP_R2_PREFIJO") or "panel/").strip().lstrip("/")
+    c["PREFIJO"] = (ajustes.valor("BACKUP_R2_PREFIJO") or "panel/").lstrip("/")
     if c["PREFIJO"] and not c["PREFIJO"].endswith("/"):
         c["PREFIJO"] += "/"
     return c
@@ -122,7 +124,7 @@ def _s3(c):
 
 
 def estado_configuracion():
-    return {"r2": _cfg() is not None, "cifrado": bool((os.environ.get("BACKUP_KEY") or "").strip()),
+    return {"r2": _cfg() is not None, "cifrado": bool(ajustes.valor("BACKUP_KEY")),
             "pg_dump": shutil.which("pg_dump") is not None, "pg_restore": shutil.which("pg_restore") is not None}
 
 
@@ -170,7 +172,7 @@ def iniciar(app, db, registrar, avisar):
 
     # ---- volcados ----
     def _entorno_pg():
-        url = os.environ.get("BACKUP_DATABASE_URL", "").strip()
+        url = ajustes.valor("BACKUP_DATABASE_URL")
         u = db.engine.url
         if url:
             from sqlalchemy.engine import make_url
@@ -210,7 +212,7 @@ def iniciar(app, db, registrar, avisar):
         asegurar()
         c = _cfg()
         if c is None:
-            return False, "Faltan las variables BACKUP_R2_* (token de R2 exclusivo para respaldos)."
+            return False, "Faltan los datos del token de R2 para respaldos: ponlos en Conexiones → Respaldos automáticos."
         if not _ocupado.acquire(blocking=False):
             return False, "Ya hay un respaldo en curso en este proceso."
         t0 = time.time()
@@ -238,7 +240,7 @@ def iniciar(app, db, registrar, avisar):
                         os.remove(archivo)
                     _dump_json(archivo); metodo, ext = "json", "jsonl.gz"
             subir = archivo
-            clave_cifrado = (os.environ.get("BACKUP_KEY") or "").strip()
+            clave_cifrado = ajustes.valor("BACKUP_KEY")
             if clave_cifrado:
                 subir = archivo + ".enc"
                 _cifrar_archivo(archivo, subir, clave_cifrado)
@@ -305,9 +307,9 @@ def iniciar(app, db, registrar, avisar):
                 raise ValueError("el hash del archivo en R2 NO coincide con el registrado")
             abierto = local
             if fila.cifrado:
-                clave = (os.environ.get("BACKUP_KEY") or "").strip()
+                clave = ajustes.valor("BACKUP_KEY")
                 if not clave:
-                    raise ValueError("el respaldo está cifrado y falta BACKUP_KEY")
+                    raise ValueError("el respaldo está cifrado y falta la clave de cifrado (BACKUP_KEY, en Conexiones)")
                 abierto = local + ".dec"
                 _descifrar_archivo(local, abierto, clave)
             if fila.metodo == "json":

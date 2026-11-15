@@ -246,6 +246,9 @@
             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/llaves" class="nav-item {% if request.path.startswith('/llaves') %}active{% endif %}">
                 <i class="ph ph-key"></i> Llaves
             </a>{% endif %}
+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/conexiones" class="nav-item {% if request.path.startswith('/conexiones') %}active{% endif %}">
+                <i class="ph ph-plugs-connected"></i> Conexiones
+            </a>{% endif %}
             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/servicios" class="nav-item {% if request.path.startswith('/servicios') %}active{% endif %}">
                 <i class="ph ph-hard-drives"></i> Servicios
             </a>{% endif %}

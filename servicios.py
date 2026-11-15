@@ -581,8 +581,8 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
             avisos.append("Aún no hay una lectura de Almacenamiento en memoria: pulsa «Actualizar lecturas» para ver el estado de Neon, R2 y Cloudinary.")
         try:
             import zedith
-            if not zedith.PRECIO_IN_USD_M and not zedith.PRECIO_OUT_USD_M:
-                avisos.append("ZEDITH_PRECIO_IN y ZEDITH_PRECIO_OUT valen 0 en Render: se registran los tokens de la IA, pero su costo siempre sale en $0. Pon el precio por millón de tokens de tu modelo (en USD).")
+            if not zedith._precio("ZEDITH_PRECIO_IN") and not zedith._precio("ZEDITH_PRECIO_OUT"):
+                avisos.append("Los precios de ZEDITH (entrada y salida) valen 0: se registran los tokens de la IA, pero su costo siempre sale en $0. Pon el precio por millón de tokens de tu modelo (en USD) en Conexiones → Inteligencia artificial.")
         except Exception:
             pass
         if any(r["s"].url_estado and r["s"].estado_ultimo is None for r in filas if r["s"].activo):
