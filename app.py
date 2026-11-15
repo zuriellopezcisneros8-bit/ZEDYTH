@@ -27,6 +27,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 import zedith
 import notificar
 import monitor
+import llaves
 
 app = Flask(__name__)
 EN_RENDER = bool(os.environ.get("RENDER"))   # Render define esta variable en sus servidores
@@ -932,7 +933,7 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if request.endpoint in ENDPOINTS_ADMIN and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith("llaves.")) and rol != "admin":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
             and request.endpoint not in ('logout', 'seguridad'):
@@ -2892,6 +2893,7 @@ def _vigilante():
                     revisar_alertas()
                     almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
                     monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
+                    llaves.revisar()                         # llaves por vencer, vencidas o con rotación programada
         except Exception as e:
             app.logger.error("Vigilante de alertas: %s", e)
 
@@ -3077,11 +3079,18 @@ def push_revisar():
         revisar_alertas()
     almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
     monitor.volcar()
+    llaves.revisar()
     return {"ok": True, "reintentados": reintentados}
 
 import almacenamiento
 app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
+app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+
+# ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las variables GEMINI_KEY_* de Render.
+zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]
+zedith.AL_FALLAR = llaves.reportar_fallo
+zedith.AL_USAR = llaves.registrar_uso
 
 
 # Endpoints públicos y anónimos (sin sesión que proteger; ya tienen límite por IP) y el cron con token propio.

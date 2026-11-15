@@ -243,6 +243,9 @@
             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/auditoria" class="nav-item {% if request.path.startswith('/auditoria') %}active{% endif %}">
                 <i class="ph ph-clipboard-text"></i> Auditoría
             </a>{% endif %}
+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/llaves" class="nav-item {% if request.path.startswith('/llaves') %}active{% endif %}">
+                <i class="ph ph-key"></i> Llaves
+            </a>{% endif %}
             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
                 <i class="ph ph-database"></i> Almacenamiento
             </a>

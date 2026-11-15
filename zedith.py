@@ -18,6 +18,15 @@ from datetime import date
 
 log = logging.getLogger("zedith")
 
+# Conexión con el módulo de llaves (/llaves). app.py las asigna al arrancar. Si no están asignadas, o el pool está
+# vacío, se usan las variables GEMINI_KEY_* como siempre (así no hay corte mientras migras las llaves).
+PROVEEDOR_LLAVES = None   # callable() -> [(id, secreto), ...] en orden de pool
+AL_FALLAR = None          # callable(id, codigo_http): 429 = descansa, 401/403 = inválida
+AL_USAR = None            # callable(id, peticiones, tokens_in, tokens_out, costo_usd)
+# Precio por millón de tokens (USD). Pon los de tu modelo en Render; con 0 se registran tokens pero el costo queda en 0.
+PRECIO_IN_USD_M = float(os.environ.get("ZEDITH_PRECIO_IN", "0") or 0)
+PRECIO_OUT_USD_M = float(os.environ.get("ZEDITH_PRECIO_OUT", "0") or 0)
+
 MODELO = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
@@ -222,11 +231,38 @@ def _limpiar(mensajes):
     return out
 
 
+def _llamar_hook(f, *args):
+    """Los hooks de llaves nunca deben romper el chat."""
+    if not f:
+        return
+    try:
+        f(*args)
+    except Exception as e:
+        log.warning("Hook de llaves falló: %s", e)
+
+
+def _registrar_uso(lid, data):
+    if lid is None or not AL_USAR:
+        return
+    u = data.get("usageMetadata") or {}
+    t_in = int(u.get("promptTokenCount") or 0)
+    t_out = int(u.get("candidatesTokenCount") or 0) + int(u.get("thoughtsTokenCount") or 0)
+    costo = (t_in * PRECIO_IN_USD_M + t_out * PRECIO_OUT_USD_M) / 1_000_000
+    _llamar_hook(AL_USAR, lid, 1, t_in, t_out, costo)
+
+
 def responder(mensajes, hechos):
     """Devuelve {'reply': str, 'pedido': dict|None}. Lanza ZedithError si no se pudo."""
-    llaves = _llaves()
-    if not llaves:
-        raise ZedithError("sin GEMINI_API_KEYS")
+    candidatas = []                      # (id del registro de llaves o None, secreto)
+    if PROVEEDOR_LLAVES:
+        try:
+            candidatas = list(PROVEEDOR_LLAVES())
+        except Exception as e:
+            log.warning("No se pudo leer el pool de llaves: %s", e)
+    if not candidatas:
+        candidatas = [(None, k) for k in _llaves()]    # respaldo: variables de entorno
+    if not candidatas:
+        raise ZedithError("sin llaves de Gemini (registra una en /llaves o define GEMINI_API_KEYS)")
     cuerpo = json.dumps({
         "system_instruction": {"parts": [{"text": instrucciones(hechos)}]},
         "contents": _limpiar(mensajes),
@@ -235,16 +271,19 @@ def responder(mensajes, hechos):
                              "responseSchema": ESQUEMA},
     }).encode()
     ultimo = "sin intentos"
-    for llave in llaves:
+    for lid, llave in candidatas:
         req = urllib.request.Request(URL.format(MODELO), data=cuerpo, method="POST",
                                      headers={"Content-Type": "application/json", "x-goog-api-key": llave})
         try:
             with urllib.request.urlopen(req, timeout=25) as r:
                 data = json.load(r)
+            _registrar_uso(lid, data)          # la llamada ya consumió tokens, aunque la respuesta salga vacía
         except urllib.error.HTTPError as e:
             ultimo = f"HTTP {e.code}: {e.read()[:300]!r}"
             log.warning("Gemini falló con una llave (%s)", ultimo)
-            if e.code in (403, 429, 500, 502, 503, 504):
+            if lid is not None and e.code in (401, 403, 429):
+                _llamar_hook(AL_FALLAR, lid, e.code)       # el pool la saca (429 descansa, 401/403 queda inválida)
+            if e.code in (401, 403, 429, 500, 502, 503, 504):
                 continue                       # prueba la siguiente llave
             raise ZedithError(ultimo)          # 400/404: error de configuración o de modelo
         except (urllib.error.URLError, TimeoutError) as e:
