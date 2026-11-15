@@ -10,6 +10,10 @@ import time
 import hmac
 import hashlib
 import struct
+import csv
+import io
+import tempfile
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 from flask import Flask, render_template, request, redirect, url_for, Response, session, abort, has_request_context
@@ -92,8 +96,11 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.session_protection = 'strong'
 
-# Dinero como número (pesos). En PostgreSQL se podrá pasar a Decimal sin tocar el resto.
-Dinero = db.Numeric(10, 2, asdecimal=False)
+# Dinero: NUMERIC(14,2) en la base (exacto). En Python sigue llegando como float para no romper el resto del código,
+# pero TODA entrada de usuario pasa por leer_monto(), que valida y redondea con Decimal.
+Dinero = db.Numeric(14, 2, asdecimal=False)
+MONTO_MAX = Decimal("999999999999.99")      # tope de NUMERIC(14,2)
+COBRO_VENTANA_S = int(os.environ.get("COBRO_VENTANA_S", "30"))   # un mismo cobro no se repite dentro de esta ventana
 
 
 # --- MODELOS ---------------------------------------------------------------
@@ -214,6 +221,8 @@ class Pago(db.Model):
     concepto = db.Column(db.String(200))
     metodo = db.Column(db.String(50))
     estado = db.Column(db.String(20), default="Pagado")
+    creado = db.Column(db.DateTime, default=datetime.utcnow)   # anti-doble envío
+    anulado = db.Column(db.Boolean, default=False)
 
 
 class CostoServicio(db.Model):
@@ -357,6 +366,8 @@ class IngresoPlataforma(db.Model):
     monto = db.Column(Dinero, nullable=False)
     categoria = db.Column(db.String(20), default="Suscripciones")
     concepto = db.Column(db.String(200))
+    anulado = db.Column(db.Boolean, default=False)          # True = ya tiene su contra-asiento
+    anula_a = db.Column(db.Integer)                         # si es contra-asiento: id del ingreso que anula
     proyecto = db.relationship('Proyecto', backref=db.backref('ingresos', cascade='all, delete-orphan'))
 
 
@@ -549,6 +560,8 @@ def migrar_columnas():
                            ("ultimo_pago", "DATE")],
         "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER")],
         "auditoria": [("ip", "VARCHAR(64)")],
+        "pago": [("creado", "TIMESTAMP"), ("anulado", "BOOLEAN DEFAULT 0")],
+        "ingreso_plataforma": [("anulado", "BOOLEAN DEFAULT 0"), ("anula_a", "INTEGER")],
     }
     insp = sa_inspect(db.engine)
     for tabla, cols in nuevas.items():
@@ -561,6 +574,19 @@ def migrar_columnas():
                     tipo = tipo.replace("DEFAULT 1", "DEFAULT TRUE").replace("BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT FALSE")
                 db.session.execute(db.text(f'ALTER TABLE "{tabla}" ADD COLUMN {nombre} {tipo}'))
     db.session.commit()
+    # Importes: ensanchar NUMERIC(10,2) -> NUMERIC(14,2) (solo PostgreSQL; ensanchar no pierde datos y solo corre si hace falta)
+    if pg:
+        for tabla, col in (("plan", "precio"), ("plan", "precio_anual"), ("suscripcion", "tarifa"), ("pago", "monto"),
+                           ("costo_servicio", "monto_mensual"), ("costo_servicio", "monto_periodo"), ("ingreso_plataforma", "monto")):
+            try:
+                if not insp.has_table(tabla):
+                    continue
+                tipo_col = next((c["type"] for c in insp.get_columns(tabla) if c["name"] == col), None)
+                if tipo_col is not None and (getattr(tipo_col, "precision", None) or 99) < 14:
+                    db.session.execute(db.text(f'ALTER TABLE "{tabla}" ALTER COLUMN {col} TYPE NUMERIC(14,2)'))
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
     # Notificacion.clave debe ser única (dos workers podían crear el mismo aviso). Primero se quitan duplicados.
     try:
         if insp.has_table("notificacion"):
@@ -850,7 +876,7 @@ def _secreto_usuario(u):
 # --- ROLES -----------------------------------------------------------------
 # admin: todo. operador: opera el día a día, pero no borra ni cambia precios. lectura: solo consulta (GET).
 ENDPOINTS_ADMIN = {'ingreso_plataforma_eliminar', 'subdominio_eliminar', 'plan_nuevo', 'plan_editar', 'plan_activo',
-                   'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular'}
+                   'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular', 'auditoria', 'auditoria_exportar'}
 ENDPOINTS_SIN_MFA = {'seguridad', 'logout', 'static', 'service_worker', 'manifest_admin', 'manifest_publico', 'healthz', 'pwa_offline'}
 
 
@@ -1160,14 +1186,14 @@ def _leer_form_plan(plan):
         return f"La descripción admite hasta 120 caracteres (llevas {len(v['descripcion'])}).", v
     crudo = v["precio"].replace("$", "").replace(",", "").replace("MXN", "").strip()
     try:
-        precio = float(crudo) if crudo else None
+        precio = leer_monto(crudo, "precio") if crudo else None
     except ValueError:
         return "El precio debe ser un número, por ejemplo 2500. Déjalo vacío si se cotiza a la medida.", v
     if precio is not None and precio < 0:
         return "El precio no puede ser negativo.", v
     crudo_a = v["precio_anual"].replace("$", "").replace(",", "").replace("MXN", "").strip()
     try:
-        anual = float(crudo_a) if crudo_a else None
+        anual = leer_monto(crudo_a, "precio anual") if crudo_a else None
     except ValueError:
         return "El precio anual debe ser un número. Déjalo vacío para cobrar 10 de 12 meses.", v
     if anual is not None and anual < 0:
@@ -1294,6 +1320,27 @@ def campo(nombre):
     return (request.form.get(nombre) or "").strip()
 
 
+def leer_monto(texto, nombre="monto", positivo=False):
+    """Texto -> importe validado (Decimal -> float con 2 decimales). Rechaza basura, NaN, negativos y excesos."""
+    t = str(texto if texto is not None else "").replace("$", "").replace(",", "").replace("MXN", "").strip() or "0"
+    try:
+        d = Decimal(t)
+    except InvalidOperation:
+        raise DatoInvalido(f"«{nombre}» debe ser un número, por ejemplo 2500 o 2500.50.")
+    if not d.is_finite():
+        raise DatoInvalido(f"«{nombre}» no es un número válido.")
+    if d > MONTO_MAX:
+        raise DatoInvalido(f"«{nombre}» excede el máximo permitido.")
+    d = d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if d < 0:
+        raise DatoInvalido(f"«{nombre}» no puede ser negativo.")
+    if positivo and d == 0:
+        raise DatoInvalido(f"«{nombre}» debe ser mayor que cero.")
+    if d > MONTO_MAX:
+        raise DatoInvalido(f"«{nombre}» excede el máximo permitido.")
+    return float(d)
+
+
 def campo_fecha(nombre):
     v = campo(nombre)
     return date.fromisoformat(v) if v else None
@@ -1327,14 +1374,17 @@ def cliente_form(cid=None):
         if plan:
             sus = cliente.suscripcion or Suscripcion(cliente_id=cliente.id)
             sus.plan_id = plan.id
-            sus.tarifa = float(campo('tarifa') or plan.precio or 0)
+            sus.tarifa = leer_monto(campo('tarifa') or plan.precio or 0, "tarifa")
             sus.fecha_corte = campo_fecha('fecha_corte')
             sus.proxima_fecha_pago = campo_fecha('proxima_fecha_pago')
             sus.estado_cobro = campo('estado_cobro') or "Al corriente"
             sus.periodicidad = campo('periodicidad') or "Mensual"
             # Si eligen pago anual y no capturan descuento, se aplica el del plan (precio anual vs 12 mensualidades)
             d = campo('descuento_pct')
-            sus.descuento_pct = float(d) if d and float(d) else (descuento_anual_pct(plan) if sus.periodicidad == "Anual" else 0)
+            desc = leer_monto(d, "descuento") if d else 0
+            if desc > 100:
+                raise DatoInvalido("El descuento no puede pasar de 100%.")
+            sus.descuento_pct = desc if desc else (descuento_anual_pct(plan) if sus.periodicidad == "Anual" else 0)
             db.session.add(sus)
         registrar("crear" if nuevo else "editar", "Cliente", cliente.id, cliente.nombre_comercial)
         db.session.commit()
@@ -1373,7 +1423,7 @@ def proyecto_nuevo(cid):
 def costo_nuevo(pid):
     p = db.get_or_404(Proyecto, pid)
     per = campo('periodicidad') if campo('periodicidad') in MESES else "Mensual"
-    monto = float(campo('monto') or 0)
+    monto = leer_monto(campo('monto'), "monto")
     k = CostoServicio(proyecto_id=p.id, proveedor=campo('proveedor'), concepto=campo('concepto'),
                       periodicidad=per, monto_periodo=monto, monto_mensual=round(monto / MESES[per], 2),
                       proxima_fecha_pago=campo_fecha('proxima_fecha_pago'))
@@ -1389,7 +1439,7 @@ def costo_nuevo(pid):
 @app.route('/clientes/<int:cid>/pago', methods=['POST'])
 def pago_nuevo(cid):
     c = db.get_or_404(Cliente, cid)
-    pago = Pago(cliente_id=c.id, monto=float(campo('monto') or 0), fecha=campo_fecha('fecha') or date.today(),
+    pago = Pago(cliente_id=c.id, monto=leer_monto(campo('monto'), "monto", positivo=True), fecha=campo_fecha('fecha') or date.today(),
                 concepto=campo('concepto'), metodo=campo('metodo'), estado=campo('estado') or "Pagado")
     db.session.add(pago)
     db.session.flush()
@@ -1405,10 +1455,18 @@ def pago_nuevo(cid):
 @app.route('/clientes/<int:cid>/cobrar', methods=['POST'])
 def cobrar(cid):
     c = db.get_or_404(Cliente, cid)
-    s = c.suscripcion
+    # Bloqueo de fila: dos clics/pestañas simultáneas se ponen en fila en vez de cobrar dos veces.
+    s = db.session.execute(db.select(Suscripcion).where(Suscripcion.cliente_id == c.id).with_for_update()).scalar_one_or_none()
     if s:
+        concepto = f"Cobro {s.periodicidad.lower()} · {s.plan.nombre}"
+        reciente = datetime.utcnow() - timedelta(seconds=COBRO_VENTANA_S)
+        repetido = Pago.query.filter(Pago.cliente_id == c.id, Pago.concepto == concepto, Pago.creado >= reciente,
+                                     Pago.anulado.isnot(True)).first()
+        if repetido:
+            db.session.rollback()          # suelta el bloqueo: es un doble envío, no se cobra otra vez
+            return redirect(request.referrer or url_for('cliente_detalle', cid=c.id))
         pago = Pago(cliente_id=c.id, monto=s.monto_periodo, fecha=date.today(), metodo=campo('metodo'),
-                    concepto=f"Cobro {s.periodicidad.lower()} · {s.plan.nombre}", estado="Pagado")
+                    concepto=concepto, estado="Pagado", creado=datetime.utcnow())
         db.session.add(pago)
         s.proxima_fecha_pago = sumar_meses(s.proxima_fecha_pago or date.today(), s.meses)
         s.estado_cobro = "Al corriente"
@@ -1422,7 +1480,12 @@ def cobrar(cid):
 
 @app.route('/costos/<int:kid>/pagar', methods=['POST'])
 def pagar_costo(kid):
-    k = db.get_or_404(CostoServicio, kid)
+    k = db.session.execute(db.select(CostoServicio).where(CostoServicio.id == kid).with_for_update()).scalar_one_or_none()
+    if k is None:
+        abort(404)
+    if k.ultimo_pago == date.today():      # ya se marcó hoy: un segundo clic no avanza otra vez la fecha
+        db.session.rollback()
+        return redirect(_destino(request.referrer or url_for('cliente_detalle', cid=k.proyecto.cliente_id)))
     k.ultimo_pago = date.today()
     k.proxima_fecha_pago = sumar_meses(k.proxima_fecha_pago or date.today(), MESES.get(k.periodicidad, 1))
     registrar("pago_proveedor", "CostoServicio", k.id, f"{k.proveedor} · {dinero(k.monto_periodo or k.monto_mensual)}")
@@ -1904,7 +1967,7 @@ def finanzas_plataforma(p):
 def ingreso_plataforma_nuevo(pid):
     p = db.get_or_404(Proyecto, pid)
     try:
-        monto, fecha = float(campo('monto') or 0), campo_fecha('fecha') or date.today()
+        monto, fecha = leer_monto(campo('monto'), "monto"), campo_fecha('fecha') or date.today()
     except ValueError:
         return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
     if monto > 0:
@@ -1919,10 +1982,20 @@ def ingreso_plataforma_nuevo(pid):
 
 @app.route('/ingresos-plataforma/<int:iid>/eliminar', methods=['POST'])
 def ingreso_plataforma_eliminar(iid):
-    i = db.get_or_404(IngresoPlataforma, iid)
+    """No borra: anula con un contra-asiento (monto negativo) para que el historial y la auditoría queden íntegros."""
+    i = db.session.execute(db.select(IngresoPlataforma).where(IngresoPlataforma.id == iid).with_for_update()).scalar_one_or_none()
+    if i is None:
+        abort(404)
     pid = i.proyecto_id
-    registrar("eliminar", "IngresoPlataforma", i.id, f"{dinero(i.monto)} · {i.proyecto.nombre}")
-    db.session.delete(i)
+    if i.anulado or i.anula_a:             # ya anulado, o es un contra-asiento: no se anula dos veces
+        db.session.rollback()
+        return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='finanzas')))
+    i.anulado = True
+    contra = IngresoPlataforma(proyecto_id=pid, fecha=date.today(), monto=-(i.monto or 0), categoria=i.categoria,
+                               concepto=f"ANULACIÓN del ingreso #{i.id}", anula_a=i.id, anulado=True)
+    db.session.add(contra)
+    db.session.flush()
+    registrar("anular", "IngresoPlataforma", i.id, f"{dinero(i.monto)} · {i.proyecto.nombre} · contra-asiento #{contra.id}")
     db.session.commit()
     return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='finanzas')))
 
@@ -2823,10 +2896,117 @@ def _vigilante():
             app.logger.error("Vigilante de alertas: %s", e)
 
 
+_candados = {}
+
+
+def es_lider(nombre):
+    """Candado entre workers del MISMO servidor (flock sobre un archivo temporal): solo uno es 'líder' de cada tarea.
+    Se eligió esto y no pg_try_advisory_lock porque ese candado exige una conexión a Neon abierta todo el tiempo
+    (impide que Neon se duerma, que es justo lo que este código evita) y falla detrás del pooler de Neon.
+    Si el líder muere, el candado se libera solo y otro worker lo toma en su siguiente petición."""
+    try:
+        import fcntl
+    except ImportError:                    # Windows / desarrollo local: un solo proceso, siempre líder
+        return True
+    c = _candados.get(nombre)
+    if c is None:
+        c = _candados[nombre] = {"fh": open(os.path.join(tempfile.gettempdir(), f"zedyth_lider_{nombre}.lock"), "a+"), "lider": False}
+    if c["lider"]:
+        return True
+    try:
+        fcntl.flock(c["fh"], fcntl.LOCK_EX | fcntl.LOCK_NB)
+        c["lider"] = True
+        app.logger.info("Este worker (pid %s) es el líder de «%s».", os.getpid(), nombre)
+    except OSError:
+        pass
+    return c["lider"]
+
+
 def iniciar_vigilante():
-    if not getattr(app, "_vigilante_activo", False):
-        app._vigilante_activo = True
-        threading.Thread(target=_vigilante, daemon=True, name="vigilante-alertas").start()
+    if getattr(app, "_vigilante_activo", False):
+        return
+    if not es_lider("vigilante"):          # otro worker ya corre el vigilante
+        return
+    app._vigilante_activo = True
+    threading.Thread(target=_vigilante, daemon=True, name="vigilante-alertas").start()
+
+
+if int(os.environ.get("WEB_CONCURRENCY", "1") or 1) > 1:
+    app.logger.warning("WEB_CONCURRENCY>1: el monitor HTTP guarda su estado en memoria por worker. "
+                       "Usa 'gunicorn app:app --workers 1 --threads 4' para que el panel muestre datos coherentes.")
+
+
+# --- AUDITORÍA (solo admin): consulta con filtros y exportación ------------------------------
+AUDITORIA_POR_PAGINA = 50
+AUDITORIA_EXPORT_MAX = 20000
+
+
+def _auditoria_filtrada():
+    """Devuelve (consulta, filtros) según los parámetros GET: usuario, accion, entidad, desde, hasta, q."""
+    f = {k: (request.args.get(k) or "").strip()[:80] for k in ("usuario", "accion", "entidad", "desde", "hasta", "q")}
+    cond = []
+    if f["usuario"]:
+        cond.append(Auditoria.usuario.ilike(f"%{f['usuario']}%"))
+    if f["accion"]:
+        cond.append(Auditoria.accion == f["accion"])
+    if f["entidad"]:
+        cond.append(Auditoria.entidad == f["entidad"])
+    if f["q"]:
+        cond.append(db.or_(Auditoria.detalle.ilike(f"%{f['q']}%"), Auditoria.ip.ilike(f"%{f['q']}%")))
+    for clave, op in (("desde", ">="), ("hasta", "<")):
+        try:
+            d = date.fromisoformat(f[clave]) if f[clave] else None
+        except ValueError:
+            d, f[clave] = None, ""
+        if d:
+            cond.append(Auditoria.fecha >= datetime.combine(d, datetime.min.time()) if op == ">="
+                        else Auditoria.fecha < datetime.combine(d + timedelta(days=1), datetime.min.time()))
+    return db.select(Auditoria).where(*cond).order_by(Auditoria.fecha.desc(), Auditoria.id.desc()), f
+
+
+@app.route('/auditoria')
+def auditoria():
+    consulta, f = _auditoria_filtrada()
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+    pag = db.paginate(consulta, page=pagina, per_page=AUDITORIA_POR_PAGINA, error_out=False)
+    desde24 = datetime.utcnow() - timedelta(hours=24)
+    resumen = {
+        "fallos24": db.session.scalar(db.select(db.func.count()).select_from(Auditoria).where(
+            Auditoria.accion == "login_fallido", Auditoria.fecha >= desde24)) or 0,
+        "bloqueos24": db.session.scalar(db.select(db.func.count()).select_from(Auditoria).where(
+            Auditoria.accion == "login_bloqueado", Auditoria.fecha >= desde24)) or 0,
+        "acciones24": db.session.scalar(db.select(db.func.count()).select_from(Auditoria).where(Auditoria.fecha >= desde24)) or 0,
+    }
+    acciones = [r[0] for r in db.session.execute(db.select(Auditoria.accion).distinct().order_by(Auditoria.accion)) if r[0]]
+    entidades = [r[0] for r in db.session.execute(db.select(Auditoria.entidad).distinct().order_by(Auditoria.entidad)) if r[0]]
+    qs = "&".join(f"{k}={quote(v)}" for k, v in f.items() if v)
+    return render_template('auditoria.html', pag=pag, f=f, resumen=resumen, acciones=acciones, entidades=entidades, qs=qs)
+
+
+def _celda_csv(v):
+    """Evita la inyección de fórmulas al abrir el CSV en Excel/Sheets."""
+    t = "" if v is None else str(v)
+    return "'" + t if t[:1] in ("=", "+", "-", "@", "\t", "\r") else t
+
+
+@app.route('/auditoria/exportar')
+def auditoria_exportar():
+    consulta, f = _auditoria_filtrada()
+    filas = db.session.execute(consulta.limit(AUDITORIA_EXPORT_MAX)).scalars().all()
+    registrar("exportar", "Auditoria", None, f"{len(filas)} registros · filtros: " + (", ".join(f"{k}={v}" for k, v in f.items() if v) or "ninguno"))
+    db.session.commit()
+    salida = io.StringIO()
+    w = csv.writer(salida)
+    w.writerow(["id", "fecha_utc", "usuario", "accion", "entidad", "entidad_id", "detalle", "ip"])
+    for a in filas:
+        w.writerow([a.id, a.fecha.strftime("%Y-%m-%d %H:%M:%S") if a.fecha else "", _celda_csv(a.usuario), _celda_csv(a.accion),
+                    _celda_csv(a.entidad), a.entidad_id or "", _celda_csv(a.detalle), _celda_csv(a.ip)])
+    nombre = f"auditoria_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+    return Response("\ufeff" + salida.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename={nombre}", "Cache-Control": "no-store"})
 
 
 @app.route('/notificaciones')

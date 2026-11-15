@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>Auditoría</h1>
+    <p>Quién hizo qué y cuándo. Las horas están en UTC. Solo la ve el rol admin.</p>
+</section>
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card">
+        <h3 class="stat-label">Últimas 24 h</h3>
+        <div class="stat-value" style="font-size:22px;">{{ resumen.acciones24 }} acciones</div>
+        <p style="margin:8px 0 0; font-size:13px; color:var(--text-muted);">
+            Inicios fallidos: <strong style="color:{{ '#f87171' if resumen.fallos24 else 'inherit' }};">{{ resumen.fallos24 }}</strong> ·
+            Cuentas bloqueadas: <strong style="color:{{ '#f87171' if resumen.bloqueos24 else 'inherit' }};">{{ resumen.bloqueos24 }}</strong>
+        </p>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Exportar</h3>
+        <p style="margin:0 0 12px; font-size:13px; color:var(--text-muted);">Descarga en CSV lo que ves con los filtros actuales (máximo 20,000 registros). La exportación también queda registrada.</p>
+        <a class="btn btn-primary" href="/auditoria/exportar{{ '?' ~ qs if qs }}">Descargar CSV</a>
+    </div>
+</div>
+<form method="get" action="/auditoria" class="luxury-card" style="margin-bottom:20px;">
+    <div class="grid-2" style="gap:12px;">
+        <label class="lbl">Usuario<input class="field" name="usuario" value="{{ f.usuario }}"></label>
+        <label class="lbl">Buscar en detalle o IP<input class="field" name="q" value="{{ f.q }}"></label>
+        <label class="lbl">Acción<select class="field" name="accion"><option value="">Todas</option>{% for a in acciones %}<option {{ 'selected' if a == f.accion }}>{{ a }}</option>{% endfor %}</select></label>
+        <label class="lbl">Entidad<select class="field" name="entidad"><option value="">Todas</option>{% for e in entidades %}<option {{ 'selected' if e == f.entidad }}>{{ e }}</option>{% endfor %}</select></label>
+        <label class="lbl">Desde<input class="field" type="date" name="desde" value="{{ f.desde }}"></label>
+        <label class="lbl">Hasta<input class="field" type="date" name="hasta" value="{{ f.hasta }}"></label>
+    </div>
+    <div class="toolbar" style="margin-top:12px;"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn" href="/auditoria">Limpiar</a></div>
+</form>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Fecha (UTC)</th><th>Usuario</th><th>Acción</th><th>Detalle</th><th>IP</th></tr></thead><tbody>
+    {% for a in pag.items %}
+    <tr>
+        <td class="mono">{{ a.fecha.strftime('%d/%m/%Y %H:%M:%S') if a.fecha }}</td>
+        <td>{{ a.usuario }}</td>
+        <td><span class="badge {{ 'badge-red' if a.accion in ('login_fallido', 'login_bloqueado', 'eliminar', 'anular') else 'badge-amber' }}">{{ a.accion }}</span>
+            <div style="color:var(--text-muted); font-size:12px;">{{ a.entidad or '' }}{{ ' #' ~ a.entidad_id if a.entidad_id }}</div></td>
+        <td style="font-size:13px;">{{ a.detalle or '' }}</td>
+        <td class="mono" style="font-size:12px;">{{ a.ip or '' }}</td>
+    </tr>
+    {% else %}<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-muted);">No hay registros con esos filtros.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="toolbar" style="margin-top:16px; justify-content:space-between;">
+    <span style="color:var(--text-muted); font-size:13px;">Página {{ pag.page }} de {{ pag.pages or 1 }} · {{ pag.total }} registros</span>
+    <span>
+        {% if pag.has_prev %}<a class="btn btn-sm" href="/auditoria?pagina={{ pag.prev_num }}{{ '&' ~ qs if qs }}">← Anterior</a>{% endif %}
+        {% if pag.has_next %}<a class="btn btn-sm" href="/auditoria?pagina={{ pag.next_num }}{{ '&' ~ qs if qs }}">Siguiente →</a>{% endif %}
+    </span>
+</div>
+{% endblock %}
