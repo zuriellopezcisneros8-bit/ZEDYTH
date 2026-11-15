@@ -70,7 +70,7 @@
             </label>
             <label class="lbl">Estado de cobro
                 <select class="field" name="estado_cobro">
-                    {% for e in ['Al corriente', 'Pendiente', 'Atrasado'] %}
+                    {% for e in ['Al corriente', 'Pendiente', 'Atrasado', 'Suspendido'] %}
                     <option {{ 'selected' if s and s.estado_cobro == e }}>{{ e }}</option>
                     {% endfor %}
                 </select>

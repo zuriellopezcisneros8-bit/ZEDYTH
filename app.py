@@ -28,6 +28,7 @@ import zedith
 import notificar
 import monitor
 import llaves
+import respaldos
 
 app = Flask(__name__)
 EN_RENDER = bool(os.environ.get("RENDER"))   # Render define esta variable en sus servidores
@@ -168,6 +169,7 @@ class Proyecto(db.Model):
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
     nombre = db.Column(db.String(150), nullable=False)
     estado = db.Column(db.String(20), default="Desarrollo")  # Desarrollo, Activo, Mantenido, Suspendido
+    estado_previo = db.Column(db.String(20))                  # estado antes de una suspensión automática por falta de pago
     repo_url = db.Column(db.String(300))
     rama_produccion = db.Column(db.String(60), default="main")
     carpeta_local = db.Column(db.String(300))   # ruta de la carpeta del proyecto en tu equipo
@@ -197,7 +199,7 @@ class Suscripcion(db.Model):
     tarifa = db.Column(Dinero, default=0)               # lo que se le cobra al cliente
     fecha_corte = db.Column(db.Date)
     proxima_fecha_pago = db.Column(db.Date)
-    estado_cobro = db.Column(db.String(20), default="Al corriente")  # Al corriente, Pendiente, Atrasado
+    estado_cobro = db.Column(db.String(20), default="Al corriente")  # Al corriente, Pendiente (en gracia), Atrasado, Suspendido
     periodicidad = db.Column(db.String(12), default="Mensual")      # Mensual, Trimestral, Anual
     descuento_pct = db.Column(db.Float, default=0)                  # descuento por pagar por periodo largo
 
@@ -223,7 +225,13 @@ class Pago(db.Model):
     metodo = db.Column(db.String(50))
     estado = db.Column(db.String(20), default="Pagado")
     creado = db.Column(db.DateTime, default=datetime.utcnow)   # anti-doble envío
-    anulado = db.Column(db.Boolean, default=False)
+    anulado = db.Column(db.Boolean, default=False)             # el original ya tiene su contra-asiento
+    anula_id = db.Column(db.Integer)                           # si es contra-asiento: id del pago que anula
+    motivo = db.Column(db.String(120))
+
+    @property
+    def anulacion(self):                                       # lo que leen las plantillas: "¿ya fue anulado?"
+        return bool(self.anulado)
 
 
 class CostoServicio(db.Model):
@@ -368,7 +376,12 @@ class IngresoPlataforma(db.Model):
     categoria = db.Column(db.String(20), default="Suscripciones")
     concepto = db.Column(db.String(200))
     anulado = db.Column(db.Boolean, default=False)          # True = ya tiene su contra-asiento
-    anula_a = db.Column(db.Integer)                         # si es contra-asiento: id del ingreso que anula
+    anula_id = db.Column(db.Integer)                        # si es contra-asiento: id del ingreso que anula
+
+    @property
+    def anulacion(self):                                    # lo que leen las plantillas: "¿ya fue anulado?"
+        return bool(self.anulado)
+
     proyecto = db.relationship('Proyecto', backref=db.backref('ingresos', cascade='all, delete-orphan'))
 
 
@@ -555,14 +568,14 @@ def migrar_columnas():
         "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)"), ("tipo", "VARCHAR(20) DEFAULT 'A medida'"),
                      ("url_produccion", "VARCHAR(300)"), ("version", "VARCHAR(30)"),
                      ("neon_proyecto", "VARCHAR(150)"), ("r2_buckets", "VARCHAR(300)"),
-                     ("cloudinary_prefijo", "VARCHAR(150)")],
+                     ("cloudinary_prefijo", "VARCHAR(150)"), ("estado_previo", "VARCHAR(20)")],
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
         "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER")],
         "auditoria": [("ip", "VARCHAR(64)")],
-        "pago": [("creado", "TIMESTAMP"), ("anulado", "BOOLEAN DEFAULT 0")],
-        "ingreso_plataforma": [("anulado", "BOOLEAN DEFAULT 0"), ("anula_a", "INTEGER")],
+        "pago": [("creado", "TIMESTAMP"), ("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER"), ("motivo", "VARCHAR(120)")],
+        "ingreso_plataforma": [("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER")],
     }
     insp = sa_inspect(db.engine)
     for tabla, cols in nuevas.items():
@@ -739,7 +752,14 @@ def aplicar_fichas():
     pendientes = {c: p for c, p in planes.items() if (p.ficha_version or 0) < FICHA_VERSION}
     if not pendientes:
         return
-    _copia_antes_de_fichas()
+    if db.engine.dialect.name == "sqlite":
+        _copia_antes_de_fichas()
+    else:                                  # Postgres/Neon: sin respaldo previo no se reescriben los planes
+        ok, msg = respaldos.antes_de_cambio("antes_fichas")
+        if not ok and os.environ.get("FICHAS_SIN_RESPALDO") != "1":
+            print(f"AVISO: las fichas de planes NO se aplicaron porque no se pudo respaldar antes ({msg}). "
+                  f"Configura BACKUP_R2_* o define FICHAS_SIN_RESPALDO=1.", flush=True)
+            return
     for clave, p in pendientes.items():
         f = FICHAS[clave]
         p.nivel, p.cpu, p.ram = f["nivel"], f["cpu"], f["ram"]
@@ -805,6 +825,9 @@ def cliente_interno():
     return c
 
 
+# Respaldos del panel (modelo + rutas). Va ANTES de la inicialización porque aplicar_fichas lo usa.
+respaldos.iniciar(app, db, registrar, lambda *a, **k: crear_notificacion(*a, **k))
+
 # Inicialización de la DB
 with app.app_context():
     db.create_all()
@@ -822,7 +845,7 @@ def load_user(user_id):
     return db.session.get(Usuario, int(user_id))
 
 def respaldo_automatico_db():
-    if db.engine.dialect.name != "sqlite":   # con Neon los respaldos los hace el propio servicio (ver historial de restauración)
+    if db.engine.dialect.name != "sqlite":   # con Neon el respaldo lo hace el módulo respaldos.py (R2), no esta función
         return
     db_path = db.engine.url.database          # ruta real del archivo (puede estar en instance/)
     backup_dir = 'respaldos_panel'
@@ -876,7 +899,7 @@ def _secreto_usuario(u):
 
 # --- ROLES -----------------------------------------------------------------
 # admin: todo. operador: opera el día a día, pero no borra ni cambia precios. lectura: solo consulta (GET).
-ENDPOINTS_ADMIN = {'ingreso_plataforma_eliminar', 'subdominio_eliminar', 'plan_nuevo', 'plan_editar', 'plan_activo',
+ENDPOINTS_ADMIN = {'pago_anular', 'ingreso_plataforma_eliminar', 'subdominio_eliminar', 'plan_nuevo', 'plan_editar', 'plan_activo',
                    'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular', 'auditoria', 'auditoria_exportar'}
 ENDPOINTS_SIN_MFA = {'seguridad', 'logout', 'static', 'service_worker', 'manifest_admin', 'manifest_publico', 'healthz', 'pwa_offline'}
 
@@ -933,7 +956,7 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith("llaves.")) and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos."))) and rol != "admin":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
             and request.endpoint not in ('logout', 'seguridad'):
@@ -1453,6 +1476,30 @@ def pago_nuevo(cid):
 
 
 # --- COBROS, PAGOS Y AVISOS ---------------------------------------------------
+@app.route('/pagos/<int:pid>/anular', methods=['POST'])
+def pago_anular(pid):
+    """Anula un pago con un contra-asiento negativo (solo admin). El original no se borra ni se edita."""
+    motivo = (request.form.get('motivo') or '').strip()
+    if not 3 <= len(motivo) <= 120:
+        raise DatoInvalido("El motivo de la anulación debe tener entre 3 y 120 caracteres.")
+    pg = db.session.execute(db.select(Pago).where(Pago.id == pid).with_for_update()).scalar_one_or_none()
+    if pg is None:
+        abort(404)
+    cid = pg.cliente_id
+    if pg.anulado or pg.anula_id or (pg.monto or 0) <= 0:      # ya anulado, o es un contra-asiento: no se anula dos veces
+        db.session.rollback()
+        return redirect(url_for('cliente_detalle', cid=cid))
+    pg.anulado = True
+    contra = Pago(cliente_id=cid, monto=-(pg.monto or 0), fecha=date.today(), metodo=pg.metodo,
+                  concepto=f"ANULACIÓN del pago #{pg.id}: {motivo}", estado="Pagado", anula_id=pg.id, anulado=True,
+                  motivo=motivo, creado=datetime.utcnow())
+    db.session.add(contra)
+    db.session.flush()
+    registrar("anular", "Pago", pg.id, f"{dinero(pg.monto)} · cliente #{cid} · contra-asiento #{contra.id} · {motivo}")
+    db.session.commit()
+    return redirect(url_for('cliente_detalle', cid=cid))
+
+
 @app.route('/clientes/<int:cid>/cobrar', methods=['POST'])
 def cobrar(cid):
     c = db.get_or_404(Cliente, cid)
@@ -1470,8 +1517,8 @@ def cobrar(cid):
                     concepto=concepto, estado="Pagado", creado=datetime.utcnow())
         db.session.add(pago)
         s.proxima_fecha_pago = sumar_meses(s.proxima_fecha_pago or date.today(), s.meses)
-        s.estado_cobro = "Al corriente"
         db.session.flush()
+        fijar_estado_cobro(s, estado_cobro_para(s) if s.proxima_fecha_pago else "Al corriente", "cobro registrado", usuario=current_user.username)
         registrar("cobro", "Pago", pago.id, f"{dinero(pago.monto)} · {c.nombre_comercial}")
         db.session.commit()
         crear_notificacion("Pago", f"Cobro registrado: {dinero(pago.monto)}", c.nombre_comercial, f"/clientes/{c.id}",
@@ -1534,6 +1581,87 @@ def calcular_avisos():
     return por_cobrar, por_pagar
 
 
+# --- COBRANZA AUTOMÁTICA --------------------------------------------------------------------------
+COBRANZA_GRACIA_DIAS = int(os.environ.get("COBRANZA_GRACIA_DIAS", "5"))          # días tras vencer en que sigue "Pendiente"
+COBRANZA_SUSPENDER_DIAS = int(os.environ.get("COBRANZA_SUSPENDER_DIAS", "0"))    # días de atraso para "Suspendido"; 0 = nunca solo
+COBRANZA_SUSPENDE_PROYECTOS = os.environ.get("COBRANZA_SUSPENDE_PROYECTOS") == "1"   # además pasa sus proyectos a "Suspendido"
+
+
+def estado_cobro_para(s, hoy=None):
+    """Estado que le toca a una suscripción según su fecha de pago. Sin fecha o con tarifa 0 no se toca."""
+    hoy = hoy or date.today()
+    if not s.proxima_fecha_pago or (s.tarifa or 0) <= 0 or s.cliente.nombre_comercial == INTERNO:
+        return s.estado_cobro
+    atraso = (hoy - s.proxima_fecha_pago).days
+    if atraso <= 0:
+        return "Al corriente"
+    if COBRANZA_SUSPENDER_DIAS and atraso > COBRANZA_SUSPENDER_DIAS:
+        return "Suspendido"
+    if atraso > COBRANZA_GRACIA_DIAS:
+        return "Atrasado"
+    return "Pendiente"
+
+
+def _suspender_proyectos(cliente):
+    n = 0
+    for pr in cliente.proyectos:
+        if pr.estado in ("Activo", "Mantenido"):
+            pr.estado_previo, pr.estado = pr.estado, "Suspendido"
+            n += 1
+    return n
+
+
+def _reactivar_proyectos(cliente):
+    n = 0
+    for pr in cliente.proyectos:
+        if pr.estado == "Suspendido" and pr.estado_previo:        # solo los que suspendió la cobranza, no los manuales
+            pr.estado, pr.estado_previo = pr.estado_previo, None
+            n += 1
+    return n
+
+
+def fijar_estado_cobro(s, nuevo, motivo="", usuario="sistema"):
+    """Cambia el estado de cobro de una suscripción, deja rastro y suspende o reactiva proyectos si corresponde.
+    No hace commit: lo hace quien la llama. Devuelve el texto del cambio, o None si no hubo cambio."""
+    viejo = s.estado_cobro
+    if nuevo == viejo:
+        return None
+    s.estado_cobro = nuevo
+    extra = ""
+    if COBRANZA_SUSPENDE_PROYECTOS:
+        if nuevo == "Suspendido":
+            extra = f" · {_suspender_proyectos(s.cliente)} proyecto(s) suspendidos"
+        elif viejo == "Suspendido":
+            extra = f" · {_reactivar_proyectos(s.cliente)} proyecto(s) reactivados"
+    texto = f"{s.cliente.nombre_comercial}: {viejo} → {nuevo}{(' · ' + motivo) if motivo else ''}{extra}"
+    registrar("cobranza_estado", "Suscripcion", s.id, texto, usuario=usuario)
+    return texto
+
+
+def actualizar_cobranza():
+    """Recorre las suscripciones y pasa a Pendiente / Atrasado / Suspendido (o de vuelta a Al corriente) según la fecha.
+    Se llama desde el vigilante; solo escribe cuando algo cambia."""
+    hoy = date.today()
+    cambios = []
+    try:
+        for s in Suscripcion.query.filter(Suscripcion.proxima_fecha_pago.isnot(None)).all():
+            nuevo = estado_cobro_para(s, hoy)
+            atraso = (hoy - s.proxima_fecha_pago).days
+            texto = fijar_estado_cobro(s, nuevo, f"vencía el {s.proxima_fecha_pago:%d/%m/%Y}, {max(atraso, 0)} día(s) de atraso")
+            if texto:
+                cambios.append((s, nuevo, atraso, texto))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    for s, nuevo, atraso, texto in cambios:
+        if nuevo in ("Atrasado", "Suspendido"):
+            crear_notificacion("Cobranza", f"{s.cliente.nombre_comercial}: {'SUSPENDIDO' if nuevo == 'Suspendido' else 'atrasado'} ({atraso} días)",
+                               f"Debe {dinero(s.monto_periodo)} de {s.plan.nombre}. Vencía el {s.proxima_fecha_pago:%d/%m/%Y}.",
+                               f"/clientes/{s.cliente_id}", urgente=True, clave=f"cobranza-{nuevo}-{s.id}-{s.proxima_fecha_pago}")
+    return len(cambios)
+
+
 @app.context_processor
 def inyectar_avisos():
     n = (Suscripcion.query.filter(Suscripcion.proxima_fecha_pago.isnot(None),
@@ -1542,7 +1670,8 @@ def inyectar_avisos():
                                       CostoServicio.proxima_fecha_pago <= _limite()).count()
          + len(alertas_seguridad()))
     return {"n_avisos": n, "n_leads": Lead.query.filter_by(estado="Nuevo").count(),
-            "n_notif": Notificacion.query.filter_by(leida=False).count(), "vapid_public": _vapid()[0]}
+            "n_notif": Notificacion.query.filter_by(leida=False).count(), "vapid_public": _vapid()[0],
+            "es_admin": es_admin()}
 
 
 @app.route('/avisos')
@@ -1988,12 +2117,12 @@ def ingreso_plataforma_eliminar(iid):
     if i is None:
         abort(404)
     pid = i.proyecto_id
-    if i.anulado or i.anula_a:             # ya anulado, o es un contra-asiento: no se anula dos veces
+    if i.anulado or i.anula_id:            # ya anulado, o es un contra-asiento: no se anula dos veces
         db.session.rollback()
         return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='finanzas')))
     i.anulado = True
     contra = IngresoPlataforma(proyecto_id=pid, fecha=date.today(), monto=-(i.monto or 0), categoria=i.categoria,
-                               concepto=f"ANULACIÓN del ingreso #{i.id}", anula_a=i.id, anulado=True)
+                               concepto=f"ANULACIÓN del ingreso #{i.id}", anula_id=i.id, anulado=True)
     db.session.add(contra)
     db.session.flush()
     registrar("anular", "IngresoPlataforma", i.id, f"{dinero(i.monto)} · {i.proyecto.nombre} · contra-asiento #{contra.id}")
@@ -2894,6 +3023,8 @@ def _vigilante():
                     almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
                     monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
                     llaves.revisar()                         # llaves por vencer, vencidas o con rotación programada
+                    respaldos.revisar()                      # respaldo diario a R2, verificación y alertas
+                    actualizar_cobranza()                    # Pendiente / Atrasado / Suspendido según la fecha de pago
         except Exception as e:
             app.logger.error("Vigilante de alertas: %s", e)
 
@@ -3080,6 +3211,8 @@ def push_revisar():
     almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
     monitor.volcar()
     llaves.revisar()
+    respaldos.revisar()
+    actualizar_cobranza()
     return {"ok": True, "reintentados": reintentados}
 
 import almacenamiento

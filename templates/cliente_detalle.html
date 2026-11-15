@@ -35,7 +35,7 @@
         <h3 class="stat-label">Plan y cobro</h3>
         <dl class="kv">
             <dt>Plan</dt><dd>{{ c.membresia_actual }}</dd>
-            <dt>Estado de cobro</dt><dd>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro == 'Atrasado' else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</dd>
+            <dt>Estado de cobro</dt><dd>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro in ('Atrasado', 'Suspendido') else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</dd>
             <dt>Periodicidad</dt><dd>{% if s %}{{ s.periodicidad }} · {{ '${:,.0f}'.format(s.monto_periodo) }} por periodo{% else %}—{% endif %}</dd>
             <dt>Fecha de corte</dt><dd>{{ s.fecha_corte if s and s.fecha_corte else '—' }}</dd>
             <dt>Próximo pago</dt><dd>{{ s.proxima_fecha_pago if s and s.proxima_fecha_pago else '—' }}</dd>

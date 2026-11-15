@@ -26,7 +26,7 @@
                     <td style="color: var(--text-muted);">{{ c.contacto_nombre or '' }}<div class="mono">{{ c.contacto }}</div></td>
                     <td><span class="badge {% if 'Core' in c.membresia_actual or 'Inclusive' in c.membresia_actual %}badge-hi{% endif %}">{{ c.membresia_actual }}</span></td>
                     <td>{{ '${:,.0f}'.format(s.tarifa or 0) if s else '—' }}</td>
-                    <td>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro == 'Atrasado' else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</td>
+                    <td>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro in ('Atrasado', 'Suspendido') else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</td>
                     <td class="mono">{{ s.proxima_fecha_pago if s and s.proxima_fecha_pago else '—' }}</td>
                     <td style="text-align:right;"><a class="btn btn-sm" href="/clientes/{{ c.id }}">Abrir</a></td>
                 </tr>
