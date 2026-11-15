@@ -7,6 +7,15 @@
     <p>Ingresos contra costos de todos los clientes. Cobrado este mes: {{ stats.cobrado }}.</p>
 </section>
 
+{% if compartido %}
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:20px;">
+    <div class="luxury-card"><h3 class="stat-label">Servicios fijos / mes</h3><div class="stat-value">{{ '${:,.0f}'.format(compartido.fijo) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">IA de este mes</h3><div class="stat-value">{{ '${:,.0f}'.format(compartido.ia) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Almacenamiento (estimado)</h3><div class="stat-value">{{ '${:,.0f}'.format(compartido.almacenamiento) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Ganancia tras servicios compartidos</h3><div class="stat-value">{{ neta }}</div></div>
+</div>
+<p style="color:var(--text-muted); font-size:12px; margin:-8px 0 20px;">Costos de la pestaña Servicios, en MXN (tipo de cambio ${{ '{:,.2f}'.format(compartido.tipo_cambio) }}). Entran también en la proyección de 12 meses.</p>
+{% endif %}
 <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
     <div class="luxury-card"><h3 class="stat-label">Ingresos mensuales</h3><div class="stat-value">{{ stats.ingresos }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Costos mensuales</h3><div class="stat-value">{{ stats.costos }}</div></div>

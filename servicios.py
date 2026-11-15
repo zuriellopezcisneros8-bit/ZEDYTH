@@ -85,6 +85,13 @@ def salidas_proyeccion():
     return _api["salidas"]()
 
 
+def resumen_plataformas(pids):
+    """Para la pantalla de Plataformas: {"por_plat": {pid: {...}}, "compartido": {...}, "contador": {...}}.
+    Cada grupo trae: filas (servicios con su estado), mes (catálogo, MXN/mes), ia (IA del mes, MXN), nivel (peor estado)
+    y prox (próxima renovación: (fecha, nombre) o None). «compartido» = servicios sin plataforma."""
+    return _api["resumen"](pids)
+
+
 def revisar():
     """Para el vigilante de app.py: avisa renovaciones próximas/vencidas y verifica las URLs de estado."""
     try:
@@ -500,7 +507,38 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
                        urgente=False, clave=f"serv-ok-{s.id}-{ahora:%Y%m%d%H}")
         db.session.commit()
 
-    _api.update(costo_mensual=calcular_costos, salidas=salidas, revisar=_revisar)
+    def resumen(pids):
+        tc, hoy, ahora = _tipo_cambio(), date.today(), datetime.utcnow()
+        datos, edad = _datos_almacenamiento()
+        rango = {"sin": 0, "ok": 1, "alerta": 2, "falla": 3}
+        contador = {"ok": 0, "alerta": 0, "falla": 0, "sin": 0}
+        grupos = {}
+
+        def grupo_de(pid):
+            return grupos.setdefault(pid, {"filas": [], "mes": 0.0, "ia": 0.0, "nivel": "sin", "prox": None})
+
+        for pid in list(pids or []):
+            grupo_de(pid)["ia"] = ia_mes_usd(pid) * tc
+        grupo_de(None)
+        for s in activos():
+            nivel, texto = estado_de(s, datos, edad, ahora)
+            contador[nivel] += 1
+            g = grupo_de(s.proyecto_id)
+            dias = (s.proxima_renovacion - hoy).days if s.proxima_renovacion else None
+            g["filas"].append({"id": s.id, "nombre": s.nombre, "proveedor": s.proveedor, "categoria": s.categoria,
+                               "plan": s.plan, "nivel": nivel, "texto": texto, "mes": mensual_mxn(s, tc),
+                               "fecha": s.proxima_renovacion, "dias": dias, "panel": s.url_panel})
+            g["mes"] += mensual_mxn(s, tc)
+            if rango[nivel] > rango[g["nivel"]]:
+                g["nivel"] = nivel
+            if s.proxima_renovacion and (g["prox"] is None or s.proxima_renovacion < g["prox"][0]):
+                g["prox"] = (s.proxima_renovacion, s.nombre)
+        for g in grupos.values():
+            g["filas"].sort(key=lambda f: (f["dias"] is None, f["dias"] if f["dias"] is not None else 0, f["nombre"].lower()))
+        compartido = grupos.pop(None)
+        return {"por_plat": grupos, "compartido": compartido, "contador": contador, "tc": tc}
+
+    _api.update(costo_mensual=calcular_costos, salidas=salidas, revisar=_revisar, resumen=resumen)
 
     # --- pantallas ---------------------------------------------------------------------------------------
     @bp.route("/servicios")

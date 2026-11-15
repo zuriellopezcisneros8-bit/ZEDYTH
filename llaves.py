@@ -81,6 +81,12 @@ def costo_mes(proyecto_id=None):
     return _api["costo_mes"](proyecto_id)
 
 
+def estado_pool(proveedor):
+    """Resumen del pool de un proveedor (todas las plataformas y ambientes), para la pantalla de Servicios:
+    {total, usables, invalidas, vencidas, descanso, desactivadas}. Las revocadas no cuentan."""
+    return _api["estado_pool"](proveedor)
+
+
 def revisar():
     """Para el vigilante de app.py: avisa llaves por vencer, vencidas o con rotación programada pendiente."""
     try:
@@ -314,6 +320,26 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             q = q.where(UsoIA.proyecto_id == proyecto_id)
         return float(db.session.scalar(q) or 0.0)
 
+    def _estado_pool(proveedor):
+        asegurar()
+        ahora, hoy = datetime.utcnow(), date.today()
+        r = {"total": 0, "usables": 0, "invalidas": 0, "vencidas": 0, "descanso": 0, "desactivadas": 0}
+        listo = cifrado_listo()
+        for k in LlaveApi.query.filter(LlaveApi.proveedor == proveedor, LlaveApi.estado != "revocada").all():
+            r["total"] += 1
+            e = estado_visible(k, ahora, hoy)
+            if e == "activa":
+                r["usables"] += 1 if (listo and k.secreto) else 0
+            elif e == "invalida":
+                r["invalidas"] += 1
+            elif e == "vencida":
+                r["vencidas"] += 1
+            elif e == "en descanso":
+                r["descanso"] += 1
+            else:
+                r["desactivadas"] += 1
+        return r
+
     def _revisar():
         asegurar()
         ahora, hoy = datetime.utcnow(), date.today()
@@ -331,7 +357,8 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                     avisar("Llave", f"Toca rotar la llave: {nombre}", f"Programada cada {k.rotar_cada_dias} días.", "/llaves",
                            urgente=False, clave=f"llave-rotar-{k.id}-{base:%Y%m%d}")
 
-    _api.update(obtener=_obtener, todas=_disponibles, fallo=_fallo, uso=_uso, costo_mes=_costo_mes, revisar=_revisar)
+    _api.update(obtener=_obtener, todas=_disponibles, fallo=_fallo, uso=_uso, costo_mes=_costo_mes, revisar=_revisar,
+                estado_pool=_estado_pool)
 
     # --- pantallas ------------------------------------------------------------------------------------
     @bp.route("/llaves")

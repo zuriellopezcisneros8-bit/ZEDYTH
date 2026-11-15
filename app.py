@@ -28,6 +28,7 @@ import zedith
 import notificar
 import monitor
 import llaves
+import servicios
 import respaldos
 
 app = Flask(__name__)
@@ -988,7 +989,7 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos."))) and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios."))) and rol != "admin":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
             and request.endpoint not in ('logout', 'seguridad'):
@@ -1855,8 +1856,13 @@ def plataformas():
         p.ult_resp = ultimo_respaldo(p)
         p.fin = finanzas_plataforma(p)
     ing = sum(p.fin["ingreso_30d"] for p in filas)
+    try:
+        serv = servicios.resumen_plataformas([p.id for p in filas])   # estado y costo de servicios por plataforma
+    except Exception as e:
+        app.logger.warning("Plataformas: no se pudo leer Servicios: %s", e)
+        serv = None
     return render_template('plataformas.html', plataformas=filas, total=sum(p.gasto for p in filas), hoy=date.today(),
-                           ingresos=ing, ganancia=ing - sum(p.gasto for p in filas))
+                           ingresos=ing, ganancia=ing - sum(p.gasto for p in filas), serv=serv)
 
 
 @app.route('/plataformas/nueva', methods=['GET', 'POST'])
@@ -1875,7 +1881,7 @@ def plataforma_nueva():
     return render_template('plataforma_form.html')
 
 
-TABS_PLATAFORMA = ["resumen", "finanzas", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "inteligencia"]
+TABS_PLATAFORMA = ["resumen", "finanzas", "servicios", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "inteligencia"]
 
 
 def alertas_plataforma(p):
@@ -1915,12 +1921,19 @@ def plataforma_detalle(pid):
     if p.tipo != PLAT:
         return redirect(url_for('cliente_detalle', cid=p.cliente_id))
     tab = request.args.get('tab') if request.args.get('tab') in TABS_PLATAFORMA else "resumen"
+    try:
+        serv = servicios.resumen_plataformas([p.id])
+        serv_p, serv_tc = serv["por_plat"].get(p.id), serv["tc"]
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudo leer Servicios: %s", p.id, e)
+        serv_p, serv_tc = None, None
     venc = sorted(p.vencimientos, key=lambda v: v.fecha or date.max)
     notifs = (Notificacion.query.filter(db.or_(Notificacion.url.like(f"/proyectos/{p.id}/%"),
                                                 Notificacion.url.like(f"/plataformas/{p.id}%")))
               .order_by(Notificacion.id.desc()).limit(15).all())
     return render_template(
         'plataforma_detalle.html', p=p, hoy=date.today(), hoy_iso=date.today().isoformat(), tab=tab,
+        serv_p=serv_p, serv_tc=serv_tc, es_admin=(rol_actual() == "admin"),
         gasto=sum(float(k.monto_mensual or 0) for k in p.costos),
         subdominios=sorted(p.subdominios, key=lambda x: x.nombre),
         costos=sorted(p.costos, key=lambda k: k.proxima_fecha_pago or date.max),
@@ -2221,6 +2234,12 @@ def finanzas():
                 if x.proxima_fecha_pago and x.monto_periodo]
     salidas = [(k.proxima_fecha_pago, MESES.get(k.periodicidad, 1), k.monto_periodo or k.monto_mensual or 0)
                for k in CostoServicio.query.all() if k.proxima_fecha_pago]
+    compartido = None
+    try:
+        compartido = servicios.costo_mensual()                 # servicios fijos + IA + almacenamiento estimado (MXN)
+        salidas += servicios.salidas_proyeccion()              # renovaciones del catálogo de Servicios
+    except Exception as e:
+        app.logger.warning("Finanzas: no se pudieron leer los costos de Servicios: %s", e)
     ent, sal = proyectar(entradas, inicio), proyectar(salidas, inicio)
     proy = []
     for i in range(12):
@@ -2233,8 +2252,10 @@ def finanzas():
     stats = {"ingresos": dinero(ingresos), "costos": dinero(costos), "ganancia": dinero(ingresos - costos),
              "margen": f"{round(100 * (ingresos - costos) / ingresos)}%" if ingresos else "—",
              "vencido": dinero(vencido), "cobrado": dinero(cobrado)}
+    neta = dinero(ingresos - costos - compartido["total"]) if compartido else None
     return render_template('finanzas.html', stats=stats, filas=filas, plat_filas=plat_filas, proy=proy, maximo=maximo,
-                           totales={"ent": sum(ent), "sal": sum(sal)}, sin_fecha=sin_fecha)
+                           totales={"ent": sum(ent), "sal": sum(sal)}, sin_fecha=sin_fecha,
+                           compartido=compartido, neta=neta)
 
 
 
@@ -3193,6 +3214,7 @@ def _vigilante():
                     almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
                     monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
                     llaves.revisar()                         # llaves por vencer, vencidas o con rotación programada
+                    servicios.revisar()                      # renovaciones de servicios y verificación de sus URLs de estado
                     respaldos.revisar()                      # respaldo diario a R2, verificación y alertas
                     actualizar_cobranza()                    # Pendiente / Atrasado / Suspendido según la fecha de pago
         except Exception as e:
@@ -3381,6 +3403,7 @@ def push_revisar():
     almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
     monitor.volcar()
     llaves.revisar()
+    servicios.revisar()
     respaldos.revisar()
     actualizar_cobranza()
     return {"ok": True, "reintentados": reintentados}
@@ -3389,6 +3412,7 @@ import almacenamiento
 app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
 app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
 
 # ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las variables GEMINI_KEY_* de Render.
 zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]

@@ -28,6 +28,7 @@
 <nav class="mt-tabs" aria-label="Secciones de la plataforma">
     <button type="button" class="mt-tab {{ 'on' if tab == 'resumen' }}" data-tab="resumen">Resumen</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'finanzas' }}" data-tab="finanzas">Finanzas</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'servicios' }}" data-tab="servicios">Servicios{% if serv_p and serv_p.nivel in ('alerta', 'falla') %}<span class="mt-n">!</span>{% endif %}</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'infra' }}" data-tab="infra">Repositorio</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'almacenamiento' }}" data-tab="almacenamiento">Almacenamiento</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'monitor' }}" data-tab="monitor">Monitor</button>
@@ -99,6 +100,32 @@
         <div><button class="btn btn-primary" type="submit">Guardar</button></div>
     </form></details>
 
+</div>
+<div class="mt-panel {{ 'on' if tab == 'servicios' }}" data-panel="servicios">
+<div class="section-title">Estado y costo de los servicios de esta plataforma</div>
+{% if serv_p is none %}
+<div class="luxury-card" style="color:var(--text-muted);">No se pudo leer el módulo de Servicios en este momento.</div>
+{% else %}
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card"><h3 class="stat-label">Servicios del catálogo / mes</h3><div class="stat-value">{{ '${:,.0f}'.format(serv_p.mes) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">IA de este mes</h3><div class="stat-value">{{ '${:,.2f}'.format(serv_p.ia) }}</div></div>
+</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Servicio</th><th>Estado</th><th>Costo / mes</th><th>Renovación</th></tr></thead><tbody>
+    {% for f in serv_p.filas %}
+    <tr>
+        <td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.plan %} · {{ f.plan }}{% endif %}</div></td>
+        <td><span class="badge {{ 'badge-green' if f.nivel == 'ok' else 'badge-amber' if f.nivel == 'alerta' else 'badge-red' if f.nivel == 'falla' else '' }}">{{ {'ok': 'Bien', 'alerta': 'Atención', 'falla': 'Falla', 'sin': 'Sin conexión'}[f.nivel] }}</span>
+            <div style="color:var(--text-muted); font-size:12px; margin-top:4px;">{{ f.texto }}</div></td>
+        <td class="mono">{{ '${:,.0f}'.format(f.mes) }}</td>
+        <td class="mono">{% if f.fecha %}<span style="{{ 'color:#f87171;' if f.dias <= 7 }}">{{ f.fecha }}</span><div style="color:var(--text-muted); font-size:12px;">{{ 'vencido' if f.dias < 0 else 'hoy' if f.dias == 0 else 'en ' ~ f.dias ~ ' día(s)' }}</div>{% else %}—{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma no tiene servicios en el catálogo.{% if es_admin %} Agrégalos en <a href="/servicios" style="text-decoration:underline;">Servicios</a> eligiendo esta plataforma.{% endif %}</td></tr>
+    {% endfor %}
+</tbody></table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin-top:14px; line-height:1.6;">Montos en MXN. Los costos que ya capturaste en la pestaña Finanzas de esta plataforma no se repiten aquí: el catálogo es para lo que no está registrado allá.{% if es_admin %} <a href="/servicios" style="text-decoration:underline;">Administrar servicios</a>.{% endif %}</p>
+{% endif %}
 </div>
 <div class="mt-panel {{ 'on' if tab == 'infra' }}" data-panel="infra">
 <div class="section-title">Repositorio</div>

@@ -10,10 +10,25 @@
     <div class="luxury-card"><h3 class="stat-label">Gasto mensual en servicios</h3><div class="stat-value">{{ '${:,.0f}'.format(total) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Ingresos (últimos 30 días)</h3><div class="stat-value">{{ '${:,.0f}'.format(ingresos) }}</div></div>
     <div class="luxury-card"><h3 class="stat-label">Ganancia mensual</h3><div class="stat-value {{ 'pos' if ganancia > 0 else 'neg' if ganancia < 0 }}">{{ '${:,.0f}'.format(ganancia) }}</div></div>
+    {% if serv %}{% set c = serv.contador %}{% set co = serv.compartido %}
+    <div class="luxury-card"><h3 class="stat-label">Estado de servicios</h3>
+        <div class="stat-value" style="font-size:20px;">
+            <span style="color:#4ade80;">● {{ c.ok }}</span>
+            <span style="color:#f5b94c; margin-left:10px;">● {{ c.alerta }}</span>
+            <span style="color:#f87171; margin-left:10px;">● {{ c.falla }}</span>
+            <span style="color:var(--text-muted); margin-left:10px;">○ {{ c.sin }}</span>
+        </div>
+        <div class="mono" style="font-size:12px; color:var(--text-muted); margin-top:6px;">bien · atención · falla · sin conexión{% if (current_user.rol or '')|lower == 'admin' %} · <a href="/servicios" style="text-decoration:underline;">ver todos</a>{% endif %}</div>
+    </div>
+    <div class="luxury-card"><h3 class="stat-label">Servicios compartidos / mes</h3>
+        <div class="stat-value">{{ '${:,.0f}'.format(co.mes + co.ia) }}</div>
+        <div class="mono" style="font-size:12px; color:var(--text-muted); margin-top:6px;">{{ co.filas|length }} servicio(s) sin plataforma{% if co.ia %} · IA ${{ '{:,.0f}'.format(co.ia) }}{% endif %} (MXN)</div>
+    </div>
+    {% endif %}
 </div>
 <div class="luxury-card" style="padding:0; overflow:hidden;">
     <div class="table-wrap"><table class="table-luxury">
-        <thead><tr><th>Plataforma</th><th>Estado</th><th>Dominio</th><th>Ingreso / 30 d</th><th>Gasto / mes</th><th>Ganancia</th><th>Próx. vencimiento</th><th>Último respaldo</th><th>Almacenamiento</th></tr></thead>
+        <thead><tr><th>Plataforma</th><th>Estado</th><th>Dominio</th><th>Ingreso / 30 d</th><th>Gasto / mes</th><th>Ganancia</th><th>Próx. vencimiento</th><th>Último respaldo</th><th>Almacenamiento</th>{% if serv %}<th>Servicios</th>{% endif %}</tr></thead>
         <tbody>
         {% for p in plataformas %}
         <tr>
@@ -26,9 +41,19 @@
             <td class="mono">{% if p.prox_venc %}<span style="{{ 'color:#f87171;' if (p.prox_venc - hoy).days <= 30 }}">{{ p.prox_venc }}</span>{% else %}—{% endif %}</td>
             <td class="mono">{{ p.ult_resp or '—' }}</td>
             <td class="mono" style="font-size:12px; min-width:150px;">{% if p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo %}<span class="alm-lista" data-pid="{{ p.id }}" style="color:var(--text-muted);">…</span>{% else %}—{% endif %}</td>
+        {% if serv %}{% set g = serv.por_plat.get(p.id) %}
+        <td class="mono" style="font-size:12px; min-width:170px;">
+            {% if g and (g.filas or g.ia) %}
+            <a href="/plataformas/{{ p.id }}?tab=servicios" style="text-decoration:underline;">
+                <span style="color:{{ '#f87171' if g.nivel == 'falla' else '#f5b94c' if g.nivel == 'alerta' else '#4ade80' if g.nivel == 'ok' else 'var(--text-muted)' }};">●</span>
+                {{ g.filas|length }} servicio(s)</a>
+            <div>${{ '{:,.0f}'.format(g.mes) }}/mes{% if g.ia %} · IA ${{ '{:,.0f}'.format(g.ia) }}{% endif %}</div>
+            {% if g.prox %}<div style="color:{{ '#f87171' if (g.prox[0] - hoy).days <= 7 else 'var(--text-muted)' }};">renueva {{ g.prox[0] }}</div>{% endif %}
+            {% else %}—{% endif %}
+        </td>{% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="9" style="text-align:center; padding:48px; color:var(--text-muted);">Aún no hay plataformas. Crea la primera con «Nueva plataforma».</td></tr>
+        <tr><td colspan="{{ 10 if serv else 9 }}" style="text-align:center; padding:48px; color:var(--text-muted);">Aún no hay plataformas. Crea la primera con «Nueva plataforma».</td></tr>
         {% endfor %}
         </tbody></table></div>
 </div>
