@@ -116,6 +116,7 @@ class Usuario(UserMixin, db.Model):
     totp_secret = db.Column(db.String(200))               # secreto TOTP cifrado
     totp_activo = db.Column(db.Boolean, default=False)
     totp_ultimo = db.Column(db.Integer)                   # último periodo usado (evita reutilizar un código)
+    cargo = db.Column(db.String(80))                      # título que se muestra al entrar: "Chief Executive Officer", "Operador"...
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -572,7 +573,8 @@ def migrar_columnas():
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
-        "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER")],
+        "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER"),
+                    ("cargo", "VARCHAR(80)")],
         "auditoria": [("ip", "VARCHAR(64)")],
         "pago": [("creado", "TIMESTAMP"), ("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER"), ("motivo", "VARCHAR(120)")],
         "ingreso_plataforma": [("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER")],
@@ -792,6 +794,17 @@ def sembrar_usuario_admin():
         admin = Usuario(username=usuario, nombre="Administrador Principal")
         db.session.add(admin)
     admin.rol = "admin"
+    # Nombre y cargo que se muestran al entrar. ADMIN_NOMBRE / ADMIN_CARGO (Render) mandan en cada arranque;
+    # sin ellas se ponen valores por defecto solo si el campo está vacío, así lo que edites en /accesos se conserva.
+    nombre_env, cargo_env = (os.environ.get("ADMIN_NOMBRE") or "").strip(), (os.environ.get("ADMIN_CARGO") or "").strip()
+    if nombre_env:
+        admin.nombre = nombre_env[:100]
+    elif not admin.nombre or admin.nombre == "Administrador Principal":
+        admin.nombre = "Zuriel Zmarth"
+    if cargo_env:
+        admin.cargo = cargo_env[:80]
+    elif not (admin.cargo or "").strip():
+        admin.cargo = "Chief Executive Officer"
     if not admin.password_hash or not admin.check_password(clave):
         admin.set_password(clave)                    # también reemplaza cualquier contraseña anterior guardada
     db.session.commit()
@@ -900,7 +913,8 @@ def _secreto_usuario(u):
 # --- ROLES -----------------------------------------------------------------
 # admin: todo. operador: opera el día a día, pero no borra ni cambia precios. lectura: solo consulta (GET).
 ENDPOINTS_ADMIN = {'pago_anular', 'ingreso_plataforma_eliminar', 'subdominio_eliminar', 'plan_nuevo', 'plan_editar', 'plan_activo',
-                   'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular', 'auditoria', 'auditoria_exportar'}
+                   'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular', 'auditoria', 'auditoria_exportar',
+                   'accesos', 'acceso_nuevo', 'acceso_editar', 'acceso_clave', 'acceso_mfa_reset'}
 ENDPOINTS_SIN_MFA = {'seguridad', 'logout', 'static', 'service_worker', 'manifest_admin', 'manifest_publico', 'healthz', 'pwa_offline'}
 
 
@@ -922,6 +936,24 @@ def solo_admin(f):
             abort(403)
         return f(*a, **k)
     return interior
+
+
+ROLES = ("admin", "operador", "lectura")
+CARGO_POR_ROL = {"admin": "Administrador", "operador": "Operador", "lectura": "Consulta"}
+
+
+def cargo_de(u):
+    """Título que ve la persona al entrar: su cargo, o uno por defecto según su rol."""
+    return (u.cargo or "").strip() or CARGO_POR_ROL.get((u.rol or "").lower(), "Acceso restringido")
+
+
+def nombre_corto(u):
+    partes = (u.nombre or u.username or "").split()
+    return (partes[0] if partes else (u.username or "")).upper()
+
+
+def saludo_de(u):
+    return f"Bienvenido, {cargo_de(u)} {nombre_corto(u)}"
 
 
 def _next_seguro(destino):
@@ -1084,6 +1116,7 @@ def login():
         session.clear()                                  # evita fijación de sesión
         login_user(user)
         session.permanent = True
+        session["bienvenida"] = saludo_de(user)          # se muestra una vez en la primera página del panel
         registrar("login", "Usuario", user.id, "Inicio de sesión exitoso")
         db.session.commit()
         return redirect(siguiente or url_for('index'))
@@ -1137,6 +1170,115 @@ def seguridad():
         uri = f"otpauth://totp/ZEDYTH:{quote(current_user.username)}?secret={secreto_nuevo}&issuer=ZEDYTH&digits=6&period=30"
     return render_template('seguridad.html', activo=bool(current_user.totp_activo), secreto=secreto_nuevo, uri=uri,
                            mensaje=mensaje, error=error, obligatorio=REQUIERE_MFA)
+
+
+# --- ACCESOS AUTORIZADOS (solo admin): quién entra, con qué cargo y con qué rol ---------------------
+CLAVE_MIN = 12
+_RE_USUARIO = re.compile(r"^[A-Za-z0-9._-]{3,50}$")
+
+
+def _admin_env():
+    return (os.environ.get("ADMIN_USER") or "admin").strip()
+
+
+def _admins_activos_sin(uid):
+    return Usuario.query.filter(Usuario.rol == "admin", Usuario.activo.is_(True), Usuario.id != uid).count()
+
+
+@app.route('/accesos')
+def accesos():
+    usuarios = Usuario.query.order_by(Usuario.id).all()
+    return render_template('accesos.html', usuarios=usuarios, roles=ROLES, cargo_de=cargo_de, admin_env=_admin_env(),
+                           clave_min=CLAVE_MIN)
+
+
+@app.route('/accesos/nuevo', methods=['POST'])
+def acceso_nuevo():
+    username, nombre, cargo, rol = campo('username'), campo('nombre'), campo('cargo'), campo('rol') or "lectura"
+    clave = request.form.get('password') or ""
+    if not _RE_USUARIO.match(username):
+        raise DatoInvalido("El usuario debe tener de 3 a 50 caracteres: letras, números, punto, guion o guion bajo.")
+    if len(nombre) < 2 or len(nombre) > 100:
+        raise DatoInvalido("Escribe el nombre completo (2 a 100 caracteres).")
+    if len(cargo) > 80:
+        raise DatoInvalido("El cargo admite máximo 80 caracteres.")
+    if rol not in ROLES:
+        raise DatoInvalido("Rol no válido.")
+    if len(clave) < CLAVE_MIN:
+        raise DatoInvalido(f"La contraseña debe tener al menos {CLAVE_MIN} caracteres.")
+    if Usuario.query.filter(db.func.lower(Usuario.username) == username.lower()).first():
+        raise DatoInvalido("Ya existe un acceso con ese usuario.")
+    u = Usuario(username=username, nombre=nombre, cargo=cargo or None, rol=rol, activo=True)
+    u.set_password(clave)
+    db.session.add(u)
+    db.session.flush()
+    registrar("crear", "Usuario", u.id, f"{username} · {cargo_de(u)} · rol {rol}")
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.route('/accesos/<int:uid>/editar', methods=['POST'])
+def acceso_editar(uid):
+    u = db.get_or_404(Usuario, uid)
+    nombre, cargo, rol = campo('nombre'), campo('cargo'), campo('rol') or (u.rol or "lectura")
+    activo = request.form.get('activo') == "1"
+    if len(nombre) < 2 or len(nombre) > 100:
+        raise DatoInvalido("Escribe el nombre completo (2 a 100 caracteres).")
+    if len(cargo) > 80:
+        raise DatoInvalido("El cargo admite máximo 80 caracteres.")
+    if rol not in ROLES:
+        raise DatoInvalido("Rol no válido.")
+    if u.username == _admin_env() and (rol != "admin" or not activo):
+        raise DatoInvalido("Este es el administrador principal (ADMIN_USER): siempre es admin y siempre está activo.")
+    if u.id == current_user.id and (rol != u.rol or not activo):
+        raise DatoInvalido("No puedes quitarte a ti mismo el rol de administrador ni desactivarte.")
+    if u.rol == "admin" and (rol != "admin" or not activo) and _admins_activos_sin(u.id) == 0:
+        raise DatoInvalido("Debe quedar al menos un administrador activo.")
+    cambios = []
+    for etiqueta, antes, despues in (("nombre", u.nombre, nombre), ("cargo", u.cargo or "", cargo),
+                                     ("rol", u.rol, rol), ("activo", bool(u.activo), activo)):
+        if antes != despues:
+            cambios.append(f"{etiqueta}: {antes} → {despues}")
+    u.nombre, u.cargo, u.rol, u.activo = nombre, cargo or None, rol, activo
+    if cambios:
+        registrar("editar", "Usuario", u.id, f"{u.username} · " + "; ".join(cambios))
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.route('/accesos/<int:uid>/clave', methods=['POST'])
+def acceso_clave(uid):
+    u = db.get_or_404(Usuario, uid)
+    if u.username == _admin_env():
+        raise DatoInvalido("La contraseña del administrador principal se cambia con ADMIN_PASSWORD en Render.")
+    clave = request.form.get('password') or ""
+    if len(clave) < CLAVE_MIN:
+        raise DatoInvalido(f"La contraseña debe tener al menos {CLAVE_MIN} caracteres.")
+    u.set_password(clave)
+    registrar("clave_cambiada", "Usuario", u.id, f"{u.username}: contraseña restablecida por un administrador")
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.route('/accesos/<int:uid>/mfa-reset', methods=['POST'])
+def acceso_mfa_reset(uid):
+    """Quita la verificación en dos pasos de alguien que perdió su teléfono; al entrar podrá activarla de nuevo."""
+    u = db.get_or_404(Usuario, uid)
+    u.totp_secret, u.totp_activo, u.totp_ultimo = None, False, None
+    registrar("mfa_reset", "Usuario", u.id, f"{u.username}: TOTP restablecido por un administrador")
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.context_processor
+def inyectar_identidad():
+    """Quién está dentro: cargo y nombre para el encabezado, y el saludo de bienvenida (una sola vez)."""
+    if not current_user.is_authenticated:
+        return {}
+    datos = {"cargo_actual": cargo_de(current_user), "nombre_actual": current_user.nombre or current_user.username}
+    if request.endpoint not in RUTAS_PUBLICAS:               # en la web pública no se gasta: se muestra en el panel
+        datos["saludo"] = session.pop("bienvenida", None)
+    return datos
 
 
 # --- RUTAS PRINCIPALES -----------------------------------------------------

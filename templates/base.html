@@ -249,6 +249,9 @@
             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/respaldos" class="nav-item {% if request.path.startswith('/respaldos') %}active{% endif %}">
                 <i class="ph ph-database"></i> Respaldos
             </a>{% endif %}
+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/accesos" class="nav-item {% if request.path.startswith('/accesos') %}active{% endif %}">
+                <i class="ph ph-identification-badge"></i> Accesos
+            </a>{% endif %}
             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
                 <i class="ph ph-database"></i> Almacenamiento
             </a>
@@ -264,10 +267,24 @@
             </div>
             <button type="button" class="install-btn" id="installApp" title="Instalar como aplicación" aria-label="Instalar como aplicación" hidden><i class="ph ph-download-simple"></i></button>
             <a href="/notificaciones" class="bell" title="Alertas y avisos"><i class="ph ph-bell"></i>{% if n_avisos %}<span class="bell-n">{{ n_avisos }}</span>{% endif %}</a>
-            <span class="role-badge">Control Supremo</span>
-            <div class="avatar"><i class="ph ph-user"></i></div>
+            <span class="role-badge">{{ cargo_actual or 'Acceso' }}</span>
+            <div class="avatar" title="{{ nombre_actual }} · {{ cargo_actual }}" aria-label="{{ nombre_actual }}, {{ cargo_actual }}"><i class="ph ph-user"></i></div>
+            <a href="/logout" class="bell" title="Cerrar sesión" aria-label="Cerrar sesión"><i class="ph ph-sign-out"></i></a>
         </div>
     </header>
+
+    {% if saludo %}
+    <div id="saludo" role="status" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;max-width:calc(100vw - 32px);padding:14px 22px;border-radius:12px;background:#14110b;border:1px solid rgba(200,169,106,.55);color:#f3ead7;font-size:15px;line-height:1.4;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.45);cursor:pointer;transition:opacity .6s ease">{{ saludo }}</div>
+    <script>
+        (function () {
+            var el = document.getElementById('saludo');
+            if (!el) return;
+            function quitar() { el.style.opacity = '0'; setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 650); }
+            el.addEventListener('click', quitar);
+            setTimeout(quitar, 6000);
+        })();
+    </script>
+    {% endif %}
 
     <main class="content-area">
         {% block content %}{% endblock %}

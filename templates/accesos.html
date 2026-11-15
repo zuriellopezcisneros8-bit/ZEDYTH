@@ -1,0 +1,117 @@
+<!-- templates/accesos.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Accesos autorizados</h1>
+    <p>Quién puede entrar al panel, con qué cargo y con qué permisos. Cada persona ve su cargo en el encabezado y recibe su bienvenida al iniciar sesión.</p>
+</section>
+
+<datalist id="cargos">
+    <option value="Chief Executive Officer">
+    <option value="Chief Technology Officer">
+    <option value="Chief Financial Officer">
+    <option value="Chief Operating Officer">
+    <option value="Chief Information Security Officer">
+    <option value="Chief Marketing Officer">
+    <option value="Administrador">
+    <option value="Operador">
+    <option value="Analista">
+    <option value="Soporte">
+    <option value="Auditor">
+</datalist>
+
+<div class="luxury-card" style="margin-bottom: 24px;">
+    <h3 class="stat-label">Nuevo acceso</h3>
+    <form method="post" action="/accesos/nuevo" autocomplete="off">
+        <div class="grid-2">
+            <label class="lbl">Nombre completo
+                <input class="field" type="text" name="nombre" maxlength="100" required>
+            </label>
+            <label class="lbl">Cargo (se muestra al entrar)
+                <input class="field" type="text" name="cargo" list="cargos" maxlength="80" placeholder="Chief Technology Officer">
+            </label>
+            <label class="lbl">Usuario
+                <input class="field" type="text" name="username" maxlength="50" pattern="[A-Za-z0-9._\-]{3,50}" required autocomplete="off">
+            </label>
+            <label class="lbl">Contraseña inicial (mínimo {{ clave_min }} caracteres)
+                <input class="field" type="password" name="password" minlength="{{ clave_min }}" required autocomplete="new-password">
+            </label>
+            <label class="lbl">Permisos
+                <select class="field" name="rol">
+                    <option value="lectura">Lectura: solo consulta</option>
+                    <option value="operador">Operador: opera el día a día, sin borrar ni cambiar precios</option>
+                    <option value="admin">Administrador: todo</option>
+                </select>
+            </label>
+        </div>
+        <div style="margin-top: 16px;"><button class="btn btn-primary" type="submit">Crear acceso</button></div>
+    </form>
+</div>
+
+<div class="luxury-card" style="padding: 0; overflow: hidden;">
+    <div class="table-wrap">
+        <table class="table-luxury">
+            <thead>
+                <tr><th>Persona</th><th>Cargo</th><th>Permisos</th><th>Verificación en 2 pasos</th><th>Estado</th><th style="text-align:right;">Gestionar</th></tr>
+            </thead>
+            <tbody>
+                {% for u in usuarios %}
+                {% set principal = (u.username == admin_env) %}
+                {% set yo = (u.id == current_user.id) %}
+                <tr>
+                    <td><div style="font-weight:500;">{{ u.nombre }}{% if yo %} <span class="mono">(tú)</span>{% endif %}</div><div class="mono">{{ u.username }}</div></td>
+                    <td>{{ cargo_de(u) }}</td>
+                    <td><span class="badge {{ 'badge-hi' if u.rol == 'admin' }}">{{ {'admin': 'Administrador', 'operador': 'Operador', 'lectura': 'Lectura'}.get(u.rol, u.rol) }}</span></td>
+                    <td><span class="badge {{ 'badge-green' if u.totp_activo else 'badge-amber' }}">{{ 'Activa' if u.totp_activo else 'Sin activar' }}</span></td>
+                    <td><span class="badge {{ 'badge-green' if u.activo else 'badge-red' }}">{{ 'Activo' if u.activo else 'Desactivado' }}</span></td>
+                    <td style="text-align:right;">
+                        <details>
+                            <summary class="btn btn-sm" style="display:inline-block; cursor:pointer;">Editar</summary>
+                            <div style="text-align:left; padding: 16px 0; min-width: 280px;">
+                                <form method="post" action="/accesos/{{ u.id }}/editar" class="stack">
+                                    <label class="lbl">Nombre
+                                        <input class="field" type="text" name="nombre" value="{{ u.nombre }}" maxlength="100" required>
+                                    </label>
+                                    <label class="lbl">Cargo
+                                        <input class="field" type="text" name="cargo" list="cargos" value="{{ u.cargo or '' }}" maxlength="80" placeholder="{{ cargo_de(u) }}">
+                                    </label>
+                                    <label class="lbl">Permisos
+                                        <select class="field" name="rol" {{ 'disabled' if principal or yo }}>
+                                            {% for r in roles %}<option value="{{ r }}" {{ 'selected' if u.rol == r }}>{{ {'admin': 'Administrador', 'operador': 'Operador', 'lectura': 'Lectura'}[r] }}</option>{% endfor %}
+                                        </select>
+                                    </label>
+                                    {% if principal or yo %}<input type="hidden" name="rol" value="{{ u.rol }}">{% endif %}
+                                    <label class="lbl" style="display:flex; gap:8px; align-items:center;">
+                                        <input type="checkbox" name="activo" value="1" {{ 'checked' if u.activo }} {{ 'disabled' if principal or yo }}> Acceso activo
+                                    </label>
+                                    {% if principal or yo %}{% if u.activo %}<input type="hidden" name="activo" value="1">{% endif %}{% endif %}
+                                    <button class="btn btn-primary btn-sm" type="submit">Guardar</button>
+                                </form>
+
+                                {% if not principal %}
+                                <form method="post" action="/accesos/{{ u.id }}/clave" class="stack" style="margin-top: 16px;" autocomplete="off">
+                                    <label class="lbl">Nueva contraseña
+                                        <input class="field" type="password" name="password" minlength="{{ clave_min }}" required autocomplete="new-password">
+                                    </label>
+                                    <button class="btn btn-sm" type="submit">Restablecer contraseña</button>
+                                </form>
+                                {% else %}
+                                <p class="mono" style="margin-top: 16px;">La contraseña de este acceso se cambia con ADMIN_PASSWORD en Render.</p>
+                                {% endif %}
+
+                                {% if u.totp_activo and not yo %}
+                                <form method="post" action="/accesos/{{ u.id }}/mfa-reset" style="margin-top: 12px;" onsubmit="return confirm('¿Quitar la verificación en 2 pasos de {{ u.nombre|e }}? Podrá activarla de nuevo al entrar.');">
+                                    <button class="btn btn-sm" type="submit">Restablecer verificación en 2 pasos</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </details>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
