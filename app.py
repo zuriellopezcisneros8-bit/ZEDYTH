@@ -7,11 +7,17 @@ import calendar
 import re
 import threading
 import time
+import hmac
+import hashlib
+import struct
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
-from flask import Flask, render_template, request, redirect, url_for, Response
+from flask import Flask, render_template, request, redirect, url_for, Response, session, abort, has_request_context
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import event, inspect as sa_inspect
+from sqlalchemy.exc import IntegrityError
+from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import zedith
@@ -31,6 +37,21 @@ def _clave_secreta():
 
 
 app.config['SECRET_KEY'] = _clave_secreta()
+
+# Cookies de sesión: solo por HTTPS en producción, no legibles por JavaScript y no enviadas desde otros sitios.
+_COOKIES_SEGURAS = EN_RENDER or os.environ.get("COOKIES_SEGURAS") == "1"
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=_COOKIES_SEGURAS,
+    REMEMBER_COOKIE_HTTPONLY=True, REMEMBER_COOKIE_SAMESITE="Lax", REMEMBER_COOKIE_SECURE=_COOKIES_SEGURAS,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    WTF_CSRF_TIME_LIMIT=None,            # el token vale mientras dure la sesión
+)
+
+# IP real del visitante: solo se confía en los saltos de proxy que tú declaras (PROXY_SALTOS).
+# Render solo = 1. Con Cloudflare delante de Render = 2. En local = 0 (no se confía en ninguna cabecera).
+_SALTOS_PROXY = int(os.environ.get("PROXY_SALTOS", "1" if EN_RENDER else "0"))
+if _SALTOS_PROXY > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_SALTOS_PROXY, x_proto=_SALTOS_PROXY)
 
 
 def _url_base_de_datos():
@@ -63,11 +84,13 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+csrf = CSRFProtect(app)
 
 # Configuración de Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+login_manager.session_protection = 'strong'
 
 # Dinero como número (pesos). En PostgreSQL se podrá pasar a Decimal sin tocar el resto.
 Dinero = db.Numeric(10, 2, asdecimal=False)
@@ -79,8 +102,11 @@ class Usuario(UserMixin, db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
-    rol = db.Column(db.String(20), default="admin")
+    rol = db.Column(db.String(20), default="admin")       # admin | operador | lectura
     activo = db.Column(db.Boolean, default=True)
+    totp_secret = db.Column(db.String(200))               # secreto TOTP cifrado
+    totp_activo = db.Column(db.Boolean, default=False)
+    totp_ultimo = db.Column(db.Integer)                   # último periodo usado (evita reutilizar un código)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -211,6 +237,14 @@ class Auditoria(db.Model):
     entidad_id = db.Column(db.Integer)
     detalle = db.Column(db.String(300))
     fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    ip = db.Column(db.String(64))
+
+
+class ContadorLimite(db.Model):
+    """Contadores de límites compartidos entre todos los workers y que sobreviven a los despliegues."""
+    clave = db.Column(db.String(200), primary_key=True)
+    inicio = db.Column(db.DateTime, nullable=False)
+    n = db.Column(db.Integer, nullable=False, default=0)
 
 
 class Vencimiento(db.Model):
@@ -392,20 +426,75 @@ class IntelNota(db.Model):
     fecha = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class DatoInvalido(ValueError):
+    pass
+
+
+# En estos campos un texto largo se RECHAZA (recortar un RFC o una razón social los corrompe en silencio).
+CAMPOS_ESTRICTOS = {("cliente", "rfc"), ("cliente", "razon_social"), ("cliente", "nombre_comercial"),
+                    ("cliente", "direccion_fiscal"), ("cliente", "contacto"), ("cliente", "telefono")}
+
+
 @event.listens_for(db.Model, "before_insert", propagate=True)
 @event.listens_for(db.Model, "before_update", propagate=True)
 def _ajustar_longitudes(mapper, connection, target):
-    """PostgreSQL rechaza textos más largos que su VARCHAR(n); aquí se recortan para no perder el registro."""
+    """PostgreSQL rechaza textos más largos que su VARCHAR(n). Campos fiscales: se rechazan.
+    Texto libre (bitácora, notas, avisos): se recorta para no perder el registro."""
     for col in mapper.columns:
         largo = getattr(col.type, "length", None)
         valor = getattr(target, col.key, None)
         if largo and isinstance(valor, str) and len(valor) > largo:
+            if (mapper.local_table.name, col.key) in CAMPOS_ESTRICTOS:
+                raise DatoInvalido(f"«{col.key}» admite máximo {largo} caracteres (tiene {len(valor)}). Corrígelo y vuelve a guardar.")
             setattr(target, col.key, valor[:largo])
 
 
-def registrar(accion, entidad, entidad_id=None, detalle=""):
-    usuario_actual = current_user.username if current_user.is_authenticated else "sistema"
-    db.session.add(Auditoria(usuario=usuario_actual, accion=accion, entidad=entidad, entidad_id=entidad_id, detalle=detalle))
+def registrar(accion, entidad, entidad_id=None, detalle="", usuario=None):
+    en_peticion = has_request_context()
+    if usuario is None:
+        usuario = current_user.username if en_peticion and current_user.is_authenticated else "sistema"
+    db.session.add(Auditoria(usuario=usuario[:80], accion=accion, entidad=entidad, entidad_id=entidad_id,
+                             detalle=detalle, ip=_ip_cliente() if en_peticion else None))
+
+
+def limitar(clave, maximo, segundos, sumar=True):
+    """Límite por ventana fija guardado en la base (vale con varios workers y tras cada despliegue).
+    True = permitido. sumar=False solo consulta. Si la base falla devuelve False (falla cerrado):
+    estos límites protegen dinero y cuentas."""
+    clave = clave[:200]
+    for _ in range(2):
+        try:
+            ahora = datetime.utcnow()
+            f = db.session.execute(db.select(ContadorLimite).where(ContadorLimite.clave == clave).with_for_update()).scalar_one_or_none()
+            if f is None:
+                if sumar:
+                    db.session.add(ContadorLimite(clave=clave, inicio=ahora, n=1))
+                db.session.commit()
+                return True
+            if (ahora - f.inicio).total_seconds() >= segundos:
+                f.inicio, f.n = ahora, 0
+            if f.n >= maximo:
+                db.session.commit()
+                return False
+            if sumar:
+                f.n += 1
+            db.session.commit()
+            return True
+        except IntegrityError:
+            db.session.rollback()          # otro worker creó la fila al mismo tiempo: se reintenta una vez
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error("Límite %s: %s", clave, e)
+            return False
+    return False
+
+
+def reiniciar_limite(clave):
+    try:
+        ContadorLimite.query.filter_by(clave=clave[:200]).delete()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def dinero(v):
@@ -458,6 +547,8 @@ def migrar_columnas():
         "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
         "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
                            ("ultimo_pago", "DATE")],
+        "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER")],
+        "auditoria": [("ip", "VARCHAR(64)")],
     }
     insp = sa_inspect(db.engine)
     for tabla, cols in nuevas.items():
@@ -467,9 +558,19 @@ def migrar_columnas():
         for nombre, tipo in cols:
             if nombre not in existentes:
                 if pg:
-                    tipo = tipo.replace("DEFAULT 1", "DEFAULT TRUE")
+                    tipo = tipo.replace("DEFAULT 1", "DEFAULT TRUE").replace("BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT FALSE")
                 db.session.execute(db.text(f'ALTER TABLE "{tabla}" ADD COLUMN {nombre} {tipo}'))
     db.session.commit()
+    # Notificacion.clave debe ser única (dos workers podían crear el mismo aviso). Primero se quitan duplicados.
+    try:
+        if insp.has_table("notificacion"):
+            db.session.execute(db.text("DELETE FROM notificacion WHERE clave IS NOT NULL AND id NOT IN "
+                                       "(SELECT MIN(id) FROM notificacion WHERE clave IS NOT NULL GROUP BY clave)"))
+            db.session.execute(db.text("CREATE UNIQUE INDEX IF NOT EXISTS ux_notificacion_clave ON notificacion (clave)"))
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning("Índice único de Notificacion.clave: %s", e)
 
 
 # (nombre, precio mensual MXN, a_medida, descripción, incluye separado por |, destacado, categoría, BD incluida, orden)
@@ -643,6 +744,7 @@ def sembrar_usuario_admin():
     if not admin:
         admin = Usuario(username=usuario, nombre="Administrador Principal")
         db.session.add(admin)
+    admin.rol = "admin"
     if not admin.password_hash or not admin.check_password(clave):
         admin.set_password(clave)                    # también reemplaza cualquier contraseña anterior guardada
     db.session.commit()
@@ -707,42 +809,236 @@ def respaldo_automatico_db():
     if not os.path.exists(backup_file) and os.path.exists(db_path):
         shutil.copy2(db_path, backup_file)
 
+# --- TOTP (MFA) ------------------------------------------------------------
+REQUIERE_MFA = os.environ.get("REQUIERE_MFA") == "1"     # 1 = nadie usa el panel sin activar TOTP
+
+
+def _fernet():
+    from cryptography.fernet import Fernet
+    k = (os.environ.get("TOTP_KEY") or "").strip()
+    if not k:
+        k = base64.urlsafe_b64encode(hashlib.sha256(("totp:" + app.config['SECRET_KEY']).encode()).digest()).decode()
+    return Fernet(k)
+
+
+def _totp_codigo(secreto_b32, paso):
+    clave = base64.b32decode(secreto_b32 + "=" * (-len(secreto_b32) % 8), casefold=True)
+    h = hmac.new(clave, struct.pack(">Q", paso), hashlib.sha1).digest()
+    o = h[-1] & 0x0F
+    return f"{(struct.unpack('>I', h[o:o + 4])[0] & 0x7FFFFFFF) % 1000000:06d}"
+
+
+def totp_verificar(secreto, codigo, ultimo=0, ahora=None):
+    """Devuelve el periodo aceptado o None. Tolera ±30 s de desfase y no deja reutilizar un código."""
+    codigo = re.sub(r"\s", "", codigo or "")
+    if not re.fullmatch(r"\d{6}", codigo):
+        return None
+    actual = int((time.time() if ahora is None else ahora) // 30)
+    for paso in (actual - 1, actual, actual + 1):
+        if paso > (ultimo or 0) and hmac.compare_digest(_totp_codigo(secreto, paso), codigo):
+            return paso
+    return None
+
+
+def _secreto_usuario(u):
+    try:
+        return _fernet().decrypt(u.totp_secret.encode()).decode()
+    except Exception:
+        return None
+
+
+# --- ROLES -----------------------------------------------------------------
+# admin: todo. operador: opera el día a día, pero no borra ni cambia precios. lectura: solo consulta (GET).
+ENDPOINTS_ADMIN = {'ingreso_plataforma_eliminar', 'subdominio_eliminar', 'plan_nuevo', 'plan_editar', 'plan_activo',
+                   'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular'}
+ENDPOINTS_SIN_MFA = {'seguridad', 'logout', 'static', 'service_worker', 'manifest_admin', 'manifest_publico', 'healthz', 'pwa_offline'}
+
+
+def rol_actual():
+    return (current_user.rol or "").lower() if current_user.is_authenticated else ""
+
+
+def es_admin():
+    return rol_actual() == "admin"
+
+
+def solo_admin(f):
+    """Decorador para rutas nuevas: solo rol admin."""
+    from functools import wraps
+
+    @wraps(f)
+    def interior(*a, **k):
+        if not es_admin():
+            abort(403)
+        return f(*a, **k)
+    return interior
+
+
+def _next_seguro(destino):
+    """Acepta solo rutas internas ("/algo"); rechaza "//host", "/\\host" y URLs completas (redirección abierta)."""
+    d = destino or ""
+    if d.startswith("/") and not d.startswith("//") and "\\" not in d and not re.search(r"[\r\n]", d):
+        return d
+    return None
+
+
 @app.before_request
 def inicializacion_y_seguridad():
     # 1. Respaldo automático diario
     if not hasattr(app, 'respaldo_hoy') or app.respaldo_hoy != date.today():
         respaldo_automatico_db()
         app.respaldo_hoy = date.today()
-        
+
     iniciar_vigilante()
     monitor.iniciar()          # monitor de disponibilidad HTTP(S): carga los sitios y arranca su hilo (una sola vez)
 
     # 2. Proteger todo el panel, excepto el login y los estáticos
-    if not current_user.is_authenticated and request.endpoint not in RUTAS_PUBLICAS:
-        return redirect(url_for('login', next=request.url))
+    if not current_user.is_authenticated:
+        if request.endpoint not in RUTAS_PUBLICAS:
+            destino = request.full_path if request.query_string else request.path
+            return redirect(url_for('login', next=destino))
+        return None
+
+    # 3. Cuenta desactivada = sesión cerrada, aunque ya hubiera iniciado
+    if not current_user.activo:
+        logout_user()
+        return redirect(url_for('login'))
+
+    # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
+    rol = rol_actual()
+    if request.endpoint in ENDPOINTS_ADMIN and rol != "admin":
+        abort(403)
+    if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
+            and request.endpoint not in ('logout', 'seguridad'):
+        abort(403)
+
+    # 5. MFA obligatorio (si REQUIERE_MFA=1)
+    if REQUIERE_MFA and not current_user.totp_activo and request.endpoint not in ENDPOINTS_SIN_MFA:
+        return redirect(url_for('seguridad'))
+    return None
+
+
+# --- CSRF, CABECERAS Y CACHÉ ------------------------------------------------
+_RE_FORM_POST = re.compile(r'<form\b[^>]*\bmethod\s*=\s*["\']?post["\']?[^>]*>', re.I)
+_JS_CSRF = ('<meta name="csrf-token" content="%s"><script>(function(){var m=document.querySelector(\'meta[name="csrf-token"]\');'
+            'if(!m||!window.fetch)return;var t=m.content,f=window.fetch;window.fetch=function(u,o){o=o||{};'
+            'var me=(o.method||(u&&u.method)||"GET").toUpperCase();if(me!=="GET"&&me!=="HEAD"){var s=typeof u==="string"?u:(u&&u.url)||"";'
+            'if(s.charAt(0)==="/"&&s.charAt(1)!=="/"||s.indexOf(location.origin)===0){o.headers=new Headers(o.headers||(u&&u.headers)||{});'
+            'o.headers.set("X-CSRFToken",t);}}return f.call(this,u,o);};})();</script>')
+
+
+def _inyectar_csrf(resp):
+    """Pone el token CSRF en cada formulario POST del panel y en los fetch() de la misma web, sin editar las plantillas."""
+    if resp.mimetype != 'text/html' or resp.direct_passthrough or resp.status_code >= 400:
+        return resp
+    if not (current_user.is_authenticated or request.endpoint == 'login'):
+        return resp
+    token = generate_csrf()
+    html = resp.get_data(as_text=True)
+    campo_token = f'<input type="hidden" name="csrf_token" value="{token}">'
+
+    def _form(m):
+        etiqueta = m.group(0)
+        if re.search(r'\baction\s*=\s*["\']?(https?:)?//', etiqueta, re.I):   # nunca se manda el token a otro sitio
+            return etiqueta
+        return etiqueta + campo_token
+    html = _RE_FORM_POST.sub(_form, html)
+    html = html.replace("</head>", (_JS_CSRF % token) + "</head>", 1)
+    resp.set_data(html)
+    return resp
+
+
+CSP = ("default-src 'self'; "
+       "script-src 'self' 'unsafe-inline' https://unpkg.com https://www.googletagmanager.com; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
+       "font-src 'self' data: https://fonts.gstatic.com https://unpkg.com; "
+       "img-src 'self' data: blob: https:; "
+       "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; "
+       "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+CSP_ENFORZAR = os.environ.get("CSP_MODO") == "enforce"      # por defecto solo reporta (consola del navegador)
+
+
+@app.after_request
+def cabeceras_seguridad(resp):
+    try:
+        resp = _inyectar_csrf(resp)
+    except Exception as e:
+        app.logger.error("Inyección CSRF: %s", e)
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
+    h.setdefault("Content-Security-Policy" if CSP_ENFORZAR else "Content-Security-Policy-Report-Only", CSP)
+    if request.is_secure:
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.endpoint not in ('static', 'service_worker', 'manifest_publico', 'manifest_admin', 'healthz') \
+            and (current_user.is_authenticated or request.endpoint == 'login'):
+        h["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.errorhandler(CSRFError)
+def csrf_fallo(e):
+    app.logger.warning("CSRF rechazado en %s desde %s: %s", request.path, _ip_cliente(), e.description)
+    if request.path.startswith('/api/') or request.is_json:
+        return {"ok": False, "error": "csrf"}, 400
+    return "La página caducó o la solicitud no es válida. Recarga la página e inténtalo de nuevo.", 400
+
+
+@app.errorhandler(DatoInvalido)
+def dato_invalido(e):
+    db.session.rollback()
+    return f"Dato no válido: {e}", 400
 
 
 # --- RUTAS DE AUTENTICACIÓN ------------------------------------------------
+LOGIN_MAX_PAR = int(os.environ.get("LOGIN_MAX_PAR", "5"))      # fallos por usuario+IP
+LOGIN_MAX_IP = int(os.environ.get("LOGIN_MAX_IP", "20"))       # fallos por IP
+LOGIN_VENTANA = 15 * 60                                        # segundos
+_HASH_FALSO = generate_password_hash("sin-usuario")            # iguala el tiempo de respuesta si el usuario no existe
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    siguiente = _next_seguro(request.args.get('next') or request.form.get('next'))
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        user = Usuario.query.filter_by(username=username).first()
-        
-        if user and user.check_password(password):
-            if not user.activo:
-                return "Cuenta inactiva. Contacta soporte.", 403
-            
-            login_user(user)
-            registrar("login", "Usuario", user.id, "Inicio de sesión exitoso")
+        username = (request.form.get('username') or '').strip()[:50]
+        password = request.form.get('password') or ''
+        codigo = request.form.get('codigo') or ''
+        ip = _ip_cliente()
+        k_par, k_ip = f"login:par:{ip}:{username.lower()}", f"login:ip:{ip}"
+        if not (limitar(k_par, LOGIN_MAX_PAR, LOGIN_VENTANA, sumar=False) and limitar(k_ip, LOGIN_MAX_IP, LOGIN_VENTANA, sumar=False)):
+            registrar("login_bloqueado", "Usuario", None, "Demasiados intentos fallidos", usuario=f"(bloqueado) {username}")
             db.session.commit()
-            return redirect(request.args.get('next') or url_for('index'))
-            
-        return "Credenciales inválidas. Intenta nuevamente.", 401
-    
-    return render_template('login.html')
+            return render_template('login.html', error="Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.", next=siguiente), 429
+
+        user = Usuario.query.filter_by(username=username).first()
+        ok = user.check_password(password) if user else (check_password_hash(_HASH_FALSO, password) and False)
+        ok = bool(ok and user.activo)
+        if ok and user.totp_activo:
+            secreto = _secreto_usuario(user)
+            paso = totp_verificar(secreto, codigo, user.totp_ultimo) if secreto else None
+            if paso is None:
+                ok = False
+            else:
+                user.totp_ultimo = paso
+        if not ok:
+            limitar(k_par, LOGIN_MAX_PAR, LOGIN_VENTANA)
+            limitar(k_ip, LOGIN_MAX_IP, LOGIN_VENTANA)
+            registrar("login_fallido", "Usuario", user.id if user else None, "Credenciales o código inválidos", usuario=f"(fallido) {username}")
+            db.session.commit()
+            return render_template('login.html', error="Credenciales inválidas.", next=siguiente), 401
+
+        reiniciar_limite(k_par)
+        session.clear()                                  # evita fijación de sesión
+        login_user(user)
+        session.permanent = True
+        registrar("login", "Usuario", user.id, "Inicio de sesión exitoso")
+        db.session.commit()
+        return redirect(siguiente or url_for('index'))
+    return render_template('login.html', error=None, next=siguiente)
+
 
 @app.route('/logout')
 @login_required
@@ -750,7 +1046,47 @@ def logout():
     registrar("logout", "Usuario", current_user.id, "Cierre de sesión")
     db.session.commit()
     logout_user()
+    session.clear()
     return redirect(url_for('login'))
+
+
+@app.route('/cuenta/seguridad', methods=['GET', 'POST'])
+@login_required
+def seguridad():
+    """Activar o desactivar la verificación en dos pasos (TOTP) de la cuenta actual."""
+    mensaje = error = None
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+        codigo = request.form.get('codigo') or ''
+        if accion == 'activar':
+            secreto = session.get('totp_pendiente')
+            paso = totp_verificar(secreto, codigo) if secreto else None
+            if paso is None:
+                error = "Código incorrecto. Revisa la hora de tu teléfono e inténtalo de nuevo."
+            else:
+                current_user.totp_secret = _fernet().encrypt(secreto.encode()).decode()
+                current_user.totp_activo, current_user.totp_ultimo = True, paso
+                session.pop('totp_pendiente', None)
+                registrar("mfa_activar", "Usuario", current_user.id, "TOTP activado")
+                db.session.commit()
+                mensaje = "Verificación en dos pasos activada."
+        elif accion == 'desactivar':
+            secreto = _secreto_usuario(current_user) if current_user.totp_activo else None
+            if not current_user.check_password(request.form.get('password') or '') or not secreto \
+                    or totp_verificar(secreto, codigo, current_user.totp_ultimo) is None:
+                error = "Contraseña o código incorrectos."
+            else:
+                current_user.totp_secret, current_user.totp_activo, current_user.totp_ultimo = None, False, None
+                registrar("mfa_desactivar", "Usuario", current_user.id, "TOTP desactivado")
+                db.session.commit()
+                mensaje = "Verificación en dos pasos desactivada."
+    uri = secreto_nuevo = None
+    if not current_user.totp_activo:
+        secreto_nuevo = session.get('totp_pendiente') or base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+        session['totp_pendiente'] = secreto_nuevo
+        uri = f"otpauth://totp/ZEDYTH:{quote(current_user.username)}?secret={secreto_nuevo}&issuer=ZEDYTH&digits=6&period=30"
+    return render_template('seguridad.html', activo=bool(current_user.totp_activo), secreto=secreto_nuevo, uri=uri,
+                           mensaje=mensaje, error=error, obligatorio=REQUIERE_MFA)
 
 
 # --- RUTAS PRINCIPALES -----------------------------------------------------
@@ -1240,8 +1576,8 @@ def plataforma_detalle(pid):
         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
         cumplidos=sum(1 for c in p.checks if c.cumplido),
         alertas=alertas_plataforma(p), notifs=notifs,
-        intel_p=Inteligencia.query.filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
-        intel_libres=Inteligencia.query.filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
+        intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
+        intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
         intel_estados=INTEL_ESTADOS)
 
 
@@ -1352,7 +1688,12 @@ def alertas_seguridad():
         elif (hoy - ult).days > DIAS_RESPALDO:
             alertas.append({"proyecto": p, "tipo": "Respaldo", "detalle": f"Último respaldo hace {(hoy - ult).days} días",
                             "fecha": ult, "dias": -(hoy - ult).days})
-    alertas.sort(key=lambda a: (a["tipo"] != "Vencimiento", a["dias"]))
+    faltan = [k for k, v in LEGAL.items() if "[COMPLETAR" in str(v)]
+    if faltan:
+        alertas.append({"proyecto": None, "tipo": "Legal", "fecha": None, "dias": -10000,
+                        "detalle": "El aviso de privacidad público muestra datos sin completar (" + ", ".join(faltan)
+                                   + "). Define LEGAL_RAZON, LEGAL_DOMICILIO y LEGAL_JURISDICCION."})
+    alertas.sort(key=lambda a: (a["tipo"] not in ("Vencimiento", "Legal"), a["dias"]))
     return alertas
 
 
@@ -1593,11 +1934,24 @@ INTEL_RELACIONES = {"Relacionado con": "Relacionado con", "Titular de": "Propied
                     "Usa": "Usado por"}
 
 
+def intel_visibles(q):
+    """Los registros confidenciales solo los ve el rol admin."""
+    return q if es_admin() else q.filter(Inteligencia.confidencial.isnot(True))
+
+
+def _intel_o_404(iid):
+    r = _intel_o_404(iid)
+    if r.confidencial and not es_admin():
+        abort(404)
+    return r
+
+
 def intel_vinculos(r):
     """Todos los vínculos del registro, leídos desde su punto de vista."""
     out = [{"id": v.id, "otro": v.destino, "etiqueta": v.relacion, "nota": v.nota} for v in r.vinculos_salida]
     out += [{"id": v.id, "otro": v.origen, "etiqueta": INTEL_RELACIONES.get(v.relacion, v.relacion), "nota": v.nota}
             for v in r.vinculos_entrada]
+    out = [x for x in out if es_admin() or not x["otro"].confidencial]
     out.sort(key=lambda x: (x["otro"].tipo, (x["otro"].titulo or "").lower()))
     return out
 
@@ -1621,16 +1975,18 @@ def intel_sugeridos(r, ya):
         cond.append(db.func.lower(Inteligencia.titulo).in_({r.titulo.strip().lower()}))
     elif r.entidad:
         cond.append(db.and_(Inteligencia.tipo == "Empresa", db.func.lower(Inteligencia.titulo) == r.entidad.strip().lower()))
-    otros = Inteligencia.query.filter(db.or_(*cond), ~Inteligencia.id.in_(ya)).limit(20).all()
+    otros = intel_visibles(Inteligencia.query).filter(db.or_(*cond), ~Inteligencia.id.in_(ya)).limit(20).all()
     return [{"r": o, "relacion": _relacion_sugerida(r, o)[0], "sentido": _relacion_sugerida(r, o)[1]} for o in otros]
 
 
 @app.route('/inteligencia/<int:iid>/vincular', methods=['POST'])
 def inteligencia_vincular(iid):
-    r = db.get_or_404(Inteligencia, iid)
+    r = _intel_o_404(iid)
     try:
         otro = db.session.get(Inteligencia, int(campo('otro_id')))
     except ValueError:
+        otro = None
+    if otro and otro.confidencial and not es_admin():
         otro = None
     relacion = campo('relacion') if campo('relacion') in INTEL_RELACIONES else "Relacionado con"
     if otro and otro.id != r.id:
@@ -1668,8 +2024,6 @@ EMPRESA = {"ceo": "Zuriel Zmarth", "cargo": "Director General",
            "grupo": "THE ZMARTH ORGANIZATION",
            "zmarthket": "https://zmarthket.onrender.com",
            "app_escritura": "App de escritura ZEDYTH"}   # nombre provisional: cámbialo cuando lo definas
-_intentos_resena = {}   # ip -> [fechas]; límite simple anti-spam
-_intentos_config = {}   # ip -> [fechas]; límite del configurador
 # Datos del responsable para el aviso de privacidad y los términos. Complétalos con variables de entorno
 # (LEGAL_RAZON, LEGAL_DOMICILIO, LEGAL_JURISDICCION) o editando estos valores.
 LEGAL = {"razon_social": os.environ.get("LEGAL_RAZON", "[COMPLETAR: razón social]"),
@@ -1738,8 +2092,7 @@ def salir_equipo():
 def _guardar_resena(proyecto):
     """Valida y guarda una reseña pendiente de aprobación. Devuelve True si se guardó."""
     ahora = datetime.utcnow()
-    ip = _ip_cliente()   # respeta X-Forwarded-For (detrás de Render, remote_addr es el proxy)
-    recientes = [t for t in _intentos_resena.get(ip, []) if ahora - t < timedelta(hours=1)]
+    ip = _ip_cliente()
     nombre = request.form.get('nombre', '').strip()[:80]
     comentario = request.form.get('comentario', '').strip()[:600]
     try:
@@ -1747,9 +2100,10 @@ def _guardar_resena(proyecto):
     except ValueError:
         cal = 0
     # "web" es un campo trampa para bots; deben llenarse los datos y respetarse el límite por hora
-    if request.form.get('web') or len(recientes) >= 3 or not nombre or not 1 <= cal <= 5 or len(comentario) < 5:
+    if request.form.get('web') or not nombre or not 1 <= cal <= 5 or len(comentario) < 5:
         return False
-    _intentos_resena[ip] = recientes + [ahora]
+    if not limitar(f"resena:{ip}", 3, 3600):
+        return False
     r = Resena(proyecto_id=proyecto.id, nombre=nombre, calificacion=cal, comentario=comentario)
     db.session.add(r)
     db.session.commit()
@@ -1835,14 +2189,16 @@ def proyecto_publico_toggle(pid):
     return redirect(_destino(url_for('resenas_admin')))
 
 # --- ZEDITH (IA de la web pública) -----------------------------------------
-_zed_ip = {}                       # ip -> [fechas]; límite por visitante
-_zed_dia = {"fecha": None, "n": 0}  # tope global diario: protege tu cuota y tu dinero
+def _zedith_permitido():
+    """Límite por IP (10 min) y tope global diario de IA, ambos en la base: valen con varios workers y tras cada despliegue."""
+    return (limitar(f"zed:ip:{_ip_cliente()}", ZED_MAX_IP, 600)
+            and limitar(f"zed:dia:{date.today().isoformat()}", ZED_MAX_DIA, 90000))
 ZED_MAX_IP = int(os.environ.get("ZEDITH_MAX_IP", "20"))      # mensajes por IP cada 10 min
 ZED_MAX_DIA = int(os.environ.get("ZEDITH_MAX_DIA", "1500"))  # mensajes por día (por proceso)
 
 
 def _ip_cliente():
-    return (request.headers.get('X-Forwarded-For', request.remote_addr or '-').split(',')[0].strip()) or '-'
+    return request.remote_addr or '-'     # ProxyFix ya dejó aquí la IP real; X-Forwarded-For crudo lo controla el visitante
 
 
 def hechos_zedith():
@@ -1893,15 +2249,8 @@ def zedith_chat():
     if not isinstance(mensajes, list) or not mensajes:
         return {"error": "mensajes requeridos"}, 400
 
-    ahora, hoy = datetime.utcnow(), date.today()
-    ip = _ip_cliente()
-    recientes = [t for t in _zed_ip.get(ip, []) if ahora - t < timedelta(minutes=10)]
-    if _zed_dia["fecha"] != hoy:
-        _zed_dia.update(fecha=hoy, n=0)
-    if len(recientes) >= ZED_MAX_IP or _zed_dia["n"] >= ZED_MAX_DIA:
+    if not _zedith_permitido():
         return {"error": "límite alcanzado"}, 429
-    _zed_ip[ip] = recientes + [ahora]
-    _zed_dia["n"] += 1
 
     try:
         r = zedith.responder(mensajes, hechos_zedith())
@@ -1932,15 +2281,8 @@ def zedith_analisis():
     cfg = str((request.get_json(silent=True) or {}).get('resumen') or '').strip()[:1000]
     if len(cfg) < 20:
         return {"error": "datos"}, 400
-    ahora, hoy = datetime.utcnow(), date.today()
-    ip = _ip_cliente()
-    recientes = [t for t in _zed_ip.get(ip, []) if ahora - t < timedelta(minutes=10)]
-    if _zed_dia["fecha"] != hoy:
-        _zed_dia.update(fecha=hoy, n=0)
-    if len(recientes) >= ZED_MAX_IP or _zed_dia["n"] >= ZED_MAX_DIA:
+    if not _zedith_permitido():
         return {"error": "límite alcanzado"}, 429
-    _zed_ip[ip] = recientes + [ahora]
-    _zed_dia["n"] += 1
     texto = ("[ANÁLISIS DEL CONFIGURADOR. No captures pedido ni pidas datos: pedido_listo=false. Revisa esta configuración "
              "como ingeniero y responde en máximo 5 viñetas cortas: incoherencias, riesgos (infraestructura crítica, pagos, "
              "reservas, cancelaciones) y mejoras concretas. Sin precios.]\n" + cfg)
@@ -1970,10 +2312,9 @@ def configurador_enviar():
     d = request.get_json(silent=True) or {}
     ahora = datetime.utcnow()
     ip = _ip_cliente()
-    recientes = [t for t in _intentos_config.get(ip, []) if ahora - t < timedelta(hours=1)]
     if d.get('web'):                      # campo trampa para bots
         return {"ok": False}, 400
-    if len(recientes) >= 5:
+    if not limitar(f"config:{ip}", 5, 3600, sumar=False):
         return {"ok": False, "error": "limite"}, 429
     nombre = str(d.get('nombre') or '').strip()[:120]
     contacto = str(d.get('contacto') or '').strip()[:150]
@@ -1981,7 +2322,7 @@ def configurador_enviar():
     cfg = d.get('config') if isinstance(d.get('config'), dict) else {}
     if len(nombre) < 2 or not valido_contacto or not cfg:
         return {"ok": False, "error": "datos"}, 400
-    _intentos_config[ip] = recientes + [ahora]
+    limitar(f"config:{ip}", 5, 3600)
     txt = lambda k, n: str(cfg.get(k) or '').strip()[:n]
     lead, es_nuevo = guardar_pedido({
         "nombre": nombre, "contacto": contacto,
@@ -2010,7 +2351,7 @@ INTEL_PRIORIDADES = ("Baja", "Media", "Alta", "Crítica")
 
 @app.route('/inteligencia')
 def inteligencia():
-    q = Inteligencia.query
+    q = intel_visibles(Inteligencia.query)
     tipo, estado, texto = request.args.get('tipo', ''), request.args.get('estado', ''), request.args.get('q', '').strip()
     if tipo in INTEL_TIPOS:
         q = q.filter_by(tipo=tipo)
@@ -2020,7 +2361,7 @@ def inteligencia():
         like = f"%{texto}%"
         q = q.filter(db.or_(Inteligencia.titulo.ilike(like), Inteligencia.entidad.ilike(like), Inteligencia.referencia.ilike(like)))
     filas = q.order_by(Inteligencia.actualizado_en.desc()).limit(300).all()
-    abiertos = Inteligencia.query.filter(Inteligencia.estado != "Cerrado").count()
+    abiertos = intel_visibles(Inteligencia.query).filter(Inteligencia.estado != "Cerrado").count()
     return render_template('inteligencia.html', filas=filas, tipos=INTEL_TIPOS, estados=INTEL_ESTADOS,
                            f_tipo=tipo, f_estado=estado, f_q=texto, abiertos=abiertos)
 
@@ -2028,7 +2369,7 @@ def inteligencia():
 @app.route('/inteligencia/nuevo', methods=['GET', 'POST'])
 @app.route('/inteligencia/<int:iid>/editar', methods=['GET', 'POST'])
 def inteligencia_form(iid=None):
-    r = db.get_or_404(Inteligencia, iid) if iid else None
+    r = _intel_o_404(iid) if iid else None
     if request.method == 'POST':
         titulo = campo('titulo')
         if not titulo:
@@ -2041,7 +2382,7 @@ def inteligencia_form(iid=None):
         r.tipo = campo('tipo') if campo('tipo') in INTEL_TIPOS else "Otro"
         r.estado = campo('estado') if campo('estado') in INTEL_ESTADOS else "Abierto"
         r.prioridad = campo('prioridad') if campo('prioridad') in INTEL_PRIORIDADES else "Media"
-        r.confidencial = bool(request.form.get('confidencial'))
+        r.confidencial = bool(request.form.get('confidencial')) if es_admin() else bool(r.confidencial)
         for k in ('entidad', 'referencia', 'jurisdiccion', 'fuente', 'resumen', 'hallazgos'):
             setattr(r, k, campo(k) or None)
         try:
@@ -2057,10 +2398,10 @@ def inteligencia_form(iid=None):
 
 @app.route('/inteligencia/<int:iid>')
 def inteligencia_detalle(iid):
-    r = db.get_or_404(Inteligencia, iid)
+    r = _intel_o_404(iid)
     vinculos = intel_vinculos(r)
     ya = {v["otro"].id for v in vinculos} | {r.id}
-    candidatos = (Inteligencia.query.filter(~Inteligencia.id.in_(ya))
+    candidatos = (intel_visibles(Inteligencia.query).filter(~Inteligencia.id.in_(ya))
                   .order_by(Inteligencia.tipo, Inteligencia.titulo).limit(500).all())
     return render_template('inteligencia_detalle.html', r=r, estados=INTEL_ESTADOS, vinculos=vinculos,
                            sugeridos=intel_sugeridos(r, ya), candidatos=candidatos, relaciones=list(INTEL_RELACIONES))
@@ -2068,7 +2409,7 @@ def inteligencia_detalle(iid):
 
 @app.route('/inteligencia/<int:iid>/nota', methods=['POST'])
 def inteligencia_nota(iid):
-    r = db.get_or_404(Inteligencia, iid)
+    r = _intel_o_404(iid)
     if campo('texto'):
         db.session.add(IntelNota(registro_id=r.id, texto=campo('texto'), fuente=campo('fuente') or None,
                                  autor=current_user.username))
@@ -2080,7 +2421,7 @@ def inteligencia_nota(iid):
 
 @app.route('/inteligencia/<int:iid>/estado', methods=['POST'])
 def inteligencia_estado(iid):
-    r = db.get_or_404(Inteligencia, iid)
+    r = _intel_o_404(iid)
     if campo('estado') in INTEL_ESTADOS:
         r.estado = campo('estado')
         registrar("estado", "Inteligencia", r.id, r.estado)
@@ -2467,10 +2808,14 @@ def _vigilante():
         time.sleep(60)
         try:
             with app.app_context():
-                if _pendientes["hay"]:
+                if _pendientes["hay"] and limitar("vigilante:pendientes", 1, 50):
                     _pendientes["hay"] = reintentar_pendientes() > 0
                 if time.time() - ultima_revision > INTERVALO_ALERTAS and _hora_de_avisar():
                     ultima_revision = time.time()
+                    if not limitar("vigilante:revision", 1, INTERVALO_ALERTAS - 300):
+                        continue          # otro worker ya hizo esta ronda
+                    ContadorLimite.query.filter(ContadorLimite.inicio < datetime.utcnow() - timedelta(days=2)).delete()
+                    db.session.commit()
                     revisar_alertas()
                     almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
                     monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
@@ -2559,7 +2904,13 @@ app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
 
 
+# Endpoints públicos y anónimos (sin sesión que proteger; ya tienen límite por IP) y el cron con token propio.
+for _nombre in ('zedith_chat', 'zedith_analisis', 'configurador_enviar', 'resena_enviar', 'opinion_enviar', 'push_revisar'):
+    csrf.exempt(app.view_functions[_nombre])
+
+
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otros dispositivos en tu WiFi accedan a la PC
     # ssl_context='adhoc' genera un HTTPS temporal (necesario para usar la cámara en móviles)
-    app.run(host='0.0.0.0', port=5000, debug=True, ssl_context='adhoc')
+    # debug solo si lo pides: FLASK_DEBUG=1 (nunca en producción: el depurador permite ejecutar código)
+    app.run(host='0.0.0.0', port=5000, debug=os.environ.get("FLASK_DEBUG") == "1", ssl_context='adhoc')
