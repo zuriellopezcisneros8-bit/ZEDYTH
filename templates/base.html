@@ -268,10 +268,49 @@
             <button type="button" class="install-btn" id="installApp" title="Instalar como aplicación" aria-label="Instalar como aplicación" hidden><i class="ph ph-download-simple"></i></button>
             <a href="/notificaciones" class="bell" title="Alertas y avisos"><i class="ph ph-bell"></i>{% if n_avisos %}<span class="bell-n">{{ n_avisos }}</span>{% endif %}</a>
             <span class="role-badge">{{ cargo_actual or 'Acceso' }}</span>
-            <div class="avatar" title="{{ nombre_actual }} · {{ cargo_actual }}" aria-label="{{ nombre_actual }}, {{ cargo_actual }}"><i class="ph ph-user"></i></div>
+            <div class="avatar" id="perfilBtn" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false" aria-controls="perfilCard" aria-label="Mi perfil: {{ nombre_actual }}, {{ cargo_actual }}" style="cursor:pointer"><i class="ph ph-user"></i></div>
             <a href="/logout" class="bell" title="Cerrar sesión" aria-label="Cerrar sesión"><i class="ph ph-sign-out"></i></a>
         </div>
     </header>
+
+    {% if current_user.is_authenticated %}
+    <div id="perfilCard" role="dialog" aria-label="Mi perfil" hidden style="position:fixed;right:16px;top:80px;z-index:10000;width:min(320px,calc(100vw - 32px));box-sizing:border-box;padding:22px;border-radius:16px;background:#0b0b0b;border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 50px rgba(0,0,0,.6)">
+        <div id="perfilSaludo" data-nombre="{{ nombre_pila }}" style="font-size:14px;color:var(--text-muted,#9a9a9a)">Hola, {{ nombre_pila }}</div>
+        <div style="font-size:22px;font-weight:600;line-height:1.25;margin:4px 0 2px;overflow-wrap:anywhere">{{ nombre_actual }}</div>
+        <div style="color:#c8a96a;font-size:14px">{{ cargo_actual }}</div>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1);font-size:13px;line-height:1.7;color:var(--text-muted,#9a9a9a)">
+            <div>Usuario: <span class="mono">{{ current_user.username }}</span></div>
+            <div>Verificación en 2 pasos: {{ 'activa' if current_user.totp_activo else 'sin activar' }}</div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn btn-sm" href="/cuenta/seguridad">Mi seguridad</a>
+            <a class="btn btn-sm" href="/logout">Cerrar sesión</a>
+        </div>
+    </div>
+    <script>
+        (function () {
+            var btn = document.getElementById('perfilBtn'), card = document.getElementById('perfilCard');
+            if (!btn || !card) return;
+            var sal = document.getElementById('perfilSaludo'), h = new Date().getHours();
+            if (sal) sal.textContent = (h < 6 ? 'Buenas noches' : h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches') + ', ' + sal.getAttribute('data-nombre');
+            function abierto() { return !card.hidden; }
+            function cerrar() { card.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+            function abrir() {
+                var r = btn.getBoundingClientRect();
+                card.style.top = Math.round(r.bottom + 10) + 'px';
+                card.hidden = false;
+                btn.setAttribute('aria-expanded', 'true');
+            }
+            function alternar() { abierto() ? cerrar() : abrir(); }
+            btn.addEventListener('click', alternar);
+            btn.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternar(); } });
+            document.addEventListener('click', function (e) { if (abierto() && !card.contains(e.target) && !btn.contains(e.target)) cerrar(); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && abierto()) { cerrar(); btn.focus(); } });
+            window.addEventListener('scroll', function () { if (abierto()) cerrar(); }, { passive: true });
+            window.addEventListener('resize', function () { if (abierto()) cerrar(); });
+        })();
+    </script>
+    {% endif %}
 
     {% if saludo %}
     <div id="saludo" role="status" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;max-width:calc(100vw - 32px);padding:14px 22px;border-radius:12px;background:#14110b;border:1px solid rgba(200,169,106,.55);color:#f3ead7;font-size:15px;line-height:1.4;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.45);cursor:pointer;transition:opacity .6s ease">{{ saludo }}</div>

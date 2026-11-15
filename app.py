@@ -16,7 +16,7 @@ import tempfile
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
-from flask import Flask, render_template, request, redirect, url_for, Response, session, abort, has_request_context
+from flask import Flask, render_template, request, redirect, url_for, Response, session, abort, has_request_context, g
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import event, inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
@@ -1275,7 +1275,8 @@ def inyectar_identidad():
     """Quién está dentro: cargo y nombre para el encabezado, y el saludo de bienvenida (una sola vez)."""
     if not current_user.is_authenticated:
         return {}
-    datos = {"cargo_actual": cargo_de(current_user), "nombre_actual": current_user.nombre or current_user.username}
+    datos = {"cargo_actual": cargo_de(current_user), "nombre_actual": current_user.nombre or current_user.username,
+             "nombre_pila": nombre_corto(current_user).title()}
     if request.endpoint not in RUTAS_PUBLICAS:               # en la web pública no se gasta: se muestra en el panel
         datos["saludo"] = session.pop("bienvenida", None)
     return datos
@@ -1284,15 +1285,35 @@ def inyectar_identidad():
 # --- RUTAS PRINCIPALES -----------------------------------------------------
 @app.route('/panel')
 def index():
+    """Tablero Global: primero las plataformas SaaS (lo que da dinero y lo que se puede romper), después los clientes especiales."""
+    hoy = date.today()
+    plats = Proyecto.query.filter_by(tipo=PLAT).order_by(Proyecto.nombre).all()
+    alertas = alertas_cacheadas()
+    por_proyecto = {}
+    for a in alertas:
+        if a.get("proyecto") is not None:
+            por_proyecto[a["proyecto"].id] = por_proyecto.get(a["proyecto"].id, 0) + 1
+    for p in plats:
+        p.fin = finanzas_plataforma(p)
+        p.ult_resp = ultimo_respaldo(p)
+        p.n_alertas = por_proyecto.get(p.id, 0)
+        p.resp_mal = p.estado in ("Activo", "Mantenido") and (p.ult_resp is None or (hoy - p.ult_resp).days > DIAS_RESPALDO)
+    ingreso = sum(p.fin["ingreso_30d"] for p in plats)
+    gasto = sum(p.fin["costo_mes"] for p in plats)
+
     clientes = Cliente.query.filter(Cliente.nombre_comercial != INTERNO).order_by(Cliente.id.desc()).all()
-    ingresos = sum(x.monto_periodo / x.meses for x in Suscripcion.query.all())
+    subs = Suscripcion.query.filter(Suscripcion.cliente_id.in_([c.id for c in clientes])).all() if clientes else []
     stats = {
-        "clientes_activos": len(clientes),
-        "proyectos_desarrollo": Proyecto.query.filter_by(estado="Desarrollo").count(),
-        "ingresos_mensuales": dinero(ingresos),
+        "plataformas": len(plats),
+        "activas": sum(1 for p in plats if p.estado in ("Activo", "Mantenido")),
+        "desarrollo": sum(1 for p in plats if p.estado == "Desarrollo"),
+        "ingreso_30d": ingreso, "gasto": gasto, "ganancia": ingreso - gasto,
+        "alertas": len(alertas),
+        "clientes": len(clientes),
+        "ingresos_clientes": sum(x.monto_periodo / x.meses for x in subs),
     }
-    planes = planes_visibles()
-    return render_template('admin_index.html', stats=stats, clientes=clientes, planes=planes)
+    return render_template('admin_index.html', stats=stats, plataformas=plats, clientes=clientes,
+                           planes=planes_visibles(), hoy=hoy, dias_respaldo=DIAS_RESPALDO)
 
 
 @app.route('/nuevo_cliente', methods=['POST'])
@@ -1810,7 +1831,7 @@ def inyectar_avisos():
                                   Suscripcion.proxima_fecha_pago <= _limite()).count()
          + CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.isnot(None),
                                       CostoServicio.proxima_fecha_pago <= _limite()).count()
-         + len(alertas_seguridad()))
+         + len(alertas_cacheadas()))
     return {"n_avisos": n, "n_leads": Lead.query.filter_by(estado="Nuevo").count(),
             "n_notif": Notificacion.query.filter_by(leida=False).count(), "vapid_public": _vapid()[0],
             "es_admin": es_admin()}
@@ -2008,6 +2029,13 @@ RENOVACION = {"Dominio": 12, "SSL": 3, "Hosting": 12, "Otro": 12}   # meses que 
 
 def ultimo_respaldo(p):
     return max((r.fecha for r in p.respaldos if r.resultado == "Correcto" and r.fecha), default=None)
+
+
+def alertas_cacheadas():
+    """alertas_seguridad() una sola vez por petición: la barra de avisos y el tablero la usan en la misma página."""
+    if not hasattr(g, "_alertas"):
+        g._alertas = alertas_seguridad()
+    return g._alertas
 
 
 def alertas_seguridad():

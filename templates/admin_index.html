@@ -1,26 +1,79 @@
-<!-- templates/admin_index.html -->
+<!-- templates/admin_index.html · Tablero Global: plataformas SaaS primero, clientes especiales después -->
 {% extends "base.html" %}
 
 {% block content %}
+{% set dinero = '${:,.0f}' %}
 <section class="hero">
-    <h1>Control Supremo</h1>
-    <p>Resumen general de operaciones de ZEDYTH.</p>
-    <button class="btn btn-primary" onclick="toggleModal('modalNuevoCliente')">+ Nuevo Cliente</button>
+    <h1 id="hola" data-nombre="{{ nombre_pila }}">Hola, {{ nombre_pila }}</h1>
+    <p>Así van las plataformas SaaS de ZEDYTH.</p>
+    <div class="toolbar">
+        <a class="btn btn-primary" href="/plataformas/nueva">+ Nueva plataforma</a>
+        <button class="btn" type="button" onclick="toggleModal('modalNuevoCliente')">+ Cliente especial</button>
+    </div>
 </section>
 
 <div class="stats-grid">
     <div class="luxury-card">
-        <h3 class="stat-label">Clientes Activos</h3>
-        <div class="stat-value">{{ stats.clientes_activos }}</div>
+        <h3 class="stat-label"><span class="dot"></span> Ingresos SaaS (30 días)</h3>
+        <div class="stat-value">{{ dinero.format(stats.ingreso_30d) }}</div>
     </div>
     <div class="luxury-card">
-        <h3 class="stat-label">En Desarrollo</h3>
-        <div class="stat-value">{{ stats.proyectos_desarrollo }}</div>
+        <h3 class="stat-label">Gasto mensual en servicios</h3>
+        <div class="stat-value">{{ dinero.format(stats.gasto) }}</div>
     </div>
     <div class="luxury-card">
-        <h3 class="stat-label"><span class="dot"></span> Ingresos Mensuales</h3>
-        <div class="stat-value">{{ stats.ingresos_mensuales }}</div>
+        <h3 class="stat-label">Ganancia mensual</h3>
+        <div class="stat-value {{ 'pos' if stats.ganancia > 0 else 'neg' if stats.ganancia < 0 }}">{{ dinero.format(stats.ganancia) }}</div>
     </div>
+    <a class="luxury-card" href="/ciberseguridad" style="display:block; text-decoration:none; color:inherit;">
+        <h3 class="stat-label">Alertas abiertas</h3>
+        <div class="stat-value {{ 'neg' if stats.alertas }}">{{ stats.alertas }}</div>
+    </a>
+</div>
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin: 36px 0 14px;">
+    <h2 style="margin:0; font-size:20px; font-weight:600;">Plataformas</h2>
+    <span class="mono" style="color:var(--text-muted);">{{ stats.activas }} en producción · {{ stats.desarrollo }} en desarrollo</span>
+</div>
+
+{% if plataformas %}
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:20px;">
+    {% for p in plataformas %}
+    <a class="luxury-card" href="/plataformas/{{ p.id }}" style="display:block; text-decoration:none; color:inherit;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+            <div style="min-width:0;">
+                <div style="font-size:18px; font-weight:600; overflow-wrap:anywhere;">{{ p.nombre }}</div>
+                <div class="mono" style="color:var(--text-muted); overflow-wrap:anywhere;">{{ (p.url_produccion or '')|replace('https://','')|replace('http://','') or p.version or 'Sin dominio' }}</div>
+            </div>
+            <span class="badge {{ 'badge-green' if p.estado in ['Activo','Mantenido'] else 'badge-amber' if p.estado == 'Desarrollo' else 'badge-red' }}">{{ p.estado }}</span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px 12px; margin-top:20px;">
+            <div><div class="stat-label">Ingreso / 30 d</div><div class="mono" style="font-size:18px;">{{ dinero.format(p.fin.ingreso_30d) }}</div></div>
+            <div><div class="stat-label">Gasto / mes</div><div class="mono" style="font-size:18px;">{{ dinero.format(p.fin.costo_mes) }}</div></div>
+            <div style="grid-column:1 / -1;">
+                <div class="stat-label">Ganancia</div>
+                <div class="mono {{ 'pos' if p.fin.ganancia > 0 else 'neg' if p.fin.ganancia < 0 }}" style="font-size:22px;">{{ dinero.format(p.fin.ganancia) }}{% if p.fin.margen is not none %}<span style="font-size:13px; color:var(--text-muted);"> · {{ p.fin.margen }}%</span>{% endif %}</div>
+            </div>
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; padding-top:16px; border-top:1px solid rgba(255,255,255,.08);">
+            <span class="badge {{ 'badge-red' if p.resp_mal else '' }}">Respaldo: {{ p.ult_resp.strftime('%d/%m/%Y') if p.ult_resp else 'sin registro' }}</span>
+            {% if p.n_alertas %}<span class="badge badge-red">{{ p.n_alertas }} {{ 'alerta' if p.n_alertas == 1 else 'alertas' }}</span>
+            {% else %}<span class="badge badge-green">Sin alertas</span>{% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="luxury-card" style="text-align:center; padding:48px; color:var(--text-muted);">
+    Aún no hay plataformas. Crea la primera con «Nueva plataforma».
+</div>
+{% endif %}
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin: 48px 0 14px;">
+    <h2 style="margin:0; font-size:20px; font-weight:600;">Clientes especiales</h2>
+    <span class="mono" style="color:var(--text-muted);">{{ stats.clientes }} {{ 'cliente' if stats.clientes == 1 else 'clientes' }} · {{ dinero.format(stats.ingresos_clientes) }} al mes</span>
 </div>
 
 <div class="luxury-card" style="padding: 0; overflow: hidden;">
@@ -28,33 +81,24 @@
         <table class="table-luxury">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Razón Social</th>
-                    <th>Contacto</th>
-                    <th>Plan Activo</th>
+                    <th>Cliente</th>
+                    <th>Plan</th>
+                    <th>Cobro</th>
                     <th style="text-align: right;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for cliente in clientes %}
+                {% set s = cliente.suscripcion %}
                 <tr>
-                    <td class="mono">#{{ cliente.id }}</td>
-                    <td style="font-weight: 500;">{{ cliente.nombre_comercial }}</td>
-                    <td style="color: var(--text-muted);">{{ cliente.contacto }}</td>
-                    <td>
-                        {% if "Inclusive" in cliente.membresia_actual or "Core" in cliente.membresia_actual %}
-                            <span class="badge badge-hi">{{ cliente.membresia_actual }}</span>
-                        {% else %}
-                            <span class="badge">{{ cliente.membresia_actual }}</span>
-                        {% endif %}
-                    </td>
-                    <td style="text-align: right;">
-                        <a class="btn btn-sm" href="/clientes/{{ cliente.id }}">Gestionar</a>
-                    </td>
+                    <td><div style="font-weight:500;">{{ cliente.nombre_comercial }}</div><div class="mono" style="color:var(--text-muted);">{{ cliente.contacto }}</div></td>
+                    <td><span class="badge {{ 'badge-hi' if 'Inclusive' in cliente.membresia_actual or 'Core' in cliente.membresia_actual }}">{{ cliente.membresia_actual }}</span></td>
+                    <td>{% if s %}<span class="badge {{ 'badge-green' if s.estado_cobro == 'Al corriente' else 'badge-red' if s.estado_cobro in ('Atrasado', 'Suspendido') else 'badge-amber' }}">{{ s.estado_cobro }}</span>{% else %}—{% endif %}</td>
+                    <td style="text-align: right;"><a class="btn btn-sm" href="/clientes/{{ cliente.id }}">Gestionar</a></td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" style="text-align: center; padding: 48px; color: var(--text-muted);">Aún no hay clientes. Usa «Nuevo Cliente» para registrar el primero.</td>
+                    <td colspan="4" style="text-align: center; padding: 40px; color: var(--text-muted);">Sin clientes especiales por ahora. Usa «Cliente especial» cuando alguien necesite su propio sistema.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -65,7 +109,7 @@
 <!-- Modal de Registro -->
 <div id="modalNuevoCliente" class="modal-overlay">
     <div class="modal-content">
-        <h2>Nuevo Cliente ZEDYTH</h2>
+        <h2>Nuevo cliente especial</h2>
         <form action="/nuevo_cliente" method="POST">
             <input class="field" type="text" name="nombre_comercial" placeholder="Nombre Comercial" required>
             <input class="field" type="text" name="contacto" placeholder="Correo electrónico" required>
@@ -87,5 +131,11 @@
         const el = document.getElementById(id);
         el.style.display = (el.style.display === 'flex') ? 'none' : 'flex';
     }
+    (function () {
+        var t = document.getElementById('hola');
+        if (!t) return;
+        var h = new Date().getHours();
+        t.textContent = (h < 6 ? 'Buenas noches' : h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches') + ', ' + t.getAttribute('data-nombre');
+    })();
 </script>
 {% endblock %}
