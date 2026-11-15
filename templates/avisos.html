@@ -29,7 +29,7 @@
                     <td><div class="btn-row">
                         {% if a.wa %}<a class="btn btn-sm" href="{{ a.wa }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
                         <a class="btn btn-sm" href="{{ a.mail }}">Correo</a>
-                        <form method="post" action="/clientes/{{ a.cliente.id }}/cobrar"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro</button></form>
+                        <form method="post" action="/clientes/{{ a.cliente.id }}/cobrar"><input type="hidden" name="periodo" value="{{ a.fecha }}"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro</button></form>
                     </div></td>
                 </tr>
                 {% else %}
@@ -53,7 +53,7 @@
                     <td class="mono">{{ a.fecha }}</td>
                     <td>{{ '${:,.0f}'.format(a.monto or 0) }}</td>
                     <td>{{ estado(a) }}</td>
-                    <td><div class="btn-row"><form method="post" action="/costos/{{ a.id }}/pagar"><button class="btn btn-sm btn-primary" type="submit">Marcar pagado</button></form></div></td>
+                    <td><div class="btn-row"><form method="post" action="/costos/{{ a.id }}/pagar"><input type="hidden" name="periodo" value="{{ a.fecha }}"><button class="btn btn-sm btn-primary" type="submit">Marcar pagado</button></form></div></td>
                 </tr>
                 {% else %}
                 <tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">Nada por pagar en este periodo.</td></tr>

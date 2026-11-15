@@ -68,7 +68,7 @@
     <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th></th></tr></thead><tbody>
     {% for i in ingresos %}
     <tr><td class="mono">{{ i.fecha }}</td><td>{{ i.categoria }}</td><td style="color:var(--text-muted);">{{ i.concepto or '' }}</td><td class="mono">{{ '${:,.0f}'.format(i.monto) }}</td>
-        <td style="text-align:right;"><form method="post" action="/ingresos-plataforma/{{ i.id }}/eliminar" onsubmit="return confirm('¿Eliminar este ingreso?')"><button class="btn btn-sm" type="submit">Eliminar</button></form></td></tr>
+        <td style="text-align:right;">{% if i.anula_id %}<span class="badge badge-amber">Anulación</span>{% elif i.anulacion %}<span class="badge badge-amber">Anulado</span>{% elif es_admin and i.monto > 0 %}<form method="post" action="/ingresos-plataforma/{{ i.id }}/eliminar" onsubmit="return confirm('¿Anular este ingreso? Se agrega un contra-asiento; el original no se borra.')"><button class="btn btn-sm" type="submit">Anular</button></form>{% endif %}</td></tr>
     {% else %}<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Sin ingresos registrados.</td></tr>{% endfor %}
 </tbody></table></div></div>
 <details class="luxury-card" style="margin-top:16px;"><summary>+ Registrar ingreso</summary>

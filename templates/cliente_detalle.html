@@ -40,7 +40,7 @@
             <dt>Fecha de corte</dt><dd>{{ s.fecha_corte if s and s.fecha_corte else '—' }}</dd>
             <dt>Próximo pago</dt><dd>{{ s.proxima_fecha_pago if s and s.proxima_fecha_pago else '—' }}</dd>
         </dl>
-        {% if s %}<form method="post" action="/clientes/{{ c.id }}/cobrar" style="margin-top:18px;"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro del periodo</button></form>{% endif %}
+        {% if s %}<form method="post" action="/clientes/{{ c.id }}/cobrar" style="margin-top:18px;"><input type="hidden" name="periodo" value="{{ s.proxima_fecha_pago or '' }}"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro del periodo</button></form>{% endif %}
     </div>
 </div>
 
@@ -68,7 +68,7 @@
                 <thead><tr><th>Proveedor</th><th>Concepto</th><th>Periodo</th><th>Monto</th><th>Próximo pago</th><th></th></tr></thead>
                 <tbody>
                     {% for k in p.costos %}
-                    <tr><td>{{ k.proveedor }}</td><td style="color:var(--text-muted);">{{ k.concepto or '' }}</td><td>{{ k.periodicidad or 'Mensual' }}</td><td>{{ '${:,.0f}'.format(k.monto_periodo or k.monto_mensual or 0) }}</td><td class="mono">{{ k.proxima_fecha_pago or '—' }}</td><td style="text-align:right;">{% if k.proxima_fecha_pago %}<form method="post" action="/costos/{{ k.id }}/pagar"><button class="btn btn-sm" type="submit">Marcar pagado</button></form>{% endif %}</td></tr>
+                    <tr><td>{{ k.proveedor }}</td><td style="color:var(--text-muted);">{{ k.concepto or '' }}</td><td>{{ k.periodicidad or 'Mensual' }}</td><td>{{ '${:,.0f}'.format(k.monto_periodo or k.monto_mensual or 0) }}</td><td class="mono">{{ k.proxima_fecha_pago or '—' }}</td><td style="text-align:right;">{% if k.proxima_fecha_pago %}<form method="post" action="/costos/{{ k.id }}/pagar"><input type="hidden" name="periodo" value="{{ k.proxima_fecha_pago }}"><button class="btn btn-sm" type="submit">Marcar pagado</button></form>{% endif %}</td></tr>
                     {% else %}
                     <tr><td colspan="6" style="color:var(--text-muted);">Sin costos de servicios registrados.</td></tr>
                     {% endfor %}
@@ -116,13 +116,14 @@
 <div class="luxury-card" style="padding:0; overflow:hidden;">
     <div class="table-wrap">
         <table class="table-luxury">
-            <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Monto</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Monto</th><th>Estado</th><th></th></tr></thead>
             <tbody>
                 {% for pg in pagos %}
                 <tr><td class="mono">{{ pg.fecha }}</td><td>{{ pg.concepto or '—' }}</td><td style="color:var(--text-muted);">{{ pg.metodo or '—' }}</td><td>{{ '${:,.0f}'.format(pg.monto) }}</td>
-                    <td><span class="badge {{ 'badge-green' if pg.estado == 'Pagado' else 'badge-amber' }}">{{ pg.estado }}</span></td></tr>
+                    <td>{% if pg.anula_id %}<span class="badge badge-amber">Anulación</span>{% elif pg.anulacion %}<span class="badge badge-amber">Anulado</span>{% else %}<span class="badge {{ 'badge-green' if pg.estado == 'Pagado' else 'badge-amber' }}">{{ pg.estado }}</span>{% endif %}</td>
+                    <td style="text-align:right;">{% if es_admin and pg.monto > 0 and not pg.anulacion and not pg.anula_id %}<form method="post" action="/pagos/{{ pg.id }}/anular" style="display:flex;gap:6px;justify-content:flex-end;" onsubmit="return confirm('¿Anular este pago? Se agrega un contra-asiento; el original no se borra.')"><input class="field" name="motivo" placeholder="Motivo" required minlength="3" maxlength="120" style="width:150px;"><button class="btn btn-sm" type="submit">Anular</button></form>{% endif %}</td></tr>
                 {% else %}
-                <tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-muted);">Aún no hay pagos registrados.</td></tr>
+                <tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">Aún no hay pagos registrados.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

@@ -6,3 +6,4 @@ psycopg[binary]
 pywebpush
 cryptography
 boto3
+Flask-WTF
