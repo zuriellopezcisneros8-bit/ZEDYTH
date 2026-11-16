@@ -1053,10 +1053,10 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios.", "ajustes.", "vault."))) and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios.", "ajustes."))) and rol != "admin":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
-            and request.endpoint not in ('logout', 'seguridad'):
+            and request.endpoint not in ('logout', 'seguridad', 'vault.vault_desbloquear', 'vault.vault_bloquear', 'vault.vault_latido'):
         abort(403)
 
     # 5. MFA obligatorio (si REQUIERE_MFA=1)
@@ -3569,7 +3569,7 @@ import render_panel
 app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
 app.register_blueprint(operaciones.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /mantenimientos, /atajos y centro de alertas
 import vault
-app.register_blueprint(vault.crear_blueprint(app, db, registrar, limitar))     # /vault: ZEDYTH OPS VAULT (workspace de ciberseguridad, solo admin, cifrado)
+app.register_blueprint(vault.crear_blueprint(app, db, registrar, limitar, Usuario))     # /vault: ZEDYTH OPS VAULT (workspace cifrado; cada elemento se comparte con el personal y el CEO ve todo; VAULT_PERSONAL=0 lo deja solo para administradores)
 
 # ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
 zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]

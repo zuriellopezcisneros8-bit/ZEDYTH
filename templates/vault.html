@@ -93,6 +93,7 @@
 <section class="hero" style="margin-bottom:22px;">
     <h1>ZEDYTH OPS VAULT</h1>
     <p>Workspace privado de ciberseguridad: arsenal de código, cuaderno, modo misión y herramientas. Todo se guarda cifrado.</p>
+    <p id="vtAviso" style="font-size:13px; color:var(--text-muted); margin-top:6px;"></p>
 </section>
 
 <div class="vt-lock" id="vtLock" hidden>
@@ -240,6 +241,23 @@
 
     <!-- GRAFO -->
     <div data-panel="grafo" hidden><div class="luxury-card" id="vtGrafo"><div class="vt-vacio">Cargando…</div></div></div>
+</div>
+
+<div class="vt-cap" id="vtShare" hidden>
+    <div class="luxury-card">
+        <h3 class="stat-label" style="margin-top:0;">Compartir</h3>
+        <div id="shTitulo" style="font-size:14px; margin-bottom:10px; overflow-wrap:anywhere;"></div>
+        <label class="lbl">¿Quién puede verlo?
+            <select class="field" id="shVis">
+                <option value="privado">Solo yo</option>
+                <option value="admins">Todos los administradores</option>
+                <option value="equipo">Todo el personal (solo lectura)</option>
+                <option value="personas">Personas elegidas (solo lectura)</option>
+            </select></label>
+        <div id="shPersonas" style="max-height:220px; overflow:auto; margin:0 0 10px;" hidden></div>
+        <div id="shAviso" style="font-size:12px; color:var(--text-muted); margin:0 0 12px;"></div>
+        <div class="vt-row"><button class="btn btn-primary btn-sm" type="button" id="shGuardar">Guardar</button><button class="btn btn-sm" type="button" id="shCancelar">Cancelar</button></div>
+    </div>
 </div>
 
 <div class="vt-cap" id="vtCap" hidden>
@@ -612,7 +630,7 @@
         S.codigo = []; S.notas = []; S.checks = []; S.herr = []; S.hall = []; S.hl.id = null; S.hl.item = null; S.tec = []; S.tc.id = null; S.tc.item = null; S.bib.id = null; S.vars = {}; S.ars.id = S.not.id = S.chk.id = null; S.ars.item = S.not.item = null; S.cargado = false;
         ['arsLista', 'notLista', 'chkLista', 'bibLista', 'hallLista', 'tecLista', 'ioOut', 'vtGrafo', 'cdOut', 'hsOut', 'jwOut', 'dfOut', 'gnOut', 'vtRes'].forEach(function (i) { $('#' + i).innerHTML = ''; });
         ['cdIn', 'hsIn', 'jwIn', 'dfIn', 'ioIn', 'capTxt', 'vtBuscar', 'arsFiltro', 'notFiltro', 'bibFiltro', 'hallFiltro', 'tecFiltro', 'capHTitulo', 'capHAccion', 'capHResultado', 'capHDonde'].forEach(function (i) { $('#' + i).value = ''; });
-        $('#vtRes').hidden = true; $('#vtCap').hidden = true;
+        $('#vtRes').hidden = true; $('#vtCap').hidden = true; $('#vtShare').hidden = true;
         Object.keys(VACIO).forEach(function (i) { $('#' + i).innerHTML = VACIO[i]; });
     }
     function bloquear(msg, soloPantalla) {
@@ -689,7 +707,7 @@
         var f = $('#arsFiltro').value.toLowerCase();
         var l = S.codigo.filter(function (c) { return (S.ars.lado === 'Todos' || c.lado === S.ars.lado) && (!f || (c.titulo + ' ' + c.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0); });
         $('#arsLista').innerHTML = l.length ? l.map(function (c) {
-            return '<div class="vt-item' + (c.id === S.ars.id ? ' on' : '') + '" data-id="' + c.id + '"><b>' + esc(c.titulo) + '</b><small>' + esc(c.lado) + ' · ' + esc(c.lenguaje) + ' · v' + c.version + (c.etiquetas.length ? ' · ' + esc(c.etiquetas.join(', ')) : '') + '</small></div>';
+            return '<div class="vt-item' + (c.id === S.ars.id ? ' on' : '') + '" data-id="' + c.id + '"><b>' + visIcono(c) + esc(c.titulo) + '</b><small>' + esc(c.lado) + ' · ' + esc(c.lenguaje) + ' · v' + c.version + (c.etiquetas.length ? ' · ' + esc(c.etiquetas.join(', ')) : '') + '</small></div>';
         }).join('') : '<div class="vt-vacio">Sin bloques.</div>';
     }
     function abrirCodigo(id, versionN) {
@@ -714,7 +732,7 @@
             '<div class="vt-acc"><button class="btn btn-primary btn-sm" data-a="copiar" type="button">Copiar</button><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="hist" type="button">Historial</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
             (ph.length ? '<div class="vt-vars">' + ph.map(function (p) { return '<label>' + esc(p) + '<input class="field" data-var="' + esc(p) + '" value="' + esc(S.vars[p] || '') + '" placeholder="{{' + esc(p) + '}}" autocomplete="off"></label>'; }).join('') + '</div>' : '') +
             notasCodigoHtml(c) + '<div id="arsCodigo">' + codigoHtml(T.rellenar(c.cuerpo, S.vars), lang) + '</div>' +
-            '<label style="font-size:12px; color:var(--text-muted); display:block; margin-top:10px;"><input type="checkbox" id="arsAuto" checked> Borrar el portapapeles 30 s después de copiar</label><div id="arsHist"></div>';
+            '<label style="font-size:12px; color:var(--text-muted); display:block; margin-top:10px;"><input type="checkbox" id="arsAuto" checked> Borrar el portapapeles 30 s después de copiar</label><div id="arsHist"></div>'; ajustarAcciones('arsDetalle', c);
     }
     function formCodigo(c) {
         c = c || { titulo: '', lado: '', lenguaje: 'auto', etiquetas: [], cuerpo: '' };
@@ -743,7 +761,7 @@
     function historial() {
         var h = $('#arsHist'); if (h.innerHTML) { h.innerHTML = ''; return; }
         h.innerHTML = '<h3 class="stat-label" style="margin-top:18px;">Historial de versiones</h3>' + S.ars.vers.map(function (v) {
-            return '<div class="vt-ver"><span><b>v' + v.n + '</b> · ' + esc(v.nota || 'sin nota') + ' <span class="mono">' + esc(fecha(v.fecha)) + '</span></span><span class="vt-acc"><button class="btn btn-sm" data-a="vver" data-n="' + v.n + '" type="button">Ver</button>' + (v.n !== S.ars.item.version ? '<button class="btn btn-sm" data-a="vrest" data-n="' + v.n + '" type="button">Restaurar</button>' : '') + '</span></div>';
+            return '<div class="vt-ver"><span><b>v' + v.n + '</b> · ' + esc(v.nota || 'sin nota') + ' <span class="mono">' + esc(fecha(v.fecha)) + '</span></span><span class="vt-acc"><button class="btn btn-sm" data-a="vver" data-n="' + v.n + '" type="button">Ver</button>' + (v.n !== S.ars.item.version && S.ars.item.mio ? '<button class="btn btn-sm" data-a="vrest" data-n="' + v.n + '" type="button">Restaurar</button>' : '') + '</span></div>';
         }).join('') + '<div id="arsVer"></div>';
     }
 
@@ -755,7 +773,7 @@
         var f = $('#notFiltro').value.toLowerCase();
         var l = S.notas.filter(function (n) { return (S.not.clasif === 'Todas' || n.clasificacion === S.not.clasif) && (!f || (n.titulo + ' ' + n.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0); });
         $('#notLista').innerHTML = l.length ? l.map(function (n) {
-            return '<div class="vt-item' + (n.id === S.not.id ? ' on' : '') + '" data-id="' + n.id + '"><b>' + esc(n.titulo) + '</b><small>' + esc(n.clasificacion) + ' · ' + esc(n.tipo) + (efimeraTexto(n) ? ' · ⏱' : '') + '</small></div>';
+            return '<div class="vt-item' + (n.id === S.not.id ? ' on' : '') + '" data-id="' + n.id + '"><b>' + visIcono(n) + esc(n.titulo) + '</b><small>' + esc(n.clasificacion) + ' · ' + esc(n.tipo) + (efimeraTexto(n) ? ' · ⏱' : '') + '</small></div>';
         }).join('') : '<div class="vt-vacio">Sin notas.</div>';
     }
     function resolver(titulo) {
@@ -785,7 +803,7 @@
         d.innerHTML = '<div class="vt-head"><div><h2>' + esc(n.titulo) + '</h2><div style="margin-top:6px;">' + clasifBadge(n.clasificacion) + ' <span class="badge">' + esc(n.tipo) + '</span> ' + n.etiquetas.map(function (t) { return '<span class="badge">#' + esc(t) + '</span>'; }).join(' ') + (efimeraTexto(n) ? ' <span class="badge vt-c-CONFIDENCIAL">' + esc(efimeraTexto(n)) + '</span>' : '') + '</div></div>' +
             '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="md" type="button">Informe .md</button><button class="btn btn-sm" data-a="pdf" type="button">Informe PDF</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
             '<div class="vt-split"><div class="vt-md">' + T.renderMarkdown(n.cuerpo, resolver) + (S.not.entrantes.length ? '<h4 style="margin-top:24px;">Enlazada desde</h4><p>' + S.not.entrantes.map(function (e) { return '<a href="#" class="vt-wiki" data-tipo="' + esc(e.tipo) + '" data-id="' + e.id + '">' + esc(e.titulo) + '</a>'; }).join(' · ') + '</p>' : '') + '</div>' +
-            '<div class="vt-ioc"><h3 class="stat-label" style="margin:0;">Indicadores (IoCs)</h3>' + panelIoc(n.cuerpo) + '</div></div>';
+            '<div class="vt-ioc"><h3 class="stat-label" style="margin:0;">Indicadores (IoCs)</h3>' + panelIoc(n.cuerpo) + '</div></div>'; ajustarAcciones('notDetalle', n);
     }
     function formNota(n, titulo) {
         var nueva = !n; n = n || { titulo: titulo || '', tipo: 'Nota', clasificacion: 'INTERNO', etiquetas: [], cuerpo: '' };
@@ -828,7 +846,7 @@
         var f = $('#bibFiltro').value.toLowerCase();
         var l = S.herr.filter(function (h) { return (S.bib.cat === 'Todas' || h.categoria === S.bib.cat) && (!f || (h.nombre + ' ' + h.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0); });
         $('#bibLista').innerHTML = l.length ? l.map(function (h) {
-            return '<div class="vt-item' + (h.id === S.bib.id ? ' on' : '') + '" data-id="' + h.id + '"><b>' + esc(h.nombre) + '</b><small>' + esc(h.categoria) + ' · ' + esc(h.nivel) + '</small></div>';
+            return '<div class="vt-item' + (h.id === S.bib.id ? ' on' : '') + '" data-id="' + h.id + '"><b>' + visIcono(h) + esc(h.nombre) + '</b><small>' + esc(h.categoria) + ' · ' + esc(h.nivel) + '</small></div>';
         }).join('') : '<div class="vt-vacio">Sin herramientas todavía.</div>';
     }
     function abrirHerr(id) {
@@ -841,7 +859,7 @@
         var enlace = /^https?:\/\//i.test(h.enlace) ? '<a class="vt-wiki" href="' + esc(h.enlace) + '" target="_blank" rel="noopener noreferrer">' + esc(h.enlace) + '</a>' : '';
         d.innerHTML = '<div class="vt-head"><div><h2>' + esc(h.nombre) + '</h2><div style="margin-top:6px;"><span class="badge">' + esc(h.categoria) + '</span> ' + nivelBadge(h.nivel) + ' ' + h.etiquetas.map(function (t) { return '<span class="badge">#' + esc(t) + '</span>'; }).join(' ') + '</div>' + (enlace ? '<div style="margin-top:8px; font-size:13px;">' + enlace + '</div>' : '') + '</div>' +
             '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
-            '<div class="vt-md">' + T.renderMarkdown(h.cuerpo, resolver) + '</div>';
+            '<div class="vt-md">' + T.renderMarkdown(h.cuerpo, resolver) + '</div>'; ajustarAcciones('bibDetalle', h);
     }
     function formHerr(h) {
         var nueva = !h; h = h || { nombre: '', categoria: CFG.categorias[0], nivel: CFG.niveles[0], enlace: '', etiquetas: [], cuerpo: S.plantillas.Herramienta || '' };
@@ -864,6 +882,61 @@
             }).catch(falla);
     }
 
+    /* ======================= COMPARTIR ======================= */
+    function visIcono(x) { return x.visibilidad === 'privado' ? '🔒 ' : x.visibilidad === 'equipo' ? '👥 ' : x.visibilidad === 'personas' ? '👤 ' : ''; }
+    var VIS_TXT = { privado: 'Solo tú', admins: 'Administradores', equipo: 'Todo el personal', personas: 'Personas elegidas' };
+    function ajustarAcciones(panelId, it) {
+        var acc = $('#' + panelId + ' .vt-head .vt-acc'); if (!acc || !it) return;
+        if (!it.mio) {
+            $$('[data-a="editar"],[data-a="borrar"],[data-a="chkborrar"]', acc).forEach(function (b) { b.remove(); });
+            $$('#' + panelId + ' [data-k]').forEach(function (i) { i.disabled = true; });
+            var h = $('#' + panelId + ' .vt-head > div');
+            if (h) h.insertAdjacentHTML('beforeend', '<div class="mono" style="font-size:12px; color:var(--text-muted); margin-top:6px;">Solo lectura' + (it.autor ? ' · de ' + esc(it.autor) : '') + '</div>');
+            return;
+        }
+        acc.insertAdjacentHTML('afterbegin', '<button class="btn btn-sm" data-a="compartir" type="button" title="' + esc(VIS_TXT[it.visibilidad || 'admins']) + '">' + visIcono(it) + 'Compartir</button>');
+    }
+    function contextoCompartir(panelId) {
+        return {
+            arsDetalle: { tipo: 'codigo', item: S.ars.item, lista: S.codigo, titulo: 'titulo', ver: verCodigo, render: renderArsenal },
+            notDetalle: { tipo: 'nota', item: S.not.item, lista: S.notas, titulo: 'titulo', ver: verNota, render: renderNotas },
+            bibDetalle: { tipo: 'herramienta', item: S.bib.item, lista: S.herr, titulo: 'nombre', ver: verHerr, render: renderBiblio },
+            hallDetalle: { tipo: 'hallazgo', item: S.hl.item, lista: S.hall, titulo: 'titulo', ver: verHall, render: renderHall },
+            tecDetalle: { tipo: 'tecnologia', item: S.tc.item, lista: S.tec, titulo: 'nombre', ver: verTec, render: renderTec },
+            chkDetalle: { tipo: 'check', item: S.checks.find(function (x) { return x.id === S.chk.id; }), lista: S.checks, titulo: 'objetivo', ver: function () {}, render: renderChecks }
+        }[panelId];
+    }
+    function avisoCompartir() {
+        var v = $('#shVis').value, t = 'El CEO siempre tiene acceso automático.';
+        if (v === 'privado') t += ' Nadie más lo verá.';
+        else if (v === 'admins') t += ' Los administradores pueden verlo y editarlo.';
+        else if (v === 'equipo') t += ' Todo el personal con acceso a la bóveda podrá leerlo, sin editarlo.';
+        else t += ' Solo las personas marcadas podrán leerlo, sin editarlo.';
+        $('#shAviso').textContent = t; $('#shPersonas').hidden = v !== 'personas';
+    }
+    function abrirCompartir(panelId) {
+        var c = contextoCompartir(panelId); if (!c || !c.item) return;
+        S.share = c;
+        $('#shTitulo').textContent = '«' + c.item[c.titulo] + '»';
+        Promise.all([api('GET', 'acceso/' + c.tipo + '/' + c.item.id), api('GET', 'personal')]).then(function (r) {
+            var acc = r[0].acceso, personal = r[1].personal;
+            $('#shVis').value = acc.visibilidad;
+            $('#shPersonas').innerHTML = personal.length ? personal.map(function (p) {
+                return '<label class="vt-chk"><input type="checkbox" data-sh="' + p.id + '"' + (acc.usuarios.indexOf(p.id) >= 0 ? ' checked' : '') + '> <span>' + esc(p.nombre) + ' <small class="mono">' + esc(p.cargo) + '</small></span></label>';
+            }).join('') : '<div class="vt-vacio" style="padding:10px;">No hay más personal activo.</div>';
+            avisoCompartir(); $('#vtShare').hidden = false;
+        }).catch(falla);
+    }
+    function guardarCompartir() {
+        var c = S.share; if (!c) return;
+        var usuarios = $$('#shPersonas [data-sh]').filter(function (x) { return x.checked; }).map(function (x) { return +x.getAttribute('data-sh'); });
+        api('POST', 'acceso', { tipo: c.tipo, id: c.item.id, visibilidad: $('#shVis').value, usuarios: usuarios }).then(function (j) {
+            c.item.visibilidad = j.visibilidad;
+            var f = c.lista.find(function (x) { return x.id === c.item.id; }); if (f) f.visibilidad = j.visibilidad;
+            $('#vtShare').hidden = true; toast('Acceso actualizado'); c.render(); c.ver();
+        }).catch(falla);
+    }
+
     /* ======================= HALLAZGOS ======================= */
     function votoTxt(h) { return '👍 ' + h.funciona + ' · 👎 ' + h.no_funciona; }
     function renderHall() {
@@ -877,7 +950,7 @@
                 (!f || (h.titulo + ' ' + h.donde + ' ' + h.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0);
         });
         $('#hallLista').innerHTML = l.length ? l.map(function (h) {
-            return '<div class="vt-item' + (h.id === S.hl.id ? ' on' : '') + '" data-id="' + h.id + '"><b>' + esc(h.titulo) + '</b><small>' + esc(h.tipo) + (h.donde ? ' · ' + esc(h.donde) : '') + ' · ' + esc(h.autor || '—') + ' · ' + votoTxt(h) + '</small></div>';
+            return '<div class="vt-item' + (h.id === S.hl.id ? ' on' : '') + '" data-id="' + h.id + '"><b>' + visIcono(h) + esc(h.titulo) + '</b><small>' + esc(h.tipo) + (h.donde ? ' · ' + esc(h.donde) : '') + ' · ' + esc(h.autor || '—') + ' · ' + votoTxt(h) + '</small></div>';
         }).join('') : '<div class="vt-vacio">Sin hallazgos.</div>';
         $('#dondeSug').innerHTML = CFG.donde_sug.map(function (d) { return '<option value="' + esc(d) + '">'; }).join('');
         var ct = $('#capHTipo'); if (!ct.options.length) ct.innerHTML = opts(CFG.tipos_hall);
@@ -895,7 +968,7 @@
             '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
             '<h3 class="stat-label">Qué hice</h3>' + (h.accion ? codigoHtml(h.accion, 'auto') + '<div style="margin:8px 0 12px;"><button class="btn btn-sm" data-a="copiar" type="button">Copiar</button></div>' : '<div style="color:var(--text-muted); font-size:13px; margin-bottom:12px;">—</div>') +
             '<h3 class="stat-label">Resultado</h3><div class="vt-md">' + (h.resultado ? T.renderMarkdown(h.resultado, resolver) : '<span style="color:var(--text-muted); font-size:13px;">—</span>') + '</div>' +
-            '<h3 class="stat-label" style="margin-top:18px;">¿Le funcionó al equipo?</h3><div class="vt-acc"><button class="btn btn-sm' + (h.mi_voto === 1 ? ' vt-voto-ok' : '') + '" data-a="si" type="button">👍 Me funcionó (' + h.funciona + ')</button><button class="btn btn-sm' + (h.mi_voto === -1 ? ' vt-voto-no' : '') + '" data-a="no" type="button">👎 No me funcionó (' + h.no_funciona + ')</button></div>';
+            '<h3 class="stat-label" style="margin-top:18px;">¿Le funcionó al equipo?</h3><div class="vt-acc"><button class="btn btn-sm' + (h.mi_voto === 1 ? ' vt-voto-ok' : '') + '" data-a="si" type="button">👍 Me funcionó (' + h.funciona + ')</button><button class="btn btn-sm' + (h.mi_voto === -1 ? ' vt-voto-no' : '') + '" data-a="no" type="button">👎 No me funcionó (' + h.no_funciona + ')</button></div>'; ajustarAcciones('hallDetalle', h);
     }
     function formHall(h) {
         var nueva = !h; h = h || { titulo: '', tipo: CFG.tipos_hall[0], donde: '', etiquetas: [], enlace: '', accion: '', resultado: '' };
@@ -943,7 +1016,7 @@
                 (!f || (t.nombre + ' ' + t.plataformas.join(' ') + ' ' + t.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0);
         });
         $('#tecLista').innerHTML = l.length ? l.map(function (t) {
-            return '<div class="vt-item' + (t.id === S.tc.id ? ' on' : '') + '" data-id="' + t.id + '"><b>' + esc(t.nombre) + '</b><small>' + esc(t.categoria) + ' · ' + esc(t.origen) + ' · ' + esc(t.estado) + (t.plataformas.length ? ' · ' + esc(t.plataformas.join(', ')) : '') + '</small></div>';
+            return '<div class="vt-item' + (t.id === S.tc.id ? ' on' : '') + '" data-id="' + t.id + '"><b>' + visIcono(t) + esc(t.nombre) + '</b><small>' + esc(t.categoria) + ' · ' + esc(t.origen) + ' · ' + esc(t.estado) + (t.plataformas.length ? ' · ' + esc(t.plataformas.join(', ')) : '') + '</small></div>';
         }).join('') : '<div class="vt-vacio">Sin tecnologías todavía.</div>';
         $('#platSug').innerHTML = CFG.plat_sug.concat(plats.filter(function (p) { return CFG.plat_sug.indexOf(p) < 0; })).map(function (p) { return '<option value="' + esc(p) + '">'; }).join('');
     }
@@ -959,7 +1032,7 @@
             (t.plataformas.length ? '<div style="margin-top:8px; font-size:13px;">Plataformas: ' + t.plataformas.map(function (p) { return '<span class="badge vt-def">' + esc(p) + '</span>'; }).join(' ') + '</div>' : '') +
             (enlace ? '<div style="margin-top:8px; font-size:13px;">' + enlace + '</div>' : '') + '<div style="margin-top:6px; font-size:12px; color:var(--text-muted);">Registrada por ' + esc(t.autor || '—') + '</div></div>' +
             '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
-            '<div class="vt-md">' + T.renderMarkdown(t.cuerpo, resolver) + (S.tc.entrantes && S.tc.entrantes.length ? '<h4 style="margin-top:24px;">Enlazada desde</h4><p>' + S.tc.entrantes.map(function (e) { return '<a href="#" class="vt-wiki" data-tipo="' + esc(e.tipo) + '" data-id="' + e.id + '">' + esc(e.titulo) + '</a>'; }).join(' · ') + '</p>' : '') + '</div>';
+            '<div class="vt-md">' + T.renderMarkdown(t.cuerpo, resolver) + (S.tc.entrantes && S.tc.entrantes.length ? '<h4 style="margin-top:24px;">Enlazada desde</h4><p>' + S.tc.entrantes.map(function (e) { return '<a href="#" class="vt-wiki" data-tipo="' + esc(e.tipo) + '" data-id="' + e.id + '">' + esc(e.titulo) + '</a>'; }).join(' · ') + '</p>' : '') + '</div>'; ajustarAcciones('tecDetalle', t);
     }
     function formTec(t) {
         var nueva = !t; t = t || { nombre: '', categoria: CFG.cats_tec[0], origen: CFG.origenes_tec[0], estado: 'En uso', plataformas: [], enlace: '', etiquetas: [], cuerpo: S.plantillas['Tecnología'] || '' };
@@ -989,9 +1062,9 @@
     function renderChecks() {
         $('#chkMet').innerHTML = opts(CFG.metodologias);
         $('#chkLista').innerHTML = S.checks.length ? S.checks.map(function (c) {
-            return '<div class="vt-item' + (c.id === S.chk.id ? ' on' : '') + '" data-id="' + c.id + '"><b>' + esc(c.objetivo) + '</b><small>' + esc(c.metodologia) + ' · ' + c.hechos.length + '/' + c.total + '</small></div>';
+            return '<div class="vt-item' + (c.id === S.chk.id ? ' on' : '') + '" data-id="' + c.id + '"><b>' + visIcono(c) + esc(c.objetivo) + '</b><small>' + esc(c.metodologia) + ' · ' + c.hechos.length + '/' + c.total + '</small></div>';
         }).join('') : '<div class="vt-vacio">Sin checklists.</div>';
-        if (S.chk.id) verCheck();
+        if (S.chk.id) { verCheck(); var cc = S.checks.find(function (x) { return x.id === S.chk.id; }); if (cc) ajustarAcciones('chkDetalle', cc); }
     }
     function verCheck() {
         var c = S.checks.find(function (x) { return x.id === S.chk.id; }); if (!c) { $('#chkDetalle').innerHTML = ''; return; }
@@ -1063,7 +1136,7 @@
         $('#capHall').hidden = !h; $('#capTxt').hidden = h; $('#capEf').hidden = h;
         (h ? $('#capHTitulo') : $('#capTxt')).focus();
     }
-    function abrirCaptura() { if ($('#vtApp').hidden) return; $('#vtCap').hidden = false; modoCaptura(); }
+    function abrirCaptura() { if ($('#vtApp').hidden || !CFG.escribe) return; $('#vtCap').hidden = false; modoCaptura(); }
     function guardarCaptura() {
         if ($('#capModo').value === 'hall') {
             var tit = $('#capHTitulo').value.trim(); if (!tit) { toast('Escribe un título para el hallazgo'); return; }
@@ -1140,6 +1213,7 @@
         if ((x = el.closest('[data-a]'))) return accion(x.getAttribute('data-a'), x);
     });
     function accion(a, b) {
+        if (a === 'compartir') return abrirCompartir(b.closest('[id$="Detalle"]').id);
         var pa = b.closest('#arsDetalle') ? 'ars' : b.closest('#notDetalle') ? 'not' : b.closest('#chkDetalle') ? 'chk' : b.closest('#bibDetalle') ? 'bib' : b.closest('#hallDetalle') ? 'hall' : b.closest('#tecDetalle') ? 'tec' : '';
         if (pa === 'ars') {
             var c = S.ars.item;
@@ -1206,6 +1280,8 @@
     $('#hallFiltro').addEventListener('input', renderHall);
     $('#hallAutor').addEventListener('change', function () { S.hl.autor = this.value; renderHall(); });
     $('#capModo').addEventListener('change', modoCaptura);
+    $('#shVis').addEventListener('change', avisoCompartir); $('#shGuardar').addEventListener('click', guardarCompartir);
+    $('#shCancelar').addEventListener('click', function () { $('#vtShare').hidden = true; });
     $('#tecNueva').addEventListener('click', function () { formTec(null); });
     $('#tecFiltro').addEventListener('input', renderTec);
     $('#tecPlat').addEventListener('change', function () { S.tc.plat = this.value; renderTec(); });
@@ -1222,11 +1298,14 @@
     $('#uuGen').addEventListener('click', function () { $('#gnOut').textContent = T.uuid4(); });
     document.addEventListener('keydown', function (e) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); abrirCaptura(); }
-        else if (e.key === 'Escape') { $('#vtCap').hidden = true; $('#vtRes').hidden = true; }
+        else if (e.key === 'Escape') { $('#vtShare').hidden = true; $('#vtCap').hidden = true; $('#vtRes').hidden = true; }
         else if (e.key === 'Enter' && e.ctrlKey && !$('#vtCap').hidden) guardarCaptura();
         else if (e.key === 'Enter' && e.ctrlKey && $('#fhlTitulo') && !$('[data-panel="hall"]').hidden) guardarHall();
         else if (e.key === 'Enter' && e.ctrlKey && $('#ftNombre') && !$('[data-panel="tec"]').hidden) guardarTec();
     });
+    $('#vtAviso').textContent = CFG.ceo ? 'Acceso del CEO: ves todo el contenido de la bóveda. Iconos: 🔒 solo su autor · 👥 todo el personal · 👤 personas elegidas.'
+        : 'Cada elemento tiene su propia visibilidad (🔒 solo tú · 👥 todo el personal · 👤 personas elegidas). El CEO siempre tiene acceso a todo.' + (CFG.admin ? '' : ' Aquí ves lo que el equipo ha compartido contigo.');
+    if (!CFG.escribe) ['arsNuevo', 'notNueva', 'bibNueva', 'hallNuevo', 'tecNueva', 'chkCrear', 'chkObjetivo', 'chkMet', 'vtCapBtn'].forEach(function (i) { $('#' + i).style.display = 'none'; });
     payloads();
     if (CFG.desbloqueada) { $('#vtApp').hidden = false; cargar(); } else { bloquear(undefined, true); }
 })();

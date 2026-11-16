@@ -10,6 +10,8 @@ Qué incluye (todo bajo /vault):
                         si están configurados. El PDF NO se guarda: solo se analiza en memoria y se registra su hash.
   * Biblioteca          Herramientas y aprendizajes: qué hace cada una, cómo se usa y lo que aprendiste (por categoría y nivel).
   * Tecnologías         Registro de tecnologías, objetos y sistemas (propios o de terceros): cómo funcionan y en qué plataformas viven.
+  * Compartir           Cada elemento es privado, de los administradores, de todo el personal o de personas elegidas. El CEO
+                        (administrador principal, ADMIN_USER o VAULT_CEO) tiene acceso automático a todo.
   * Búsqueda            Texto completo en títulos, etiquetas y contenido.
   * Seguridad           Todo el contenido se guarda CIFRADO (Fernet). Bloqueo por inactividad (5 min) en el servidor y en
                         el navegador: se desbloquea con la contraseña de tu cuenta.
@@ -30,7 +32,7 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Blueprint, Response, abort, jsonify, render_template, request, session
+from flask import Blueprint, Response, abort, g, jsonify, render_template, request, session
 from flask_login import current_user
 from werkzeug.exceptions import HTTPException
 
@@ -54,6 +56,8 @@ BLOQUEO_SEGUNDOS = int(os.environ.get("VAULT_BLOQUEO_S", "300") or 300)
 MAX_CUERPO = 400_000               # caracteres por elemento
 MAX_ELEMENTOS = 5000
 MAX_VERSIONES = 50
+VISIBILIDADES = ("privado", "admins", "equipo", "personas")   # solo yo · administradores (valor por defecto) · todo el personal · personas elegidas
+CLASIF_NO_EQUIPO = ("CONFIDENCIAL", "ZERO-DAY / CRÍTICO")      # estas notas no se comparten con «todo el personal»
 AL_CERRAR_CADUCA_H = 12            # respaldo del servidor para las notas «al cerrar» que el navegador no alcanzó a borrar
 
 PLANTILLAS = {
@@ -192,12 +196,18 @@ def nombre_archivo(texto):
 
 
 # --- Blueprint ---------------------------------------------------------------
-def crear_blueprint(app, db, registrar, limitar=None):
+def crear_blueprint(app, db, registrar, limitar=None, Usuario=None):
     bp = Blueprint("vault", __name__)
     secreto = app.config["SECRET_KEY"]
     F = _fernet(secreto)
 
-    class VaultCodigo(db.Model):
+    class Comparte:
+        """Quién escribió el elemento y quién puede verlo. visibilidad NULL = «admins» (como antes de existir el compartir)."""
+        visibilidad = db.Column(db.String(10))
+        autor_id = db.Column(db.Integer)
+        autor = db.Column(db.String(80))
+
+    class VaultCodigo(Comparte, db.Model):
         __tablename__ = "vault_codigo"
         id = db.Column(db.Integer, primary_key=True)
         titulo = db.Column(db.String(200), nullable=False)
@@ -219,7 +229,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         cuerpo = db.Column(db.Text, nullable=False)                 # cifrado
         fecha = db.Column(db.DateTime, default=datetime.utcnow)
 
-    class VaultNota(db.Model):
+    class VaultNota(Comparte, db.Model):
         __tablename__ = "vault_nota"
         id = db.Column(db.Integer, primary_key=True)
         tipo = db.Column(db.String(12), default="Nota")
@@ -232,7 +242,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    class VaultChecklist(db.Model):
+    class VaultChecklist(Comparte, db.Model):
         __tablename__ = "vault_checklist"
         id = db.Column(db.Integer, primary_key=True)
         objetivo = db.Column(db.String(200), nullable=False)
@@ -241,7 +251,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    class VaultHerramienta(db.Model):
+    class VaultHerramienta(Comparte, db.Model):
         __tablename__ = "vault_herramienta"
         id = db.Column(db.Integer, primary_key=True)
         nombre = db.Column(db.String(200), nullable=False)
@@ -253,7 +263,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    class VaultHallazgo(db.Model):
+    class VaultHallazgo(Comparte, db.Model):
         """«Si hago X pasa Y»: un acto, un resultado y un dónde. Lo valida el equipo con votos."""
         __tablename__ = "vault_hallazgo"
         id = db.Column(db.Integer, primary_key=True)
@@ -277,7 +287,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         usuario_id = db.Column(db.Integer, nullable=False)
         valor = db.Column(db.Integer, nullable=False)               # 1 = me funcionó, -1 = no me funcionó
 
-    class VaultTecnologia(db.Model):
+    class VaultTecnologia(Comparte, db.Model):
         """Registro de tecnologías, cosas u objetos: qué son, cómo funcionan y en qué plataformas se conectan."""
         __tablename__ = "vault_tecnologia"
         id = db.Column(db.Integer, primary_key=True)
@@ -293,12 +303,24 @@ def crear_blueprint(app, db, registrar, limitar=None):
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    class VaultAcceso(db.Model):
+        """Personas concretas con las que se compartió un elemento (visibilidad «personas»)."""
+        __tablename__ = "vault_acceso"
+        __table_args__ = (db.UniqueConstraint("tipo", "item_id", "usuario_id", name="uq_vault_acceso"),)
+        id = db.Column(db.Integer, primary_key=True)
+        tipo = db.Column(db.String(12), nullable=False)
+        item_id = db.Column(db.Integer, nullable=False, index=True)
+        usuario_id = db.Column(db.Integer, nullable=False, index=True)
+
+    MODELOS = {"codigo": VaultCodigo, "nota": VaultNota, "check": VaultChecklist, "herramienta": VaultHerramienta,
+               "hallazgo": VaultHallazgo, "tecnologia": VaultTecnologia}
+
     estado = {"ok": False}
 
     def asegurar():
         if estado["ok"]:
             return
-        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta, VaultHallazgo, VaultVoto, VaultTecnologia):
+        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta, VaultHallazgo, VaultVoto, VaultTecnologia, VaultAcceso):
             m.__table__.create(db.engine, checkfirst=True)
         try:        # base ya existente: agrega la columna «notas» a vault_codigo sin perder nada
             from sqlalchemy import inspect, text
@@ -307,18 +329,107 @@ def crear_blueprint(app, db, registrar, limitar=None):
                     con.execute(text("ALTER TABLE vault_codigo ADD COLUMN notas TEXT"))
         except Exception:
             db.session.rollback()
+        try:        # bases ya existentes: agrega visibilidad / autor a cada tabla sin perder nada
+            from sqlalchemy import inspect, text
+            insp = inspect(db.engine)
+            for modelo in MODELOS.values():
+                tabla = modelo.__tablename__
+                tiene = {c["name"] for c in insp.get_columns(tabla)}
+                for col, ddl in (("visibilidad", "VARCHAR(10)"), ("autor_id", "INTEGER"), ("autor", "VARCHAR(80)")):
+                    if col not in tiene:
+                        with db.engine.begin() as con:
+                            con.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {col} {ddl}"))
+        except Exception:
+            db.session.rollback()
         estado["ok"] = True
 
-    def es_admin():
-        return current_user.is_authenticated and (getattr(current_user, "rol", "") or "").lower() == "admin"
+    PERSONAL_ABIERTO = os.environ.get("VAULT_PERSONAL", "1").strip() != "0"     # 0 = la bóveda vuelve a ser solo de administradores
 
-    def solo_admin(f):
+    def rol_actual():
+        return (getattr(current_user, "rol", "") or "").lower() if current_user.is_authenticated else ""
+
+    def es_admin():
+        return current_user.is_authenticated and rol_actual() == "admin"
+
+    def ceo_usuario():
+        return (os.environ.get("VAULT_CEO") or os.environ.get("ADMIN_USER") or "admin").strip()
+
+    def es_ceo():
+        """El CEO es el administrador principal: tiene acceso automático a todo lo que hay en la bóveda."""
+        return current_user.is_authenticated and current_user.username == ceo_usuario()
+
+    def es_personal():
+        """Puede entrar a la bóveda: cuenta activa. Quien no es administrador solo ve lo que le compartieron."""
+        if not current_user.is_authenticated or getattr(current_user, "activo", True) is False:
+            return False
+        return es_admin() or es_ceo() or PERSONAL_ABIERTO
+
+    def puede_escribir():
+        return es_admin() or es_ceo() or rol_actual() == "operador"
+
+    def solo_personal(f):
         @wraps(f)
         def envoltura(*a, **k):
-            if not es_admin():
+            if not es_personal():
                 abort(403)
             return f(*a, **k)
         return envoltura
+
+    def _mis_accesos():
+        if not hasattr(g, "vault_mis"):
+            g.vault_mis = {(a.tipo, a.item_id) for a in VaultAcceso.query.filter_by(usuario_id=current_user.id).all()}
+        return g.vault_mis
+
+    def puede_ver(tipo, it):
+        if es_ceo():
+            return True
+        if it.autor_id is not None and it.autor_id == current_user.id:
+            return True
+        v = it.visibilidad or "admins"
+        if v == "admins":
+            return es_admin()
+        if v == "equipo":
+            return True
+        if v == "personas":
+            return (tipo, it.id) in _mis_accesos()
+        return False                                    # privado
+
+    def puede_editar(tipo, it):
+        if es_ceo():
+            return True
+        if not puede_escribir():
+            return False
+        if it.autor_id is not None and it.autor_id == current_user.id:
+            return True
+        return (it.visibilidad or "admins") == "admins" and es_admin()
+
+    def obtener(tipo, iid, editar=False):
+        it = db.session.get(MODELOS[tipo], iid) or abort(404)
+        if not puede_ver(tipo, it):
+            abort(404)                                  # no se revela que existe
+        if editar and not puede_editar(tipo, it):
+            abort(403)
+        return it
+
+    def autoria():
+        """Autor y visibilidad inicial de un elemento nuevo: los administradores como siempre; el resto, privado."""
+        return {"autor_id": current_user.id, "autor": (current_user.nombre or current_user.username or "")[:80],
+                "visibilidad": "admins" if (es_admin() or es_ceo()) else "privado"}
+
+    def borrar_accesos(tipo, iid):
+        VaultAcceso.query.filter_by(tipo=tipo, item_id=iid).delete()
+
+    def con_meta(tipo):
+        def deco(f):
+            @wraps(f)
+            def envoltura(it, *a, **k):
+                d = f(it, *a, **k)
+                d["visibilidad"] = it.visibilidad or "admins"
+                d["mio"] = puede_editar(tipo, it)
+                d.setdefault("autor", it.autor or "")
+                return d
+            return envoltura
+        return deco
 
     def desbloqueado(tocar=True):
         t = session.get("vault_ts")
@@ -330,11 +441,13 @@ def crear_blueprint(app, db, registrar, limitar=None):
     def api(f):
         """Rutas JSON: solo admin y bóveda desbloqueada (423 si está bloqueada)."""
         @wraps(f)
-        @solo_admin
+        @solo_personal
         def envoltura(*a, **k):
             asegurar()
             if not desbloqueado():
                 return jsonify(ok=False, error="bloqueada"), 423
+            if request.method not in ("GET", "HEAD") and f.__name__ != "vault_latido" and not puede_escribir():
+                abort(403)
             purgar()
             return f(*a, **k)
         return envoltura
@@ -373,18 +486,19 @@ def crear_blueprint(app, db, registrar, limitar=None):
 
     # ---- Página y bloqueo -----------------------------------------------------
     @bp.route("/vault")
-    @solo_admin
+    @solo_personal
     def vault_inicio():
         asegurar()
         cfg = {"desbloqueada": desbloqueado(tocar=False), "bloqueo_s": BLOQUEO_SEGUNDOS, "lados": list(LADOS),
                "clasificaciones": list(CLASIFICACIONES), "tipos": list(TIPOS_NOTA), "lenguajes": list(LENGUAJES),
                "metodologias": list(METODOLOGIAS), "categorias": list(CATEGORIAS_HERR), "niveles": list(NIVELES_HERR),
                "tipos_hall": list(TIPOS_HALLAZGO), "donde_sug": list(DONDE_SUGERIDOS),
+               "escribe": puede_escribir(), "ceo": es_ceo(), "admin": es_admin(),
                "cats_tec": list(CATEGORIAS_TEC), "origenes_tec": list(ORIGENES_TEC), "estados_tec": list(ESTADOS_TEC), "plat_sug": list(PLATAFORMAS_SUGERIDAS)}
         return render_template("vault.html", cfg=cfg)
 
     @bp.route("/vault/api/desbloquear", methods=["POST"])
-    @solo_admin
+    @solo_personal
     def vault_desbloquear():
         d = datos()
         clave = f"vault_unlock:{current_user.id}"
@@ -402,7 +516,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         return jsonify(ok=True)
 
     @bp.route("/vault/api/bloquear", methods=["POST"])
-    @solo_admin
+    @solo_personal
     def vault_bloquear():
         asegurar()
         session.pop("vault_ts", None)
@@ -415,15 +529,18 @@ def crear_blueprint(app, db, registrar, limitar=None):
         return jsonify(ok=True)
 
     # ---- Inicio rápido: listados (sin contenido) ------------------------------
+    @con_meta("codigo")
     def resumen_codigo(c):
         return {"id": c.id, "titulo": c.titulo, "lado": c.lado, "lenguaje": c.lenguaje, "etiquetas": limpiar_etiquetas(c.etiquetas),
                 "version": c.version, "actualizado": c.actualizado.isoformat() + "Z"}
 
+    @con_meta("nota")
     def resumen_nota(n):
         return {"id": n.id, "titulo": n.titulo, "tipo": n.tipo, "clasificacion": n.clasificacion, "etiquetas": limpiar_etiquetas(n.etiquetas),
                 "expira": n.expira.isoformat() + "Z" if n.expira else None, "al_cerrar": bool(n.al_cerrar),
                 "actualizado": n.actualizado.isoformat() + "Z"}
 
+    @con_meta("check")
     def resumen_check(c):
         try:
             hechos = json.loads(c.hechos or "[]")
@@ -432,6 +549,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         return {"id": c.id, "objetivo": c.objetivo, "metodologia": c.metodologia, "hechos": hechos,
                 "total": len(claves_checklist(c.metodologia)), "actualizado": c.actualizado.isoformat() + "Z"}
 
+    @con_meta("herramienta")
     def resumen_herr(h):
         return {"id": h.id, "nombre": h.nombre, "categoria": h.categoria, "nivel": h.nivel, "enlace": h.enlace or "",
                 "etiquetas": limpiar_etiquetas(h.etiquetas), "actualizado": h.actualizado.isoformat() + "Z"}
@@ -450,12 +568,14 @@ def crear_blueprint(app, db, registrar, limitar=None):
                 fila[2] = v.valor
         return {k: tuple(v) for k, v in r.items()}
 
+    @con_meta("hallazgo")
     def resumen_hall(h, votos=None):
         si, no, mio = (votos or {}).get(h.id, (0, 0, 0))
         return {"id": h.id, "titulo": h.titulo, "tipo": h.tipo, "donde": h.donde or "", "etiquetas": limpiar_etiquetas(h.etiquetas),
                 "enlace": h.enlace or "", "autor": h.autor or "", "funciona": si, "no_funciona": no, "mi_voto": mio,
                 "actualizado": h.actualizado.isoformat() + "Z"}
 
+    @con_meta("tecnologia")
     def resumen_tec(t):
         return {"id": t.id, "nombre": t.nombre, "categoria": t.categoria, "origen": t.origen, "estado": t.estado,
                 "plataformas": limpiar_etiquetas(t.plataformas), "enlace": t.enlace or "", "etiquetas": limpiar_etiquetas(t.etiquetas),
@@ -469,15 +589,15 @@ def crear_blueprint(app, db, registrar, limitar=None):
         for tipo, modelo, campo in (("nota", VaultNota, "titulo"), ("codigo", VaultCodigo, "titulo"),
                                     ("herramienta", VaultHerramienta, "nombre"), ("tecnologia", VaultTecnologia, "nombre")):
             for o in modelo.query.all():
-                if excluir != (tipo, o.id) and enlaza(descifrar(F, o.cuerpo)):
+                if excluir != (tipo, o.id) and puede_ver(tipo, o) and enlaza(descifrar(F, o.cuerpo)):
                     salida.append({"tipo": tipo, "id": o.id, "titulo": getattr(o, campo)})
         for o in VaultHallazgo.query.all():
-            if excluir != ("hallazgo", o.id) and enlaza("\n".join([descifrar(F, o.accion) or "", descifrar(F, o.resultado) or "", f"[[{o.enlace}]]" if o.enlace else ""])):
+            if excluir != ("hallazgo", o.id) and puede_ver("hallazgo", o) and enlaza("\n".join([descifrar(F, o.accion) or "", descifrar(F, o.resultado) or "", f"[[{o.enlace}]]" if o.enlace else ""])):
                 salida.append({"tipo": "hallazgo", "id": o.id, "titulo": o.titulo})
         return salida
 
     def lista_hallazgos():
-        hs = VaultHallazgo.query.order_by(VaultHallazgo.actualizado.desc()).all()
+        hs = [h for h in VaultHallazgo.query.order_by(VaultHallazgo.actualizado.desc()).all() if puede_ver("hallazgo", h)]
         votos = votos_de([h.id for h in hs])
         return [resumen_hall(h, votos) for h in hs]
 
@@ -486,18 +606,18 @@ def crear_blueprint(app, db, registrar, limitar=None):
     def vault_datos():
         return jsonify(ok=True,
                        hallazgos=lista_hallazgos(),
-                       tecnologias=[resumen_tec(t) for t in VaultTecnologia.query.order_by(VaultTecnologia.actualizado.desc()).all()],
-                       codigo=[resumen_codigo(c) for c in VaultCodigo.query.order_by(VaultCodigo.actualizado.desc()).all()],
-                       notas=[resumen_nota(n) for n in VaultNota.query.order_by(VaultNota.actualizado.desc()).all()],
-                       checklists=[resumen_check(c) for c in VaultChecklist.query.order_by(VaultChecklist.actualizado.desc()).all()],
-                       herramientas=[resumen_herr(h) for h in VaultHerramienta.query.order_by(VaultHerramienta.actualizado.desc()).all()],
+                       tecnologias=[resumen_tec(t) for t in VaultTecnologia.query.order_by(VaultTecnologia.actualizado.desc()).all() if puede_ver("tecnologia", t)],
+                       codigo=[resumen_codigo(c) for c in VaultCodigo.query.order_by(VaultCodigo.actualizado.desc()).all() if puede_ver("codigo", c)],
+                       notas=[resumen_nota(n) for n in VaultNota.query.order_by(VaultNota.actualizado.desc()).all() if puede_ver("nota", n)],
+                       checklists=[resumen_check(c) for c in VaultChecklist.query.order_by(VaultChecklist.actualizado.desc()).all() if puede_ver("check", c)],
+                       herramientas=[resumen_herr(h) for h in VaultHerramienta.query.order_by(VaultHerramienta.actualizado.desc()).all() if puede_ver("herramienta", h)],
                        catalogo=catalogo_para_cliente(), plantillas=PLANTILLAS)
 
     # ---- Código ---------------------------------------------------------------
     @bp.route("/vault/api/codigo/<int:cid>")
     @api
     def vault_codigo_ver(cid):
-        c = db.session.get(VaultCodigo, cid) or abort(404)
+        c = obtener("codigo", cid)
         cuerpo = descifrar(F, c.cuerpo)
         vers = VaultVersion.query.filter_by(codigo_id=cid).order_by(VaultVersion.n.desc()).all()
         notas = (descifrar(F, c.notas) or "") if c.notas else ""
@@ -507,6 +627,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/codigo/<int:cid>/version/<int:n>")
     @api
     def vault_codigo_version(cid, n):
+        obtener("codigo", cid)
         v = VaultVersion.query.filter_by(codigo_id=cid, n=n).first() or abort(404)
         return jsonify(ok=True, n=v.n, nota=v.nota, cuerpo=descifrar(F, v.cuerpo) or "")
 
@@ -525,7 +646,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
         cid = d.get("id")
         if cid:
-            c = db.session.get(VaultCodigo, int(cid)) or abort(404)
+            c = obtener("codigo", int(cid), editar=True)
             if descifrar(F, c.cuerpo) != cuerpo:        # cambió el código: la versión anterior queda en el historial
                 c.version = (c.version or 1) + 1
                 db.session.add(VaultVersion(codigo_id=c.id, n=c.version, nota=nota_version, cuerpo=cifrar(F, cuerpo)))
@@ -539,7 +660,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         else:
             if VaultCodigo.query.count() >= MAX_ELEMENTOS:
                 abort(400, description="Límite de elementos alcanzado")
-            c = VaultCodigo(titulo=titulo, lado=lado, lenguaje=lenguaje, etiquetas=etiquetas, cuerpo=cifrar(F, cuerpo), notas=cifrar(F, notas), version=1)
+            c = VaultCodigo(titulo=titulo, lado=lado, lenguaje=lenguaje, etiquetas=etiquetas, cuerpo=cifrar(F, cuerpo), notas=cifrar(F, notas), version=1, **autoria())
             db.session.add(c)
             db.session.flush()
             db.session.add(VaultVersion(codigo_id=c.id, n=1, nota=nota_version or "Versión inicial", cuerpo=cifrar(F, cuerpo)))
@@ -550,7 +671,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/codigo/<int:cid>/restaurar/<int:n>", methods=["POST"])
     @api
     def vault_codigo_restaurar(cid, n):
-        c = db.session.get(VaultCodigo, cid) or abort(404)
+        c = obtener("codigo", cid, editar=True)
         v = VaultVersion.query.filter_by(codigo_id=cid, n=n).first() or abort(404)
         c.version = (c.version or 1) + 1
         db.session.add(VaultVersion(codigo_id=cid, n=c.version, nota=f"Restaurada desde v{n}", cuerpo=v.cuerpo))
@@ -562,8 +683,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/codigo/<int:cid>", methods=["DELETE"])
     @api
     def vault_codigo_borrar(cid):
-        c = db.session.get(VaultCodigo, cid) or abort(404)
+        c = obtener("codigo", cid, editar=True)
         VaultVersion.query.filter_by(codigo_id=cid).delete()
+        borrar_accesos("codigo", cid)
         registrar("vault_codigo_borrar", "vault_codigo", cid, c.titulo[:80])
         db.session.delete(c)
         db.session.commit()
@@ -573,26 +695,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/nota/<int:nid>")
     @api
     def vault_nota_ver(nid):
-        n = db.session.get(VaultNota, nid) or abort(404)
+        n = obtener("nota", nid)
         cuerpo = descifrar(F, n.cuerpo)
-        titulo_l = n.titulo.strip().lower()
-        entrantes = []                      # backlinks: notas y snippets que enlazan a esta
-        for o in VaultNota.query.filter(VaultNota.id != nid).all():
-            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
-                entrantes.append({"tipo": "nota", "id": o.id, "titulo": o.titulo})
-        for o in VaultCodigo.query.all():
-            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
-                entrantes.append({"tipo": "codigo", "id": o.id, "titulo": o.titulo})
-        for o in VaultHerramienta.query.all():
-            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
-                entrantes.append({"tipo": "herramienta", "id": o.id, "titulo": o.nombre})
-        for o in VaultHallazgo.query.all():
-            texto_h = "\n".join([descifrar(F, o.accion) or "", descifrar(F, o.resultado) or "", f"[[{o.enlace}]]" if o.enlace else ""])
-            if titulo_l in [t.lower() for t in enlaces_wiki(texto_h)]:
-                entrantes.append({"tipo": "hallazgo", "id": o.id, "titulo": o.titulo})
-        for o in VaultTecnologia.query.all():
-            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
-                entrantes.append({"tipo": "tecnologia", "id": o.id, "titulo": o.nombre})
+        entrantes = entrantes_de(n.titulo, ("nota", nid))      # solo notas y bloques que esta persona puede ver
         return jsonify(ok=True, item=dict(resumen_nota(n), cuerpo=cuerpo, ilegible=cuerpo is None), entrantes=entrantes)
 
     @bp.route("/vault/api/nota", methods=["POST"])
@@ -607,16 +712,20 @@ def crear_blueprint(app, db, registrar, limitar=None):
         efimera = d.get("efimera")                      # None | 1 | 24 | "cerrar"
         nid = d.get("id")
         if nid:
-            n = db.session.get(VaultNota, int(nid)) or abort(404)
+            n = obtener("nota", int(nid), editar=True)
         else:
             if VaultNota.query.count() >= MAX_ELEMENTOS:
                 abort(400, description="Límite de elementos alcanzado")
-            n = VaultNota()
+            n = VaultNota(**autoria())
             db.session.add(n)
             if efimera == "cerrar":
                 n.al_cerrar = True
             elif efimera in EFIMERAS_HORAS:
                 n.expira = datetime.utcnow() + timedelta(hours=int(efimera))
+            if n.al_cerrar or n.expira:
+                n.visibilidad = "privado"          # una nota efímera nunca se comparte
+        if clasif in CLASIF_NO_EQUIPO and (n.visibilidad or "") == "equipo":
+            abort(400, description="Una nota CONFIDENCIAL o ZERO-DAY no puede estar compartida con todo el personal: cambia primero quién puede verla.")
         n.titulo, n.tipo, n.clasificacion, n.etiquetas, n.cuerpo = titulo, tipo, clasif, etiquetas, cifrar(F, cuerpo)
         db.session.flush()
         registrar("vault_nota", "vault_nota", n.id, f"{clasif}: {titulo[:80]}" if not (n.expira or n.al_cerrar) else "nota efímera")
@@ -626,8 +735,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/nota/<int:nid>", methods=["DELETE"])
     @api
     def vault_nota_borrar(nid):
-        n = db.session.get(VaultNota, nid) or abort(404)
+        n = obtener("nota", nid, editar=True)
         registrar("vault_nota_borrar", "vault_nota", nid, "" if (n.expira or n.al_cerrar) else n.titulo[:80])
+        borrar_accesos("nota", nid)
         db.session.delete(n)
         db.session.commit()
         return jsonify(ok=True)
@@ -635,7 +745,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/nota/<int:nid>/informe.md")
     @api
     def vault_nota_informe(nid):
-        n = db.session.get(VaultNota, nid) or abort(404)
+        n = obtener("nota", nid)
         md = informe_markdown(n.titulo, n.clasificacion, n.tipo, limpiar_etiquetas(n.etiquetas), descifrar(F, n.cuerpo) or "",
                               current_user.nombre or current_user.username)
         registrar("vault_exportar", "vault_nota", nid, "Informe Markdown")
@@ -647,7 +757,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/herramienta/<int:hid>")
     @api
     def vault_herr_ver(hid):
-        h = db.session.get(VaultHerramienta, hid) or abort(404)
+        h = obtener("herramienta", hid)
         cuerpo = descifrar(F, h.cuerpo)
         return jsonify(ok=True, item=dict(resumen_herr(h), cuerpo=cuerpo, ilegible=cuerpo is None))
 
@@ -665,11 +775,11 @@ def crear_blueprint(app, db, registrar, limitar=None):
         cuerpo = texto(d, "cuerpo", MAX_CUERPO)
         hid = d.get("id")
         if hid:
-            h = db.session.get(VaultHerramienta, int(hid)) or abort(404)
+            h = obtener("herramienta", int(hid), editar=True)
         else:
             if VaultHerramienta.query.count() >= MAX_ELEMENTOS:
                 abort(400, description="Límite de elementos alcanzado")
-            h = VaultHerramienta()
+            h = VaultHerramienta(**autoria())
             db.session.add(h)
         h.nombre, h.categoria, h.nivel, h.enlace, h.etiquetas, h.cuerpo = nombre, cat, nivel, enlace, etiquetas, cifrar(F, cuerpo)
         db.session.flush()
@@ -680,8 +790,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/herramienta/<int:hid>", methods=["DELETE"])
     @api
     def vault_herr_borrar(hid):
-        h = db.session.get(VaultHerramienta, hid) or abort(404)
+        h = obtener("herramienta", hid, editar=True)
         registrar("vault_herr_borrar", "vault_herramienta", hid, h.nombre[:80])
+        borrar_accesos("herramienta", hid)
         db.session.delete(h)
         db.session.commit()
         return jsonify(ok=True)
@@ -690,7 +801,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/tecnologia/<int:tid>")
     @api
     def vault_tec_ver(tid):
-        t = db.session.get(VaultTecnologia, tid) or abort(404)
+        t = obtener("tecnologia", tid)
         cuerpo = descifrar(F, t.cuerpo)
         return jsonify(ok=True, item=dict(resumen_tec(t), cuerpo=cuerpo, ilegible=cuerpo is None),
                        entrantes=entrantes_de(t.nombre, ("tecnologia", tid)))
@@ -711,11 +822,11 @@ def crear_blueprint(app, db, registrar, limitar=None):
         cuerpo = texto(d, "cuerpo", MAX_CUERPO)
         tid = d.get("id")
         if tid:
-            t = db.session.get(VaultTecnologia, int(tid)) or abort(404)
+            t = obtener("tecnologia", int(tid), editar=True)
         else:
             if VaultTecnologia.query.count() >= MAX_ELEMENTOS:
                 abort(400, description="Límite de elementos alcanzado")
-            t = VaultTecnologia(autor=(current_user.nombre or current_user.username or "")[:80])
+            t = VaultTecnologia(**autoria())
             db.session.add(t)
         t.nombre, t.categoria, t.origen, t.estado, t.plataformas, t.enlace, t.etiquetas, t.cuerpo = nombre, cat, origen, est, plataformas, enlace, etiquetas, cifrar(F, cuerpo)
         db.session.flush()
@@ -726,8 +837,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/tecnologia/<int:tid>", methods=["DELETE"])
     @api
     def vault_tec_borrar(tid):
-        t = db.session.get(VaultTecnologia, tid) or abort(404)
+        t = obtener("tecnologia", tid, editar=True)
         registrar("vault_tecnologia_borrar", "vault_tecnologia", tid, t.nombre[:80])
+        borrar_accesos("tecnologia", tid)
         db.session.delete(t)
         db.session.commit()
         return jsonify(ok=True)
@@ -736,7 +848,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/hallazgo/<int:hid>")
     @api
     def vault_hall_ver(hid):
-        h = db.session.get(VaultHallazgo, hid) or abort(404)
+        h = obtener("hallazgo", hid)
         accion, resultado = descifrar(F, h.accion), descifrar(F, h.resultado)
         return jsonify(ok=True, item=dict(resumen_hall(h, votos_de([hid])), accion=accion or "", resultado=resultado or "",
                                           ilegible=accion is None or resultado is None))
@@ -754,11 +866,11 @@ def crear_blueprint(app, db, registrar, limitar=None):
         enlace = re.sub(r"^\[\[|\]\]$", "", texto(d, "enlace", 200).strip()).strip()
         hid = d.get("id")
         if hid:
-            h = db.session.get(VaultHallazgo, int(hid)) or abort(404)
+            h = obtener("hallazgo", int(hid), editar=True)
         else:
             if VaultHallazgo.query.count() >= MAX_ELEMENTOS:
                 abort(400, description="Límite de elementos alcanzado")
-            h = VaultHallazgo(autor=(current_user.nombre or current_user.username or "")[:80], autor_id=current_user.id)
+            h = VaultHallazgo(**autoria())
             db.session.add(h)
         h.titulo, h.tipo, h.donde, h.etiquetas, h.enlace = titulo, tipo, donde, etiquetas, enlace
         h.accion, h.resultado = cifrar(F, accion), cifrar(F, resultado)
@@ -772,8 +884,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/hallazgo/<int:hid>", methods=["DELETE"])
     @api
     def vault_hall_borrar(hid):
-        h = db.session.get(VaultHallazgo, hid) or abort(404)
+        h = obtener("hallazgo", hid, editar=True)
         VaultVoto.query.filter_by(hallazgo_id=hid).delete()
+        borrar_accesos("hallazgo", hid)
         registrar("vault_hallazgo_borrar", "vault_hallazgo", hid, h.titulo[:80])
         db.session.delete(h)
         db.session.commit()
@@ -782,7 +895,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/hallazgo/<int:hid>/voto", methods=["POST"])
     @api
     def vault_hall_voto(hid):
-        h = db.session.get(VaultHallazgo, hid) or abort(404)
+        h = obtener("hallazgo", hid)
         valor = datos().get("valor")
         if valor not in (1, -1, 0):
             abort(400, description="Voto no válido")
@@ -797,6 +910,72 @@ def crear_blueprint(app, db, registrar, limitar=None):
         db.session.commit()
         return jsonify(ok=True, item=resumen_hall(h, votos_de([hid])))
 
+    # ---- Compartir (quién puede ver cada elemento) -------------------------------
+    def modelo_usuario():
+        return Usuario or current_user._get_current_object().__class__
+
+    def candidatos():
+        """Personal activo con el que se puede compartir (el CEO ya tiene acceso a todo; uno mismo no cuenta)."""
+        U = modelo_usuario()
+        res = []
+        for u in U.query.filter(U.activo.is_(True)).order_by(U.nombre).all():
+            if u.id == current_user.id or u.username == ceo_usuario():
+                continue
+            if not PERSONAL_ABIERTO and (u.rol or "").lower() != "admin":
+                continue
+            res.append(u)
+        return res
+
+    @bp.route("/vault/api/personal")
+    @api
+    def vault_personal():
+        if not puede_escribir():
+            abort(403)
+        return jsonify(ok=True, personal=[{"id": u.id, "nombre": u.nombre, "rol": u.rol,
+                                           "cargo": (getattr(u, "cargo", "") or "").strip() or (u.rol or "").capitalize()} for u in candidatos()])
+
+    @bp.route("/vault/api/acceso/<tipo>/<int:iid>")
+    @api
+    def vault_acceso_ver(tipo, iid):
+        if tipo not in MODELOS:
+            abort(404)
+        it = obtener(tipo, iid, editar=True)
+        ids = [a.usuario_id for a in VaultAcceso.query.filter_by(tipo=tipo, item_id=iid).all()]
+        return jsonify(ok=True, acceso={"visibilidad": it.visibilidad or "admins", "usuarios": ids, "autor": it.autor or ""})
+
+    @bp.route("/vault/api/acceso", methods=["POST"])
+    @api
+    def vault_acceso_guardar():
+        d = datos()
+        tipo = d.get("tipo")
+        if tipo not in MODELOS:
+            abort(400, description="Elemento no válido")
+        try:
+            iid = int(d.get("id"))
+        except (TypeError, ValueError):
+            abort(400, description="Elemento no válido")
+        it = obtener(tipo, iid, editar=True)
+        vis = d.get("visibilidad")
+        if vis not in VISIBILIDADES:
+            abort(400, description="Elige quién puede verlo")
+        if tipo == "nota":
+            if (it.al_cerrar or it.expira) and vis != "privado":
+                abort(400, description="Las notas efímeras son siempre privadas")
+            if vis == "equipo" and it.clasificacion in CLASIF_NO_EQUIPO:
+                abort(400, description="Una nota CONFIDENCIAL o ZERO-DAY no se comparte con todo el personal: elige personas concretas")
+        validos = {u.id for u in candidatos()}
+        pedidos = d.get("usuarios") if isinstance(d.get("usuarios"), list) else []
+        ids = sorted({int(x) for x in pedidos if isinstance(x, int) and not isinstance(x, bool)} & validos) if vis == "personas" else []
+        if vis == "personas" and not ids:
+            abort(400, description="Elige al menos una persona")
+        VaultAcceso.query.filter_by(tipo=tipo, item_id=iid).delete()
+        for uid in ids:
+            db.session.add(VaultAcceso(tipo=tipo, item_id=iid, usuario_id=uid))
+        it.visibilidad = vis
+        registrar("vault_compartir", "vault", iid, f"{tipo} → {vis}" + (f" ({len(ids)} personas)" if ids else ""))
+        db.session.commit()
+        return jsonify(ok=True, visibilidad=vis, usuarios=ids)
+
     # ---- Checklists -----------------------------------------------------------
     @bp.route("/vault/api/checklist", methods=["POST"])
     @api
@@ -806,7 +985,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         met = d.get("metodologia")
         if met not in METODOLOGIAS:
             abort(400, description="Metodología no válida")
-        c = VaultChecklist(objetivo=objetivo, metodologia=met, hechos="[]")
+        c = VaultChecklist(objetivo=objetivo, metodologia=met, hechos="[]", **autoria())
         db.session.add(c)
         db.session.commit()
         return jsonify(ok=True, item=resumen_check(c))
@@ -814,7 +993,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/checklist/<int:cid>", methods=["POST"])
     @api
     def vault_check_marcar(cid):
-        c = db.session.get(VaultChecklist, cid) or abort(404)
+        c = obtener("check", cid, editar=True)
         d = datos()
         validas = claves_checklist(c.metodologia)
         hechos = [k for k in (d.get("hechos") or []) if isinstance(k, str) and k in validas]
@@ -825,7 +1004,8 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @bp.route("/vault/api/checklist/<int:cid>", methods=["DELETE"])
     @api
     def vault_check_borrar(cid):
-        c = db.session.get(VaultChecklist, cid) or abort(404)
+        c = obtener("check", cid, editar=True)
+        borrar_accesos("check", cid)
         db.session.delete(c)
         db.session.commit()
         return jsonify(ok=True)
@@ -861,23 +1041,33 @@ def crear_blueprint(app, db, registrar, limitar=None):
             return jsonify(ok=True, resultados=[])
         res = []
         for c in VaultCodigo.query.all():
+            if not puede_ver("codigo", c):
+                continue
             cuerpo = descifrar(F, c.cuerpo) or ""
             if coincide(q, c.titulo, c.etiquetas, c.lado, c.lenguaje, cuerpo, descifrar(F, c.notas) if c.notas else ""):
                 res.append({"tipo": "codigo", "id": c.id, "titulo": c.titulo, "detalle": c.lado, "linea": _linea(cuerpo, q)})
         for n in VaultNota.query.all():
+            if not puede_ver("nota", n):
+                continue
             cuerpo = descifrar(F, n.cuerpo) or ""
             if coincide(q, n.titulo, n.etiquetas, n.clasificacion, n.tipo, cuerpo):
                 res.append({"tipo": "nota", "id": n.id, "titulo": n.titulo, "detalle": n.clasificacion, "linea": _linea(cuerpo, q)})
         for h in VaultHerramienta.query.all():
+            if not puede_ver("herramienta", h):
+                continue
             cuerpo = descifrar(F, h.cuerpo) or ""
             if coincide(q, h.nombre, h.etiquetas, h.categoria, h.nivel, cuerpo):
                 res.append({"tipo": "herramienta", "id": h.id, "titulo": h.nombre, "detalle": h.categoria, "linea": _linea(cuerpo, q)})
         for x in VaultHallazgo.query.all():
+            if not puede_ver("hallazgo", x):
+                continue
             acc, rta = descifrar(F, x.accion) or "", descifrar(F, x.resultado) or ""
             if coincide(q, x.titulo, x.etiquetas, x.tipo, x.donde, x.autor, acc, rta):
                 res.append({"tipo": "hallazgo", "id": x.id, "titulo": x.titulo, "detalle": f"{x.tipo} · {x.donde}" if x.donde else x.tipo,
                             "linea": _linea(acc + "\n" + rta, q)})
         for t in VaultTecnologia.query.all():
+            if not puede_ver("tecnologia", t):
+                continue
             cuerpo = descifrar(F, t.cuerpo) or ""
             if coincide(q, t.nombre, t.etiquetas, t.categoria, t.origen, t.estado, t.plataformas, cuerpo):
                 res.append({"tipo": "tecnologia", "id": t.id, "titulo": t.nombre, "detalle": t.categoria, "linea": _linea(cuerpo, q)})
@@ -887,12 +1077,12 @@ def crear_blueprint(app, db, registrar, limitar=None):
     @api
     def vault_grafo():
         nodos, por_titulo = [], {}
-        elementos = [("nota", n.id, n.titulo, n.cuerpo) for n in VaultNota.query.all()] + \
-                    [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all()] + \
-                    [("herramienta", h.id, h.nombre, h.cuerpo) for h in VaultHerramienta.query.all()] + \
+        elementos = [("nota", n.id, n.titulo, n.cuerpo) for n in VaultNota.query.all() if puede_ver("nota", n)] + \
+                    [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all() if puede_ver("codigo", c)] + \
+                    [("herramienta", h.id, h.nombre, h.cuerpo) for h in VaultHerramienta.query.all() if puede_ver("herramienta", h)] + \
                     [("hallazgo", x.id, x.titulo, "\n".join([descifrar(F, x.accion) or "", descifrar(F, x.resultado) or "", f"[[{x.enlace}]]" if x.enlace else ""]))
-                     for x in VaultHallazgo.query.all()] + \
-                    [("tecnologia", t.id, t.nombre, t.cuerpo) for t in VaultTecnologia.query.all()]
+                     for x in VaultHallazgo.query.all() if puede_ver("hallazgo", x)] + \
+                    [("tecnologia", t.id, t.nombre, t.cuerpo) for t in VaultTecnologia.query.all() if puede_ver("tecnologia", t)]
         for tipo, i, titulo, _c in elementos:
             nodos.append({"id": f"{tipo}:{i}", "tipo": tipo, "titulo": titulo})
             por_titulo.setdefault(titulo.strip().lower(), f"{tipo}:{i}")
