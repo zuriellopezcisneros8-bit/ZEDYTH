@@ -178,20 +178,33 @@ def _calc(uso, lim, rid):
     return mejor
 
 
+def _pct(v):
+    """Porcentaje legible: 0 → «0%», 0.04 → «<0.1%», 0.3 → «0.3%», 22.4 → «22%». Evita que un uso pequeño pero real se vea como 0%."""
+    if v is None:
+        return "—"
+    if v <= 0:
+        return "0%"
+    if v < 0.1:
+        return "<0.1%"
+    if v < 10:
+        return f"{v:.1f}%"
+    return f"{v:.0f}%"
+
+
 def _txt_ram(c):
     if not c:
         return None
     t = f"{c['ultimo'] / MB:.0f} MB"
     if c["limite"]:
-        t += f" de {c['limite'] / MB:.0f} MB · {c['pct']:.0f}%"
-    return t + (f" · pico 1 h: {c['pico_pct']:.0f}%" if c["pico_pct"] is not None else "")
+        t += f" de {c['limite'] / MB:.0f} MB · {_pct(c['pct'])}"
+    return t + (f" · pico 1 h: {_pct(c['pico_pct'])}" if c["pico_pct"] is not None else "")
 
 
 def _txt_cpu(c):
     if not c:
         return None
     if c["limite"]:
-        return f"{c['pct']:.0f}% de {c['limite']:g} CPU" + (f" · pico 1 h: {c['pico_pct']:.0f}%" if c["pico_pct"] is not None else "")
+        return f"{_pct(c['pct'])} de {c['limite']:g} CPU" + (f" · pico 1 h: {_pct(c['pico_pct'])}" if c["pico_pct"] is not None else "")
     return f"{c['ultimo']:.2f} CPU"
 
 

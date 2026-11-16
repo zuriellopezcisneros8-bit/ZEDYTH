@@ -30,6 +30,7 @@ import notificar
 import monitor
 import llaves
 import servicios
+import operaciones
 import respaldos
 
 app = Flask(__name__)
@@ -3139,10 +3140,19 @@ def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clav
     try:
         if clave and Notificacion.query.filter_by(clave=clave).first():
             return None
-        n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave)
+        if tipo == "Monitor" and titulo.startswith("Caído") and urgente:
+            # Dentro de una ventana de mantenimiento la caída se avisa, pero sin urgencia y con la explicación.
+            v = operaciones.mantenimiento_activo()
+            if v:
+                urgente = False
+                cuerpo = f"{cuerpo or ''} · Hay un mantenimiento de {v['proveedor']} en curso (termina {v['fin_local']:%H:%M}).".strip(" ·")
+        silenciada = operaciones.silenciado(tipo)
+        n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave,
+                         leida=silenciada, intentos=10 if silenciada else 0)    # intentos=10: el vigilante no la reintenta
         db.session.add(n)
         db.session.commit()
-        threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
+        if not silenciada:
+            threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
         return n
     except Exception as e:
         db.session.rollback()
@@ -3350,9 +3360,29 @@ def auditoria_exportar():
 
 @app.route('/notificaciones')
 def notificaciones():
-    filas = Notificacion.query.order_by(Notificacion.hora.desc()).limit(100).all()
+    vista = request.args.get('v', 'todas')
+    if vista not in ('todas', 'criticas', 'avisos', 'sinleer'):
+        vista = 'todas'
+    q = Notificacion.query
+    if vista == 'criticas':
+        q = q.filter(Notificacion.urgente.is_(True))
+    elif vista == 'avisos':
+        q = q.filter(Notificacion.urgente.is_(False))
+    elif vista == 'sinleer':
+        q = q.filter(Notificacion.leida.is_(False))
+    filas = q.order_by(Notificacion.hora.desc()).limit(200).all()
+    cuentas = {"todas": Notificacion.query.count(),
+               "criticas": Notificacion.query.filter(Notificacion.urgente.is_(True)).count(),
+               "avisos": Notificacion.query.filter(Notificacion.urgente.is_(False)).count(),
+               "sinleer": Notificacion.query.filter(Notificacion.leida.is_(False)).count()}
+    tipos = sorted({t for (t,) in db.session.query(Notificacion.tipo).distinct().all() if t} | {"Monitor", "Render", "Cobro", "Vencimiento"})
+    try:
+        silencios = operaciones._api["silencios_activos"]()
+    except Exception:
+        silencios = []
     dispositivos = PushDispositivo.query.filter_by(activo=True).order_by(PushDispositivo.creado.desc()).all()
-    return render_template('notificaciones.html', filas=filas, dispositivos=dispositivos, configurado=push_configurado(),
+    return render_template('notificaciones.html', filas=filas, grupos=operaciones.agrupar(filas), vista=vista, cuentas=cuentas,
+                           tipos=tipos, silencios=silencios, dispositivos=dispositivos, configurado=push_configurado(),
                            problema=vapid_diagnostico())
 
 
@@ -3419,6 +3449,7 @@ def push_revisar():
     llaves.revisar()
     servicios.revisar()
     render_panel.revisar()
+    operaciones.revisar()
     respaldos.revisar()
     actualizar_cobranza()
     return {"ok": True, "reintentados": reintentados}
@@ -3431,6 +3462,7 @@ app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))   
 app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
 import render_panel
 app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
+app.register_blueprint(operaciones.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /mantenimientos, /atajos y centro de alertas
 
 # ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
 zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]

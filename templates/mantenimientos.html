@@ -1,0 +1,55 @@
+<!-- templates/mantenimientos.html -->
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>Mantenimientos</h1>
+    <p>Ventanas de mantenimiento de tus proveedores. Te avisamos 24 h antes y al comenzar, y mientras una está activa los avisos de «Caído» dejan de sonar como urgentes. Las horas son locales (UTC{{ '%+d'|format(utc_offset) }}).</p>
+</section>
+{% if mensaje == 'creado' %}<div class="luxury-card" style="margin-bottom:16px;">Ventana agregada.</div>{% elif mensaje == 'eliminado' %}<div class="luxury-card" style="margin-bottom:16px;">Ventana eliminada.</div>{% endif %}
+
+{% if en_curso %}
+<div class="luxury-card" style="border-color:#fbbf24; margin-bottom:20px;">
+    <h3 class="stat-label" style="color:#fbbf24;">En curso ahora</h3>
+    {% for m in en_curso %}<p style="margin:6px 0 0;"><strong>{{ m.proveedor }}</strong> · {{ m.titulo }} <span class="mono" style="color:var(--text-muted);">· termina {{ a_local(m.fin).strftime('%d/%m %H:%M') }}</span></p>{% endfor %}
+</div>
+{% endif %}
+
+<div class="luxury-card" style="margin-bottom:24px;">
+    <h3 class="stat-label">Nueva ventana</h3>
+    <p style="margin:0 0 12px;"><a href="/mantenimientos?proveedor=Render&titulo=Actualización de infraestructura crítica&inicio=2026-11-17T20:00&fin=2026-11-17T23:00&afecta=Aviso de Render: posibles reinicios del servicio">Cargar el aviso de Render del 17 de nov (8:00 pm)</a> <span style="color:var(--text-muted); font-size:13px;">· Render no dijo cuánto dura: el fin (11:00 pm) es un estimado, ajústalo.</span></p>
+    <form method="post" action="/mantenimientos/nuevo" autocomplete="off">
+        <div class="grid-2" style="gap:12px;">
+            <label class="lbl">Proveedor<select class="field" name="proveedor">{% for p in proveedores %}<option {{ 'selected' if pre.proveedor == p }}>{{ p }}</option>{% endfor %}</select></label>
+            <label class="lbl">Título<input class="field" name="titulo" maxlength="200" required value="{{ pre.titulo }}" placeholder="Ej. Actualización de infraestructura"></label>
+            <label class="lbl">Inicio<input class="field" type="datetime-local" name="inicio" required value="{{ pre.inicio }}"></label>
+            <label class="lbl">Fin (estimado)<input class="field" type="datetime-local" name="fin" required value="{{ pre.fin }}"></label>
+            <label class="lbl">Qué puede afectar<input class="field" name="afecta" maxlength="200" value="{{ pre.afecta }}" placeholder="Ej. Reinicios breves del servicio"></label>
+            <label class="lbl">Notas (opcional)<input class="field" name="notas" maxlength="300"></label>
+        </div>
+        <div class="toolbar" style="margin-top:14px;"><button class="btn btn-primary" type="submit">Agregar ventana</button></div>
+    </form>
+</div>
+
+<div class="section-title">Próximas</div>
+<div class="luxury-card" style="padding:0; overflow:hidden; margin-bottom:24px;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Proveedor</th><th>Qué pasa</th><th>Inicio</th><th>Fin</th><th></th></tr></thead><tbody>
+    {% for m in proximos %}
+    <tr><td><strong>{{ m.proveedor }}</strong>{% if estatus.get(m.proveedor) %}<div style="font-size:12px;"><a href="{{ estatus[m.proveedor] }}" target="_blank" rel="noopener noreferrer">Página de estado ↗</a></div>{% endif %}</td>
+        <td>{{ m.titulo }}<div style="color:var(--text-muted); font-size:13px;">{{ m.afecta or '' }}{% if m.notas %} · {{ m.notas }}{% endif %}</div></td>
+        <td class="mono">{{ a_local(m.inicio).strftime('%d/%m/%Y %H:%M') }}</td><td class="mono">{{ a_local(m.fin).strftime('%d/%m/%Y %H:%M') }}</td>
+        <td><form method="post" action="/mantenimientos/{{ m.id }}/eliminar" onsubmit="return confirm('¿Eliminar esta ventana?');"><button class="btn btn-sm" type="submit">Eliminar</button></form></td></tr>
+    {% else %}<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text-muted);">No hay mantenimientos programados.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+{% if pasados %}
+<div class="section-title">Pasadas</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Proveedor</th><th>Qué pasó</th><th>Inicio</th><th>Fin</th><th></th></tr></thead><tbody>
+    {% for m in pasados %}
+    <tr style="opacity:.75;"><td>{{ m.proveedor }}</td><td>{{ m.titulo }}</td>
+        <td class="mono">{{ a_local(m.inicio).strftime('%d/%m/%Y %H:%M') }}</td><td class="mono">{{ a_local(m.fin).strftime('%d/%m/%Y %H:%M') }}</td>
+        <td><form method="post" action="/mantenimientos/{{ m.id }}/eliminar"><button class="btn btn-sm" type="submit">Quitar</button></form></td></tr>
+    {% endfor %}
+</tbody></table></div></div>
+{% endif %}
+{% endblock %}

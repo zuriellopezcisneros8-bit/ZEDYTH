@@ -1,0 +1,31 @@
+MEJORAS ZEDYTH ADMIN — CPU con decimales, centro de alertas, mantenimientos y atajos
+
+ARCHIVOS NUEVOS (cópialos tal cual):
+  operaciones.py
+  test_operaciones.py
+  templates/mantenimientos.html
+  templates/atajos.html
+
+ARCHIVOS QUE YA EXISTÍAN Y SE MODIFICARON (ver cambios_en_archivos_existentes.diff):
+  render_panel.py                 (+ _pct: 0.3% en vez de 0%)
+  app.py                          (+ import y registro del módulo, + /notificaciones con filtros y grupos,
+                                   + silencio y ventana de mantenimiento en crear_notificacion, + revisar en push_revisar)
+  templates/notificaciones.html   (+ pestañas Todas/Críticas/Avisos/Sin leer, avisos agrupados, silenciar por tipo)
+  templates/base.html             (+ enlaces «Atajos» y «Mantenimientos» en el menú, solo administradores)
+Si cambiaste esos archivos después de subir el proyecto, NO los sobrescribas: aplica el .diff a mano.
+
+TABLAS NUEVAS: mantenimiento y silencio_aviso. Se crean solas la primera vez que abres la pantalla; no hay que migrar nada.
+
+HORA LOCAL: por defecto UTC-6 (centro de México). Para cambiarla, variable PANEL_UTC_OFFSET en Render (ej. -5).
+
+QUÉ HACE CADA COSA
+  CPU/RAM        0.3% de 0.15 CPU en lugar de 0%. Menos de 0.1% se muestra «<0.1%».
+  Centro alertas /notificaciones: avisos repetidos se juntan (×3), pestañas por prioridad (Crítica = urgente, Aviso = el resto)
+                 y botón para silenciar un tipo 1, 4, 8 o 24 h. Lo silenciado queda en el historial como leído, sin push/Telegram/correo.
+  Mantenimientos /mantenimientos: agrega ventanas; avisa 24 h antes y al comenzar (cuando tu cron llama a /api/push/revisar).
+                 Durante una ventana, los «Caído» del Monitor bajan a aviso normal con la nota del mantenimiento.
+                 Incluye un enlace que precarga el aviso de Render del 17 nov, 8:00 pm (el fin 11:00 pm es un estimado).
+  Atajos         /atajos: consolas de tus servicios (de tu catálogo de /servicios), tus plataformas, sitios y repositorios,
+                 con buscador. Los servicios sin enlace propio usan la consola habitual del proveedor.
+
+PRUEBAS:  python -m unittest test_operaciones test_render_panel -v    (27 pruebas, sin red ni base de datos)

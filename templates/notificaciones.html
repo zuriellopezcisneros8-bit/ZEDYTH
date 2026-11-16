@@ -25,18 +25,42 @@
         <p style="color:var(--text-muted); font-size:13px; margin:12px 0 0;">En iPhone: abre el panel desde su icono en la pantalla de inicio (Compartir → Agregar a inicio) y luego activa las alertas.</p>
     </div>
 </div>
-<div class="section-title">Historial</div>
-<form method="post" action="/notificaciones/leer" style="margin-bottom:12px;"><button class="btn btn-sm" type="submit">Marcar todo como leído</button></form>
+<div class="section-title">Centro de alertas</div>
+<div class="toolbar" style="margin-bottom:12px; flex-wrap:wrap;">
+    {% for clave, texto, n in [('todas','Todas',cuentas.todas), ('criticas','Críticas',cuentas.criticas), ('avisos','Avisos',cuentas.avisos), ('sinleer','Sin leer',cuentas.sinleer)] %}
+    <a class="btn btn-sm {{ 'btn-primary' if vista == clave }}" href="/notificaciones?v={{ clave }}">{{ texto }} ({{ n }})</a>
+    {% endfor %}
+    <form method="post" action="/notificaciones/leer" style="display:inline;"><button class="btn btn-sm" type="submit">Marcar todo como leído</button></form>
+</div>
+
+<div class="luxury-card" style="margin-bottom:16px;">
+    <h3 class="stat-label">Silenciar un tipo de aviso</h3>
+    <p style="color:var(--text-muted); font-size:13px; margin:0 0 10px;">Útil cuando algo está fallando y ya lo estás atendiendo. Los avisos silenciados quedan en el historial como leídos, pero no llegan al celular, a Telegram ni al correo.</p>
+    <form method="post" action="/notificaciones/silenciar" class="toolbar" style="flex-wrap:wrap; gap:8px;">
+        <select class="field" name="tipo" style="max-width:220px;">{% for t in tipos %}<option>{{ t }}</option>{% endfor %}</select>
+        <select class="field" name="horas" style="max-width:160px;"><option value="1">1 hora</option><option value="4">4 horas</option><option value="8">8 horas</option><option value="24">24 horas</option></select>
+        <button class="btn btn-sm" type="submit">Silenciar</button>
+    </form>
+    {% for s in silencios %}
+    <form method="post" action="/notificaciones/silencio/quitar" style="margin-top:8px; display:flex; gap:10px; align-items:center;">
+        <input type="hidden" name="tipo" value="{{ s.tipo }}">
+        <span class="badge badge-amber">Silenciado</span><strong>{{ s.tipo }}</strong><span class="mono" style="color:var(--text-muted);">hasta {{ s.hasta.strftime('%d/%m %H:%M') }}</span>
+        <button class="btn btn-sm" type="submit">Quitar</button>
+    </form>
+    {% endfor %}
+</div>
+
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-    <thead><tr><th>Aviso</th><th>Tipo</th><th>Recibido en el celular</th><th>Fecha</th></tr></thead><tbody>
-    {% for n in filas %}
-    <tr style="{{ 'background:rgba(255,255,255,.04);' if not n.leida }}">
-        <td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 600 if not n.leida else 400 }};">{{ n.titulo }}</a><div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div></td>
-        <td><span class="badge {{ 'badge-red' if n.urgente else 'badge-amber' }}">{{ 'Urgente' if n.urgente else n.tipo }}</span></td>
-        <td>{% if n.entregada %}<span class="badge badge-green">Sí</span>{% else %}<span class="badge badge-red">No</span>{% endif %}</td>
+    <thead><tr><th>Aviso</th><th>Prioridad</th><th>Recibido en el celular</th><th>Último</th></tr></thead><tbody>
+    {% for g in grupos %}{% set n = g.n %}
+    <tr style="{{ 'background:rgba(255,255,255,.04);' if g.sin_leer }}">
+        <td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 600 if g.sin_leer else 400 }};">{{ n.titulo }}</a>{% if g.veces > 1 %} <span class="badge">×{{ g.veces }}</span>{% endif %}<div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div>
+            {% if g.veces > 1 %}<div class="mono" style="color:var(--text-muted); font-size:11px;">Desde {{ g.primera.strftime('%d/%m %H:%M') }} UTC</div>{% endif %}</td>
+        <td><span class="badge {{ 'badge-red' if g.urgente else 'badge-amber' }}">{{ 'Crítica' if g.urgente else 'Aviso' }}</span><div style="color:var(--text-muted); font-size:12px;">{{ n.tipo }}</div></td>
+        <td>{% if n.entregada %}<span class="badge badge-green">Sí</span>{% elif n.leida and (n.intentos or 0) >= 10 %}<span class="badge badge-amber">Silenciado</span>{% else %}<span class="badge badge-red">No</span>{% endif %}</td>
         <td class="mono">{{ n.hora.strftime('%d/%m/%Y %H:%M') }}</td>
     </tr>
-    {% else %}<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">Todavía no hay notificaciones.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">No hay notificaciones en esta vista.</td></tr>{% endfor %}
 </tbody></table></div></div>
 {% raw %}
 <script>

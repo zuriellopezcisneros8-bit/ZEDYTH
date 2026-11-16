@@ -1,129 +1,188 @@
---- a/app.py	2026-11-16 00:33:00.028193239 +0000
-+++ b/app.py	2026-11-16 00:33:00.033527776 +0000
-@@ -1918,6 +1918,16 @@
-     return lista
+--- a/app.py
++++ b/app.py
+@@ -30,6 +30,7 @@
+ import monitor
+ import llaves
+ import servicios
++import operaciones
+ import respaldos
  
+ app = Flask(__name__)
+@@ -3139,10 +3140,19 @@
+     try:
+         if clave and Notificacion.query.filter_by(clave=clave).first():
+             return None
+-        n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave)
++        if tipo == "Monitor" and titulo.startswith("Caído") and urgente:
++            # Dentro de una ventana de mantenimiento la caída se avisa, pero sin urgencia y con la explicación.
++            v = operaciones.mantenimiento_activo()
++            if v:
++                urgente = False
++                cuerpo = f"{cuerpo or ''} · Hay un mantenimiento de {v['proveedor']} en curso (termina {v['fin_local']:%H:%M}).".strip(" ·")
++        silenciada = operaciones.silenciado(tipo)
++        n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave,
++                         leida=silenciada, intentos=10 if silenciada else 0)    # intentos=10: el vigilante no la reintenta
+         db.session.add(n)
+         db.session.commit()
+-        threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
++        if not silenciada:
++            threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
+         return n
+     except Exception as e:
+         db.session.rollback()
+@@ -3350,9 +3360,29 @@
  
-+def _render_de(p):
-+    """Servicios de Render ligados a la plataforma (solo caché: jamás retrasa la pantalla)."""
+ @app.route('/notificaciones')
+ def notificaciones():
+-    filas = Notificacion.query.order_by(Notificacion.hora.desc()).limit(100).all()
++    vista = request.args.get('v', 'todas')
++    if vista not in ('todas', 'criticas', 'avisos', 'sinleer'):
++        vista = 'todas'
++    q = Notificacion.query
++    if vista == 'criticas':
++        q = q.filter(Notificacion.urgente.is_(True))
++    elif vista == 'avisos':
++        q = q.filter(Notificacion.urgente.is_(False))
++    elif vista == 'sinleer':
++        q = q.filter(Notificacion.leida.is_(False))
++    filas = q.order_by(Notificacion.hora.desc()).limit(200).all()
++    cuentas = {"todas": Notificacion.query.count(),
++               "criticas": Notificacion.query.filter(Notificacion.urgente.is_(True)).count(),
++               "avisos": Notificacion.query.filter(Notificacion.urgente.is_(False)).count(),
++               "sinleer": Notificacion.query.filter(Notificacion.leida.is_(False)).count()}
++    tipos = sorted({t for (t,) in db.session.query(Notificacion.tipo).distinct().all() if t} | {"Monitor", "Render", "Cobro", "Vencimiento"})
 +    try:
-+        import render_panel
-+        return render_panel.por_proyecto(p)
-+    except Exception as e:
-+        app.logger.warning("Plataforma %s: no se pudo leer Render: %s", p.id, e)
-+        return None
-+
-+
- @app.route('/plataformas/<int:pid>')
- def plataforma_detalle(pid):
-     """Sistema maestro de control: todo lo de una plataforma propia en una sola pantalla con pestañas."""
-@@ -1948,7 +1958,7 @@
-         incidentes=sorted(p.incidentes, key=lambda i: (i.estado != "Abierto", -(i.fecha or date.min).toordinal())),
-         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
-         cumplidos=sum(1 for c in p.checks if c.cumplido),
--        alertas=alertas_plataforma(p), notifs=notifs,
-+        alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
-         intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
-         intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
-         intel_estados=INTEL_ESTADOS)
-@@ -3408,6 +3418,7 @@
-     monitor.volcar()
++        silencios = operaciones._api["silencios_activos"]()
++    except Exception:
++        silencios = []
+     dispositivos = PushDispositivo.query.filter_by(activo=True).order_by(PushDispositivo.creado.desc()).all()
+-    return render_template('notificaciones.html', filas=filas, dispositivos=dispositivos, configurado=push_configurado(),
++    return render_template('notificaciones.html', filas=filas, grupos=operaciones.agrupar(filas), vista=vista, cuentas=cuentas,
++                           tipos=tipos, silencios=silencios, dispositivos=dispositivos, configurado=push_configurado(),
+                            problema=vapid_diagnostico())
+ 
+ 
+@@ -3419,6 +3449,7 @@
      llaves.revisar()
      servicios.revisar()
-+    render_panel.revisar()
+     render_panel.revisar()
++    operaciones.revisar()
      respaldos.revisar()
      actualizar_cobranza()
      return {"ok": True, "reintentados": reintentados}
-@@ -3418,6 +3429,8 @@
- app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
- app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
+@@ -3431,6 +3462,7 @@
  app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
-+import render_panel
-+app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
+ import render_panel
+ app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
++app.register_blueprint(operaciones.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /mantenimientos, /atajos y centro de alertas
  
  # ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
  zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]
---- a/ajustes.py	2026-11-16 00:33:00.029566071 +0000
-+++ b/ajustes.py	2026-11-16 00:33:00.033595594 +0000
-@@ -103,6 +103,17 @@
-          _c("BACKUP_DATABASE_URL", "Cadena de conexión para respaldar (opcional)", True,
-             "Solo si quieres respaldar con otro usuario distinto al de la app. Empieza con postgresql://", "", validar="url_pg"),
-      ]},
-+    {"clave": "render", "titulo": "Render (hosting de tus plataformas)", "icono": "ph-rocket-launch", "prueba": "render",
-+     "intro": "Con la llave, el panel lee tus servicios de Render: estado, plan y último deploy, y te avisa si un deploy falla o un servicio se suspende. "
-+              "Una llave ve todos los workspaces de su usuario; si tus plataformas están en usuarios distintos de Render, usa una llave por usuario (hasta 5).",
-+     "donde": ("Render → Account Settings → API Keys → Create API Key. Cópiala al crearla. Es una llave de toda tu cuenta: guárdala solo aquí.",),
-+     "campos": [
-+         _c("RENDER_API_KEY", "Llave de Render · usuario 1", True, "", "rnd_…", validar="render_key"),
-+         _c("RENDER_API_KEY_2", "Llave de Render · usuario 2 (opcional)", True, "", "rnd_…", validar="render_key"),
-+         _c("RENDER_API_KEY_3", "Llave de Render · usuario 3 (opcional)", True, "", "rnd_…", validar="render_key"),
-+         _c("RENDER_API_KEY_4", "Llave de Render · usuario 4 (opcional)", True, "", "rnd_…", validar="render_key"),
-+         _c("RENDER_API_KEY_5", "Llave de Render · usuario 5 (opcional)", True, "", "rnd_…", validar="render_key"),
-+     ]},
-     {"clave": "sitio", "titulo": "Sitio público y tareas programadas", "icono": "ph-globe", "prueba": None,
-      "intro": "Datos opcionales de la página pública y el token del cron externo (por ejemplo cron-job.org).",
-      "donde": ("El cron llama a  https://TU-SITIO/api/push/revisar?token=TU_TOKEN  cada 5 minutos para mantener despierto "
-@@ -250,6 +261,7 @@
-     "bucket": re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"),
-     "prefijo": re.compile(r"^[A-Za-z0-9_./-]{0,60}$"),
-     "token": re.compile(r"^[A-Za-z0-9_-]{24,100}$"),
-+    "render_key": re.compile(r"^[A-Za-z0-9_-]{20,120}$"),
- }
+--- a/render_panel.py
++++ b/render_panel.py
+@@ -178,20 +178,33 @@
+     return mejor
  
  
-@@ -393,6 +405,11 @@
-     return not errores, " · ".join(hecho + errores)
- 
- 
-+def _probar_render():
-+    import render_panel
-+    return render_panel.probar()
++def _pct(v):
++    """Porcentaje legible: 0 → «0%», 0.04 → «<0.1%», 0.3 → «0.3%», 22.4 → «22%». Evita que un uso pequeño pero real se vea como 0%."""
++    if v is None:
++        return "—"
++    if v <= 0:
++        return "0%"
++    if v < 0.1:
++        return "<0.1%"
++    if v < 10:
++        return f"{v:.1f}%"
++    return f"{v:.0f}%"
 +
 +
- def _probar_r2():
-     import respaldos
-     c = respaldos._cfg()
-@@ -547,6 +564,8 @@
-                 ok, msg = _probar_avisos()
-             elif clave == "r2":
-                 ok, msg = _probar_r2()
-+            elif clave == "render":
-+                ok, msg = _probar_render()
-             elif clave == "vapid":
-                 if not (valor("VAPID_PUBLIC_KEY") and valor("VAPID_PRIVATE_KEY")):
-                     ok, msg = False, "Faltan las llaves VAPID."
---- a/templates/base.html	2026-11-16 00:33:00.031535750 +0000
-+++ b/templates/base.html	2026-11-16 00:33:00.034605552 +0000
-@@ -258,6 +258,9 @@
-             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/accesos" class="nav-item {% if request.path.startswith('/accesos') %}active{% endif %}">
-                 <i class="ph ph-identification-badge"></i> Accesos
+ def _txt_ram(c):
+     if not c:
+         return None
+     t = f"{c['ultimo'] / MB:.0f} MB"
+     if c["limite"]:
+-        t += f" de {c['limite'] / MB:.0f} MB · {c['pct']:.0f}%"
+-    return t + (f" · pico 1 h: {c['pico_pct']:.0f}%" if c["pico_pct"] is not None else "")
++        t += f" de {c['limite'] / MB:.0f} MB · {_pct(c['pct'])}"
++    return t + (f" · pico 1 h: {_pct(c['pico_pct'])}" if c["pico_pct"] is not None else "")
+ 
+ 
+ def _txt_cpu(c):
+     if not c:
+         return None
+     if c["limite"]:
+-        return f"{c['pct']:.0f}% de {c['limite']:g} CPU" + (f" · pico 1 h: {c['pico_pct']:.0f}%" if c["pico_pct"] is not None else "")
++        return f"{_pct(c['pct'])} de {c['limite']:g} CPU" + (f" · pico 1 h: {_pct(c['pico_pct'])}" if c["pico_pct"] is not None else "")
+     return f"{c['ultimo']:.2f} CPU"
+ 
+ 
+--- a/templates/base.html
++++ b/templates/base.html
+@@ -261,6 +261,12 @@
+             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
+                 <i class="ph ph-rocket-launch"></i> Render
              </a>{% endif %}
-+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
-+                <i class="ph ph-rocket-launch"></i> Render
++            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/atajos" class="nav-item {% if request.path.startswith('/atajos') %}active{% endif %}">
++                <i class="ph ph-squares-four"></i> Atajos
++            </a>
++            <a href="/mantenimientos" class="nav-item {% if request.path.startswith('/mantenimientos') %}active{% endif %}">
++                <i class="ph ph-wrench"></i> Mantenimientos
 +            </a>{% endif %}
              <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
                  <i class="ph ph-database"></i> Almacenamiento
              </a>
---- a/templates/base.html	2026-11-16 00:33:00.031535750 +0000
-+++ b/templates/base.html	2026-11-16 00:33:00.034605552 +0000
-@@ -258,6 +258,9 @@
-             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/accesos" class="nav-item {% if request.path.startswith('/accesos') %}active{% endif %}">
-                 <i class="ph ph-identification-badge"></i> Accesos
-             </a>{% endif %}
-+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
-+                <i class="ph ph-rocket-launch"></i> Render
-+            </a>{% endif %}
-             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
-                 <i class="ph ph-database"></i> Almacenamiento
-             </a>
---- a/templates/plataforma_detalle.html	2026-11-16 00:33:00.032551187 +0000
-+++ b/templates/plataforma_detalle.html	2026-11-16 00:33:00.034646191 +0000
-@@ -147,6 +147,8 @@
+--- a/templates/notificaciones.html
++++ b/templates/notificaciones.html
+@@ -25,18 +25,42 @@
+         <p style="color:var(--text-muted); font-size:13px; margin:12px 0 0;">En iPhone: abre el panel desde su icono en la pantalla de inicio (Compartir → Agregar a inicio) y luego activa las alertas.</p>
      </div>
  </div>
- 
-+{% include "_render_proyecto.html" %}
+-<div class="section-title">Historial</div>
+-<form method="post" action="/notificaciones/leer" style="margin-bottom:12px;"><button class="btn btn-sm" type="submit">Marcar todo como leído</button></form>
++<div class="section-title">Centro de alertas</div>
++<div class="toolbar" style="margin-bottom:12px; flex-wrap:wrap;">
++    {% for clave, texto, n in [('todas','Todas',cuentas.todas), ('criticas','Críticas',cuentas.criticas), ('avisos','Avisos',cuentas.avisos), ('sinleer','Sin leer',cuentas.sinleer)] %}
++    <a class="btn btn-sm {{ 'btn-primary' if vista == clave }}" href="/notificaciones?v={{ clave }}">{{ texto }} ({{ n }})</a>
++    {% endfor %}
++    <form method="post" action="/notificaciones/leer" style="display:inline;"><button class="btn btn-sm" type="submit">Marcar todo como leído</button></form>
++</div>
 +
- <div class="section-title">Dominios y subdominios</div>
++<div class="luxury-card" style="margin-bottom:16px;">
++    <h3 class="stat-label">Silenciar un tipo de aviso</h3>
++    <p style="color:var(--text-muted); font-size:13px; margin:0 0 10px;">Útil cuando algo está fallando y ya lo estás atendiendo. Los avisos silenciados quedan en el historial como leídos, pero no llegan al celular, a Telegram ni al correo.</p>
++    <form method="post" action="/notificaciones/silenciar" class="toolbar" style="flex-wrap:wrap; gap:8px;">
++        <select class="field" name="tipo" style="max-width:220px;">{% for t in tipos %}<option>{{ t }}</option>{% endfor %}</select>
++        <select class="field" name="horas" style="max-width:160px;"><option value="1">1 hora</option><option value="4">4 horas</option><option value="8">8 horas</option><option value="24">24 horas</option></select>
++        <button class="btn btn-sm" type="submit">Silenciar</button>
++    </form>
++    {% for s in silencios %}
++    <form method="post" action="/notificaciones/silencio/quitar" style="margin-top:8px; display:flex; gap:10px; align-items:center;">
++        <input type="hidden" name="tipo" value="{{ s.tipo }}">
++        <span class="badge badge-amber">Silenciado</span><strong>{{ s.tipo }}</strong><span class="mono" style="color:var(--text-muted);">hasta {{ s.hasta.strftime('%d/%m %H:%M') }}</span>
++        <button class="btn btn-sm" type="submit">Quitar</button>
++    </form>
++    {% endfor %}
++</div>
++
  <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-     <thead><tr><th>Nombre</th><th>Propósito</th><th>Apunta a</th><th>Estado</th><th></th></tr></thead><tbody>
+-    <thead><tr><th>Aviso</th><th>Tipo</th><th>Recibido en el celular</th><th>Fecha</th></tr></thead><tbody>
+-    {% for n in filas %}
+-    <tr style="{{ 'background:rgba(255,255,255,.04);' if not n.leida }}">
+-        <td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 600 if not n.leida else 400 }};">{{ n.titulo }}</a><div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div></td>
+-        <td><span class="badge {{ 'badge-red' if n.urgente else 'badge-amber' }}">{{ 'Urgente' if n.urgente else n.tipo }}</span></td>
+-        <td>{% if n.entregada %}<span class="badge badge-green">Sí</span>{% else %}<span class="badge badge-red">No</span>{% endif %}</td>
++    <thead><tr><th>Aviso</th><th>Prioridad</th><th>Recibido en el celular</th><th>Último</th></tr></thead><tbody>
++    {% for g in grupos %}{% set n = g.n %}
++    <tr style="{{ 'background:rgba(255,255,255,.04);' if g.sin_leer }}">
++        <td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 600 if g.sin_leer else 400 }};">{{ n.titulo }}</a>{% if g.veces > 1 %} <span class="badge">×{{ g.veces }}</span>{% endif %}<div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div>
++            {% if g.veces > 1 %}<div class="mono" style="color:var(--text-muted); font-size:11px;">Desde {{ g.primera.strftime('%d/%m %H:%M') }} UTC</div>{% endif %}</td>
++        <td><span class="badge {{ 'badge-red' if g.urgente else 'badge-amber' }}">{{ 'Crítica' if g.urgente else 'Aviso' }}</span><div style="color:var(--text-muted); font-size:12px;">{{ n.tipo }}</div></td>
++        <td>{% if n.entregada %}<span class="badge badge-green">Sí</span>{% elif n.leida and (n.intentos or 0) >= 10 %}<span class="badge badge-amber">Silenciado</span>{% else %}<span class="badge badge-red">No</span>{% endif %}</td>
+         <td class="mono">{{ n.hora.strftime('%d/%m/%Y %H:%M') }}</td>
+     </tr>
+-    {% else %}<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">Todavía no hay notificaciones.</td></tr>{% endfor %}
++    {% else %}<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">No hay notificaciones en esta vista.</td></tr>{% endfor %}
+ </tbody></table></div></div>
+ {% raw %}
+ <script>

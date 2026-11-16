@@ -261,6 +261,12 @@
             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
                 <i class="ph ph-rocket-launch"></i> Render
             </a>{% endif %}
+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/atajos" class="nav-item {% if request.path.startswith('/atajos') %}active{% endif %}">
+                <i class="ph ph-squares-four"></i> Atajos
+            </a>
+            <a href="/mantenimientos" class="nav-item {% if request.path.startswith('/mantenimientos') %}active{% endif %}">
+                <i class="ph ph-wrench"></i> Mantenimientos
+            </a>{% endif %}
             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
                 <i class="ph ph-database"></i> Almacenamiento
             </a>
