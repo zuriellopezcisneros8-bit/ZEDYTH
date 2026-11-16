@@ -75,6 +75,8 @@
     #vtGrafo text { fill:#cfcfcf; font-size:11px; cursor:pointer; } #vtGrafo circle { cursor:pointer; }
 </style>
 
+<div id="vtErr" style="display:none;margin:0 0 16px;padding:12px 16px;border:1px solid #ff5a52;border-radius:12px;color:#ff8f8f;font-size:14px;font-family:var(--mono)"></div>
+<script>window.addEventListener('error', function (e) { var b = document.getElementById('vtErr'); if (b) { b.style.display = 'block'; b.textContent = 'Error en la bóveda: ' + e.message + ' (línea ' + e.lineno + ')'; } });</script>
 <section class="hero" style="margin-bottom:22px;">
     <h1>ZEDYTH OPS VAULT</h1>
     <p>Workspace privado de ciberseguridad: arsenal de código, cuaderno, modo misión y herramientas. Todo se guarda cifrado.</p>
@@ -188,7 +190,316 @@
     </div>
 </div>
 
-<script src="/static/js/vault_tools.js"></script>
+<script>
+/* vault_tools.js — herramientas del ZEDYTH OPS VAULT. Todo corre en el navegador: nada de lo que pegas aquí se envía al servidor.
+   Se usa en el navegador (window.VaultTools) y en pruebas con node (module.exports). */
+(function (raiz, fabrica) {
+    if (typeof module === 'object' && module.exports) module.exports = fabrica();
+    else raiz.VaultTools = fabrica();
+})(typeof self !== 'undefined' ? self : this, function () {
+    'use strict';
+
+    function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /* ---------- Codificación ---------- */
+    function utf8Bytes(s) { return new TextEncoder().encode(s); }
+    function bytesUtf8(b) { return new TextDecoder('utf-8', { fatal: false }).decode(b); }
+
+    function b64Enc(s) {
+        var b = utf8Bytes(s), bin = '';
+        for (var i = 0; i < b.length; i++) bin += String.fromCharCode(b[i]);
+        return btoa(bin);
+    }
+    function b64Dec(s) {
+        var limpio = String(s).trim().replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, '');
+        limpio += '='.repeat((4 - (limpio.length % 4)) % 4);
+        var bin = atob(limpio), b = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+        return bytesUtf8(b);
+    }
+    function hexEnc(s) { return Array.prototype.map.call(utf8Bytes(s), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
+    function hexDec(h) {
+        var l = String(h).replace(/0x/gi, '').replace(/[\s:,-]/g, '');
+        if (!/^[0-9a-fA-F]*$/.test(l) || l.length % 2) throw new Error('Hexadecimal no válido');
+        var b = new Uint8Array(l.length / 2);
+        for (var i = 0; i < b.length; i++) b[i] = parseInt(l.substr(i * 2, 2), 16);
+        return bytesUtf8(b);
+    }
+    function urlEnc(s) { return encodeURIComponent(s).replace(/[!'()*]/g, function (c) { return '%' + c.charCodeAt(0).toString(16).toUpperCase(); }); }
+    function urlDec(s) { return decodeURIComponent(String(s).replace(/\+/g, ' ')); }
+
+    /* ---------- JWT (solo decodifica, no verifica la firma) ---------- */
+    function jwtDecode(token) {
+        var partes = String(token).trim().replace(/^Bearer\s+/i, '').split('.');
+        if (partes.length < 2 || partes.length > 3) throw new Error('Un JWT tiene 2 o 3 partes separadas por puntos');
+        var cab, carga;
+        try { cab = JSON.parse(b64Dec(partes[0])); carga = JSON.parse(b64Dec(partes[1])); }
+        catch (e) { throw new Error('No se pudo leer el encabezado o el contenido (¿es un JWT?)'); }
+        var avisos = [], ahora = Math.floor(Date.now() / 1000);
+        if (!cab.alg || String(cab.alg).toLowerCase() === 'none') avisos.push('alg "none": el token no está firmado');
+        if (!partes[2]) avisos.push('Sin firma');
+        if (typeof carga.exp === 'number') avisos.push(carga.exp < ahora ? 'Caducado el ' + new Date(carga.exp * 1000).toISOString() : 'Caduca el ' + new Date(carga.exp * 1000).toISOString());
+        else avisos.push('Sin fecha de caducidad (exp)');
+        if (typeof carga.iat === 'number') avisos.push('Emitido el ' + new Date(carga.iat * 1000).toISOString());
+        return { encabezado: cab, contenido: carga, firma: partes[2] || '', avisos: avisos };
+    }
+
+    /* ---------- Hashes ---------- */
+    function md5(texto) {
+        function rl(x, n) { return (x << n) | (x >>> (32 - n)); }
+        function add(x, y) { return (x + y) | 0; }
+        var K = [], S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21], i;
+        for (i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) | 0;
+        var b = Array.prototype.slice.call(utf8Bytes(texto)), largo = b.length;
+        b.push(0x80);
+        while (b.length % 64 !== 56) b.push(0);
+        var bits = largo * 8;
+        for (i = 0; i < 8; i++) b.push(i < 4 ? (bits >>> (8 * i)) & 255 : Math.floor(largo / 536870912) >>> (8 * (i - 4)) & 255);
+        var a0 = 0x67452301, b0 = 0xefcdab89 | 0, c0 = 0x98badcfe | 0, d0 = 0x10325476;
+        for (var o = 0; o < b.length; o += 64) {
+            var M = [];
+            for (i = 0; i < 16; i++) M[i] = b[o + i * 4] | (b[o + i * 4 + 1] << 8) | (b[o + i * 4 + 2] << 16) | (b[o + i * 4 + 3] << 24);
+            var A = a0, B = b0, C = c0, D = d0;
+            for (i = 0; i < 64; i++) {
+                var F, g;
+                if (i < 16) { F = (B & C) | (~B & D); g = i; }
+                else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+                else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+                else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+                var tmp = D; D = C; C = B;
+                B = add(B, rl(add(add(A, F), add(K[i], M[g])), S[(i >> 4) * 4 + (i % 4)]));
+                A = tmp;
+            }
+            a0 = add(a0, A); b0 = add(b0, B); c0 = add(c0, C); d0 = add(d0, D);
+        }
+        return [a0, b0, c0, d0].map(function (w) {
+            var s = '';
+            for (var j = 0; j < 4; j++) s += ('0' + ((w >>> (8 * j)) & 255).toString(16)).slice(-2);
+            return s;
+        }).join('');
+    }
+    function sha(algoritmo, texto) {            // 'SHA-1' | 'SHA-256' | 'SHA-512'  (necesita HTTPS o localhost)
+        var sub = (globalThis.crypto || {}).subtle;
+        if (!sub) return Promise.reject(new Error('El navegador no ofrece SubtleCrypto (usa HTTPS)'));
+        return sub.digest(algoritmo, utf8Bytes(texto)).then(function (buf) {
+            return Array.prototype.map.call(new Uint8Array(buf), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+        });
+    }
+
+    /* ---------- Defang / Fang ---------- */
+    function defang(t) {
+        return String(t)
+            .replace(/\bhttp(s?):\/\//gi, function (_m, s) { return 'hxxp' + s + '://'; })
+            .replace(/\bftp:\/\//gi, 'fxp://')
+            .replace(/([A-Za-z0-9-])\.(?=[A-Za-z0-9])/g, '$1[.]')
+            .replace(/@/g, '[@]');
+    }
+    function fang(t) {
+        return String(t)
+            .replace(/\bhxxp(s?):\/\//gi, function (_m, s) { return 'http' + s + '://'; })
+            .replace(/\bfxp:\/\//gi, 'ftp://')
+            .replace(/\[\.\]|\(\.\)|\[dot\]/gi, '.')
+            .replace(/\[@\]|\[at\]/gi, '@')
+            .replace(/\[:\]/g, ':');
+    }
+
+    /* ---------- Extractor de IoCs ---------- */
+    var TLDS = 'com|net|org|io|co|mx|us|uk|de|fr|es|it|br|ar|cl|pe|ru|cn|jp|in|info|biz|dev|app|xyz|online|site|tech|cloud|edu|gov|mil|int|ai|me|tv|cc|ly|gg|to|onion|top|club|shop|store|live|pro|link|click|work|ca|au|nl|se|no|ch|eu|kr|tk|ml|ga|cf|gq';
+    function unicos(a) { var v = {}, s = []; a.forEach(function (x) { if (!v[x]) { v[x] = 1; s.push(x); } }); return s; }
+    function extraerIoCs(texto) {
+        var t = fang(texto || ''), r = { ips: [], md5: [], sha1: [], sha256: [], urls: [], correos: [], dominios: [], rutas: [], cves: [] }, m;
+        function todos(re, destino, mapa) {
+            re.lastIndex = 0;
+            while ((m = re.exec(t)) !== null) destino.push(mapa ? mapa(m[0]) : m[0]);
+        }
+        todos(/(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/gi, r.sha256, function (x) { return x.toLowerCase(); });
+        todos(/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/gi, r.sha1, function (x) { return x.toLowerCase(); });
+        todos(/(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])/gi, r.md5, function (x) { return x.toLowerCase(); });
+        todos(/(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.]*\d)/g, r.ips);
+        todos(/\bhttps?:\/\/[^\s<>"'`]+/gi, r.urls, function (x) { return x.replace(/[.,;:!?)\]}]+$/, ''); });
+        todos(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g, r.correos, function (x) { return x.toLowerCase(); });
+        todos(new RegExp('(?<![\\w.-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+(?:' + TLDS + ')(?![\\w-])', 'gi'), r.dominios, function (x) { return x.toLowerCase(); });
+        todos(/\b[A-Za-z]:\\(?:[^\s<>"'|*?\\]+\\)*[^\s<>"'|*?\\]*/g, r.rutas, function (x) { return x.replace(/[.,;:]+$/, ''); });
+        todos(/(?<![\w/])\/(?:etc|var|usr|home|tmp|opt|bin|root|proc|dev|srv|mnt|lib|sbin)(?:\/[^\s<>"'`;|&)]+)*/g, r.rutas, function (x) { return x.replace(/[.,;:]+$/, ''); });
+        todos(/\bCVE-\d{4}-\d{4,7}\b/gi, r.cves, function (x) { return x.toUpperCase(); });
+        // el host de una URL o la parte de dominio de un correo ya cuentan como dominio
+        Object.keys(r).forEach(function (k) { r[k] = unicos(r[k]); });
+        return r;
+    }
+    function totalIoCs(r) { return Object.keys(r).reduce(function (n, k) { return n + r[k].length; }, 0); }
+
+    /* ---------- Lenguaje y resaltado ---------- */
+    var HERRAMIENTAS = 'nmap|msfconsole|msfvenom|sqlmap|gobuster|ffuf|hydra|nikto|curl|wget|nc|ncat|netcat|ssh|john|hashcat|dirb|wfuzz|searchsploit|tcpdump|tshark|wireshark|enum4linux|smbclient|crackmapexec|responder|nuclei|subfinder|amass|whatweb|wpscan|burpsuite|iptables|ufw|fail2ban-client|openssl|dig|whois|ping|traceroute';
+    function detectarLenguaje(c) {
+        var t = String(c || '').trim();
+        if (!t) return 'texto';
+        if (/^\s*rule\s+\w+\s*(?::\s*[\w\s]+)?\{[\s\S]*\bcondition\s*:/m.test(t)) return 'yara';
+        if (/^#!.*\b(python|python3)\b/.test(t)) return 'python';
+        if (/^#!.*\b(ba)?sh\b/.test(t)) return 'bash';
+        if (!/\n/.test(t) && new RegExp('^(sudo\\s+)?(' + HERRAMIENTAS + ')\\b', 'i').test(t)) return 'terminal';
+        if (/\b(Get|Set|New|Invoke|Import|Out|Write)-[A-Z]\w+|\$_\b|\[System\.|-ExecutionPolicy|\bparam\s*\(/.test(t)) return 'powershell';
+        if (/\b(select\b[\s\S]+\bfrom\b|insert\s+into|update\s+\w+\s+set|delete\s+from|drop\s+table|union\s+select|create\s+table)\b/i.test(t)) return 'sql';
+        if (/#include\s*[<"]|\bstd::|\bint\s+main\s*\(/.test(t)) return 'cpp';
+        if (/^\s*(def\s+\w+\s*\(|import\s+\w+|from\s+\w+\s+import|class\s+\w+.*:)|\bprint\(|\bif\s+__name__/m.test(t)) return 'python';
+        if (/\b(const|let|var)\s+\w+\s*=|=>|\bfunction\s*\w*\s*\(|\bconsole\.log\b/.test(t)) return 'javascript';
+        if (/^\s*(echo|grep|awk|sed|cat|chmod|chown|find|for\s+\w+\s+in|if\s+\[|export\s+\w+=)|\$\(|\bthen\b|\bfi\b/m.test(t)) return 'bash';
+        if (!/\n/.test(t) && !/\s/.test(t) && /^\^|\$$|\(\?[:=!<]|\\[dwsb]\+?|\[\^?[^\]]+\][+*?{]/.test(t)) return 'regex';
+        if (new RegExp('^(sudo\\s+)?(' + HERRAMIENTAS + ')\\b', 'im').test(t)) return 'terminal';
+        return 'texto';
+    }
+
+    var KW = {
+        bash: 'if|then|else|elif|fi|for|while|do|done|case|esac|function|in|return|export|local|echo|cd|sudo|exit',
+        terminal: HERRAMIENTAS + '|sudo',
+        python: 'def|class|return|if|elif|else|for|while|import|from|as|try|except|finally|with|lambda|pass|break|continue|in|not|and|or|is|None|True|False|print|raise|yield',
+        powershell: 'function|param|if|elseif|else|foreach|for|while|return|try|catch|finally|switch|break|continue|\\$true|\\$false|\\$null',
+        sql: 'select|from|where|and|or|not|insert|into|values|update|set|delete|drop|create|table|union|join|left|right|inner|on|group|by|order|limit|having|as|null|like|in|exists|alter|database',
+        cpp: 'int|char|void|long|short|unsigned|signed|float|double|bool|auto|const|static|struct|class|namespace|using|return|if|else|for|while|do|switch|case|break|continue|new|delete|include|define|nullptr|sizeof|std|template|typename',
+        yara: 'rule|meta|strings|condition|and|or|not|all|any|of|them|at|in|filesize|entrypoint|nocase|wide|ascii|fullword|import|include|global|private',
+        javascript: 'const|let|var|function|return|if|else|for|while|of|in|new|class|extends|async|await|try|catch|finally|throw|import|export|from|default|null|undefined|true|false|this|typeof',
+        regex: '', texto: ''
+    };
+    var COMENTARIO = { bash: '#[^\\n]*', terminal: '#[^\\n]*', python: '#[^\\n]*', powershell: '#[^\\n]*|<#[\\s\\S]*?#>', sql: '--[^\\n]*|/\\*[\\s\\S]*?\\*/',
+                       cpp: '//[^\\n]*|/\\*[\\s\\S]*?\\*/', yara: '//[^\\n]*|/\\*[\\s\\S]*?\\*/', javascript: '//[^\\n]*|/\\*[\\s\\S]*?\\*/' };
+    var _cacheRe = {};
+    function reResaltado(lang) {
+        if (_cacheRe[lang]) return _cacheRe[lang];
+        var partes = ['(\\{\\{[A-Za-z0-9_]+\\}\\})'];                                   // 1: placeholder
+        partes.push(COMENTARIO[lang] ? '(' + COMENTARIO[lang] + ')' : '(?!)()');         // 2: comentario
+        partes.push('("(?:[^"\\\\\\n]|\\\\.)*"|\'(?:[^\'\\\\\\n]|\\\\.)*\')');           // 3: cadena
+        partes.push('(\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?|%[A-Za-z_]+%)');                // 4: variable
+        partes.push('((?<![\\w-])--?[A-Za-z][\\w-]*)');                                  // 5: bandera -sV --help
+        partes.push('(\\b0x[0-9a-fA-F]+\\b|\\b\\d+(?:\\.\\d+)?\\b)');                    // 6: número
+        partes.push(KW[lang] ? '(\\b(?:' + KW[lang] + ')\\b)' : '(?!)()');                // 7: palabra clave
+        var re = new RegExp(partes.join('|'), lang === 'sql' || lang === 'yara' ? 'gi' : 'g');
+        return (_cacheRe[lang] = re);
+    }
+    var CLASES = ['', 'vt-ph', 'vt-c', 'vt-s', 'vt-v', 'vt-f', 'vt-n', 'vt-k'];
+    function resaltar(codigo, lang) {
+        var txt = String(codigo == null ? '' : codigo);
+        if (!lang || lang === 'auto') lang = detectarLenguaje(txt);
+        if (lang === 'texto' || lang === 'regex') lang = lang === 'regex' ? 'regex' : 'texto';
+        var re = reResaltado(KW[lang] !== undefined ? lang : 'texto'), salida = '', ult = 0, m, i;
+        re.lastIndex = 0;
+        while ((m = re.exec(txt)) !== null) {
+            if (m[0] === '') { re.lastIndex++; continue; }
+            salida += esc(txt.slice(ult, m.index));
+            for (i = 1; i < m.length; i++) if (m[i] !== undefined && m[i] !== '') break;
+            salida += '<span class="' + (CLASES[i] || '') + '">' + esc(m[0]) + '</span>';
+            ult = m.index + m[0].length;
+        }
+        return salida + esc(txt.slice(ult));
+    }
+
+    /* ---------- Variables {{PLACEHOLDER}} ---------- */
+    function placeholders(texto) {
+        var v = [], m, re = /\{\{([A-Za-z0-9_]{1,40})\}\}/g;
+        while ((m = re.exec(texto || '')) !== null) if (v.indexOf(m[1]) < 0) v.push(m[1]);
+        return v;
+    }
+    function rellenar(texto, valores) {
+        return String(texto || '').replace(/\{\{([A-Za-z0-9_]{1,40})\}\}/g, function (todo, n) {
+            return valores && valores[n] ? valores[n] : todo;
+        });
+    }
+
+    /* ---------- Generadores ---------- */
+    function aleatorioEntero(max, rng) {          // sin sesgo de módulo
+        var lim = Math.floor(4294967296 / max) * max, x;
+        do { x = (rng || azar32)(); } while (x >= lim);
+        return x % max;
+    }
+    function azar32() { var a = new Uint32Array(1); globalThis.crypto.getRandomValues(a); return a[0]; }
+    function generarPassword(largo, opciones, rng) {
+        opciones = opciones || {};
+        var juegos = [];
+        if (opciones.minusculas !== false) juegos.push('abcdefghijkmnopqrstuvwxyz');
+        if (opciones.mayusculas !== false) juegos.push('ABCDEFGHJKLMNPQRSTUVWXYZ');
+        if (opciones.numeros !== false) juegos.push('23456789');
+        if (opciones.simbolos !== false) juegos.push('!@#$%^&*()-_=+[]{};:,.?/');
+        if (!juegos.length) throw new Error('Elige al menos un tipo de caracteres');
+        largo = Math.max(juegos.length, Math.min(256, largo | 0 || 20));
+        var todo = juegos.join(''), salida = [], i;
+        juegos.forEach(function (j) { salida.push(j[aleatorioEntero(j.length, rng)]); });     // al menos uno de cada tipo
+        for (i = salida.length; i < largo; i++) salida.push(todo[aleatorioEntero(todo.length, rng)]);
+        for (i = salida.length - 1; i > 0; i--) { var k = aleatorioEntero(i + 1, rng), t = salida[i]; salida[i] = salida[k]; salida[k] = t; }
+        return { valor: salida.join(''), entropia: Math.round(largo * Math.log2(todo.length)) };
+    }
+    function uuid4() {
+        if (globalThis.crypto && globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID();
+        var b = new Uint8Array(16); globalThis.crypto.getRandomValues(b);
+        b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+        var h = Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+        return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+    }
+    // Cadenas de prueba públicas y básicas para verificar filtros en sistemas propios o laboratorios autorizados.
+    var CADENAS_PRUEBA = {
+        'XSS': ['<script>alert(1)<\/script>', '"><img src=x onerror=alert(1)>', "'><svg onload=alert(1)>", 'javascript:alert(1)'],
+        'SQLi': ["'", "' OR '1'='1", "' OR 1=1-- -", '1 AND 1=2', "'; SELECT pg_sleep(5)-- -"],
+        'Otros': ['../../../../etc/passwd', '{{7*7}}', '${7*7}', '%00', 'A'.repeat(256)]
+    };
+
+    /* ---------- Markdown mínimo y seguro (vista previa, wiki-links, informe) ---------- */
+    function enLinea(s, resolver) {
+        s = esc(s);
+        s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+        s = s.replace(/\[\[([^\[\]\n]{1,200})\]\]/g, function (_m, titulo) {
+            var t = titulo.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+            var r = resolver ? resolver(t.trim()) : null;
+            return r ? '<a href="#" class="vt-wiki" data-tipo="' + esc(r.tipo) + '" data-id="' + esc(r.id) + '">' + titulo + '</a>'
+                     : '<span class="vt-wiki-roto" title="No existe todavía">' + titulo + '</span>';
+        });
+        s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        return s;
+    }
+    function renderMarkdown(md, resolver) {
+        var lineas = String(md || '').replace(/\r\n?/g, '\n').split('\n'), out = [], i = 0, lista = null;
+        function cerrarLista() { if (lista) { out.push('</' + lista + '>'); lista = null; } }
+        while (i < lineas.length) {
+            var l = lineas[i], m;
+            if ((m = /^```\s*([\w+-]*)\s*$/.exec(l))) {
+                var cod = []; i++;
+                while (i < lineas.length && !/^```\s*$/.test(lineas[i])) cod.push(lineas[i++]);
+                i++; cerrarLista();
+                out.push('<pre class="vt-code"><code>' + resaltar(cod.join('\n'), m[1] || 'auto') + '</code></pre>');
+                continue;
+            }
+            if ((m = /^(#{1,4})\s+(.*)$/.exec(l))) { cerrarLista(); out.push('<h' + (m[1].length + 1) + '>' + enLinea(m[2], resolver) + '</h' + (m[1].length + 1) + '>'); i++; continue; }
+            if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { cerrarLista(); out.push('<hr>'); i++; continue; }
+            if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lineas.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lineas[i + 1])) {
+                cerrarLista();
+                var celdas = function (x) { return x.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return enLinea(c.trim(), resolver); }); };
+                var t = '<table class="vt-tabla"><thead><tr>' + celdas(l).map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr></thead><tbody>';
+                i += 2;
+                while (i < lineas.length && /^\s*\|.*\|\s*$/.test(lineas[i])) { t += '<tr>' + celdas(lineas[i]).map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>'; i++; }
+                out.push(t + '</tbody></table>');
+                continue;
+            }
+            if ((m = /^\s*(?:[-*]|\d+\.)\s+(.*)$/.exec(l))) {
+                var tipo = /^\s*\d+\./.test(l) ? 'ol' : 'ul';
+                if (lista !== tipo) { cerrarLista(); out.push('<' + tipo + '>'); lista = tipo; }
+                var casilla = /^\[( |x|X)\]\s+(.*)$/.exec(m[1]);
+                out.push('<li>' + (casilla ? (casilla[1] === ' ' ? '☐ ' : '☑ ') + enLinea(casilla[2], resolver) : enLinea(m[1], resolver)) + '</li>');
+                i++; continue;
+            }
+            if ((m = /^>\s?(.*)$/.exec(l))) { cerrarLista(); out.push('<blockquote>' + enLinea(m[1], resolver) + '</blockquote>'); i++; continue; }
+            if (/^\s*$/.test(l)) { cerrarLista(); i++; continue; }
+            cerrarLista(); out.push('<p>' + enLinea(l, resolver) + '</p>'); i++;
+        }
+        cerrarLista();
+        return out.join('\n');
+    }
+
+    return { esc: esc, b64Enc: b64Enc, b64Dec: b64Dec, hexEnc: hexEnc, hexDec: hexDec, urlEnc: urlEnc, urlDec: urlDec, jwtDecode: jwtDecode,
+             md5: md5, sha: sha, defang: defang, fang: fang, extraerIoCs: extraerIoCs, totalIoCs: totalIoCs, detectarLenguaje: detectarLenguaje,
+             resaltar: resaltar, placeholders: placeholders, rellenar: rellenar, generarPassword: generarPassword, uuid4: uuid4,
+             CADENAS_PRUEBA: CADENAS_PRUEBA, renderMarkdown: renderMarkdown };
+});
+
+</script>
 <script>
 (function () {
     'use strict';
