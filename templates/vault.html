@@ -1,0 +1,583 @@
+<!-- templates/vault.html — ZEDYTH OPS VAULT -->
+{% extends "base.html" %}
+{% block content %}
+<script type="application/json" id="vtCfg">{{ cfg|tojson }}</script>
+{% raw %}
+<style>
+    .vt-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+    .vt-top .vt-buscar { position:relative; flex:1 1 280px; min-width:220px; }
+    .vt-top .vt-buscar input { margin:0; border-radius:999px; }
+    .vt-res { position:absolute; left:0; right:0; top:48px; z-index:50; background:#0b0b0b; border:1px solid var(--border-hover); border-radius:12px; max-height:360px; overflow:auto; box-shadow:0 18px 50px rgba(0,0,0,.6); }
+    .vt-res div { padding:10px 14px; border-bottom:1px solid var(--border-color); cursor:pointer; font-size:13px; }
+    .vt-res div:hover { background:rgba(255,255,255,.06); }
+    .vt-res small { display:block; color:var(--text-muted); font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .vt-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:18px; border-bottom:1px solid var(--border-color); padding-bottom:12px; }
+    .vt-tab { background:none; border:1px solid transparent; color:var(--text-muted); padding:8px 16px; border-radius:999px; cursor:pointer; font:inherit; font-size:14px; }
+    .vt-tab:hover { color:#fff; }
+    .vt-tab.on { color:#fff; border-color:#fff; }
+    .vt-cols { display:grid; grid-template-columns:minmax(240px,320px) 1fr; gap:18px; align-items:start; }
+    @media (max-width:900px) { .vt-cols { grid-template-columns:1fr; } }
+    .vt-list { max-height:70vh; overflow:auto; padding:8px; }
+    .vt-item { padding:10px 12px; border-radius:10px; cursor:pointer; border:1px solid transparent; }
+    .vt-item:hover { background:rgba(255,255,255,.05); }
+    .vt-item.on { border-color:#fff; }
+    .vt-item b { font-weight:500; display:block; overflow-wrap:anywhere; }
+    .vt-item small { color:var(--text-muted); font-size:12px; }
+    .vt-chips { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 12px; }
+    .vt-chip { cursor:pointer; user-select:none; }
+    .vt-chip.on { color:#000; background:#fff; border-color:#fff; }
+    .vt-off { color:#ff8f8f; border-color:rgba(255,90,82,.5); }
+    .vt-def { color:#7cc4ff; border-color:rgba(124,196,255,.5); }
+    .vt-c-PUBLICABLE { color:var(--accent-green); border-color:rgba(61,220,132,.4); }
+    .vt-c-CONFIDENCIAL { color:#ffb84d; border-color:rgba(255,184,77,.5); }
+    .vt-c-ZERO { color:#fff; background:#b3261e; border-color:#b3261e; }
+    .vt-head { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px; }
+    .vt-head h2 { margin:0; font-size:20px; font-weight:500; overflow-wrap:anywhere; }
+    .vt-acc { display:flex; gap:8px; flex-wrap:wrap; }
+    .vt-vars { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin:0 0 12px; padding:12px; border:1px dashed var(--border-hover); border-radius:12px; }
+    .vt-vars label { font-size:12px; color:var(--text-muted); }
+    .vt-vars .field { margin:4px 0 0; padding:8px 10px; font-family:var(--mono); font-size:13px; }
+    .vt-codebox { display:flex; border:1px solid var(--border-color); border-radius:12px; overflow:auto; background:#050505; max-height:60vh; }
+    .vt-codebox pre { margin:0; padding:14px 0; font:13px/1.55 var(--mono); }
+    .vt-gut { color:#555; text-align:right; padding:14px 10px !important; user-select:none; border-right:1px solid var(--border-color); position:sticky; left:0; background:#050505; }
+    .vt-codebox .vt-src { padding:14px 16px !important; flex:1; white-space:pre; color:#e6e6e6; }
+    .vt-ed { display:flex; border:1px solid var(--border-color); border-radius:12px; background:#050505; height:340px; overflow:hidden; margin-bottom:14px; }
+    .vt-ed .vt-gut { overflow:hidden; height:100%; margin:0; }
+    .vt-ed textarea { flex:1; border:0; outline:0; resize:none; background:transparent; color:#e6e6e6; font:13px/1.55 var(--mono); padding:14px 16px; white-space:pre; overflow:auto; }
+    .vt-k { color:#c8a96a; } .vt-s { color:#3ddc84; } .vt-c { color:#6b7280; font-style:italic; } .vt-n { color:#ffb84d; }
+    .vt-v { color:#7cc4ff; } .vt-f { color:#ff9ecf; } .vt-ph { background:rgba(200,169,106,.25); color:#f3ead7; border-radius:4px; padding:0 3px; }
+    .vt-md h2,.vt-md h3,.vt-md h4,.vt-md h5 { margin:18px 0 8px; font-weight:500; }
+    .vt-md p,.vt-md li { line-height:1.65; } .vt-md code { font-family:var(--mono); background:rgba(255,255,255,.08); padding:1px 6px; border-radius:5px; font-size:13px; }
+    .vt-md pre.vt-code { background:#050505; border:1px solid var(--border-color); border-radius:10px; padding:12px 14px; overflow:auto; font:13px/1.5 var(--mono); }
+    .vt-md pre.vt-code code { background:none; padding:0; }
+    .vt-md blockquote { border-left:3px solid var(--border-hover); margin:10px 0; padding:2px 12px; color:var(--text-muted); }
+    .vt-tabla { border-collapse:collapse; margin:10px 0; } .vt-tabla th,.vt-tabla td { border:1px solid var(--border-color); padding:6px 10px; font-size:13px; }
+    .vt-wiki { color:#c8a96a; text-decoration:underline dotted; } .vt-wiki-roto { color:#ff8f8f; cursor:pointer; text-decoration:underline dotted; }
+    .vt-split { display:grid; grid-template-columns:1fr 260px; gap:16px; } @media (max-width:1100px) { .vt-split { grid-template-columns:1fr; } }
+    .vt-ioc h4 { margin:12px 0 4px; font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
+    .vt-ioc .mono { display:block; font-size:12px; overflow-wrap:anywhere; cursor:pointer; padding:1px 0; } .vt-ioc .mono:hover { color:#fff; }
+    .vt-bar { height:8px; border-radius:99px; background:#1b1b1b; overflow:hidden; } .vt-bar i { display:block; height:100%; background:var(--accent-green); }
+    .vt-grp { margin:14px 0 4px; font-weight:500; } .vt-chk { display:flex; gap:10px; align-items:flex-start; padding:5px 0; font-size:14px; cursor:pointer; }
+    .vt-chk input { margin-top:3px; }
+    .vt-tools { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; }
+    .vt-tools textarea.field { font-family:var(--mono); font-size:13px; min-height:90px; resize:vertical; }
+    .vt-out { font-family:var(--mono); font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; background:#050505; border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; min-height:42px; margin-bottom:10px; }
+    .vt-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; } .vt-row .field { margin:0; width:auto; flex:1 1 120px; }
+    .vt-lock { position:fixed; inset:0; z-index:20000; background:#000; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .vt-lock[hidden], #vtApp[hidden], .vt-cap[hidden] { display:none !important; }
+    .vt-lock .luxury-card { width:min(380px,100%); text-align:center; }
+    .vt-cap { position:fixed; inset:0; z-index:15000; background:rgba(0,0,0,.7); display:flex; align-items:flex-start; justify-content:center; padding:12vh 16px 0; }
+    .vt-cap .luxury-card { width:min(560px,100%); }
+    .vt-toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:30000; background:#14110b; border:1px solid rgba(200,169,106,.55); color:#f3ead7; padding:12px 20px; border-radius:12px; font-size:14px; max-width:calc(100vw - 32px); }
+    .vt-vacio { color:var(--text-muted); padding:30px 10px; text-align:center; font-size:14px; }
+    .vt-ver { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border-color); font-size:13px; }
+    #vtGrafo svg { width:100%; height:auto; background:#050505; border:1px solid var(--border-color); border-radius:12px; }
+    #vtGrafo text { fill:#cfcfcf; font-size:11px; cursor:pointer; } #vtGrafo circle { cursor:pointer; }
+</style>
+
+<section class="hero" style="margin-bottom:22px;">
+    <h1>ZEDYTH OPS VAULT</h1>
+    <p>Workspace privado de ciberseguridad: arsenal de código, cuaderno, modo misión y herramientas. Todo se guarda cifrado.</p>
+</section>
+
+<div class="vt-lock" id="vtLock" hidden>
+    <div class="luxury-card">
+        <i class="ph ph-lock-key" style="font-size:38px;"></i>
+        <h2 style="margin:10px 0 4px; font-weight:500;">Bóveda bloqueada</h2>
+        <p id="vtLockMsg" style="color:var(--text-muted); font-size:14px; margin:0 0 16px;">Escribe la contraseña de tu cuenta para entrar.</p>
+        <input class="field" type="password" id="vtPass" placeholder="Contraseña" autocomplete="current-password">
+        <div id="vtLockErr" style="color:var(--accent-red); font-size:13px; min-height:18px; margin-bottom:8px;"></div>
+        <button class="btn btn-primary" id="vtUnlock" type="button">Desbloquear</button>
+        <div style="margin-top:14px;"><a href="/panel" style="color:var(--text-muted); font-size:13px;">Volver al panel</a></div>
+    </div>
+</div>
+
+<div id="vtApp" hidden>
+    <div class="vt-top">
+        <div class="vt-buscar"><input class="field" id="vtBuscar" placeholder="Buscar en toda la bóveda (títulos, etiquetas, código, notas)…" autocomplete="off"><div class="vt-res" id="vtRes" hidden></div></div>
+        <button class="btn" type="button" id="vtCapBtn" title="Ctrl + K  ·  Alt + N"><i class="ph ph-lightning"></i> Captura rápida</button>
+        <button class="btn" type="button" id="vtLockBtn"><i class="ph ph-lock"></i> Bloquear</button>
+    </div>
+    <div class="vt-tabs" id="vtTabs">
+        <button class="vt-tab on" data-tab="arsenal" type="button">Arsenal de código</button>
+        <button class="vt-tab" data-tab="cuaderno" type="button">Cuaderno</button>
+        <button class="vt-tab" data-tab="mision" type="button">Modo misión</button>
+        <button class="vt-tab" data-tab="tools" type="button">Herramientas</button>
+        <button class="vt-tab" data-tab="grafo" type="button">Grafo</button>
+    </div>
+
+    <!-- ARSENAL -->
+    <div data-panel="arsenal">
+        <div class="vt-cols">
+            <div class="luxury-card" style="padding:14px;">
+                <div class="vt-chips" id="arsLado"></div>
+                <input class="field" id="arsFiltro" placeholder="Filtrar por título o etiqueta" style="margin-bottom:10px;">
+                <button class="btn btn-primary btn-sm" type="button" id="arsNuevo" style="width:100%; margin-bottom:10px;">+ Nuevo bloque de código</button>
+                <div class="vt-list" id="arsLista"></div>
+            </div>
+            <div class="luxury-card" id="arsDetalle"><div class="vt-vacio">Elige un bloque o crea uno nuevo.</div></div>
+        </div>
+    </div>
+
+    <!-- CUADERNO -->
+    <div data-panel="cuaderno" hidden>
+        <div class="vt-cols">
+            <div class="luxury-card" style="padding:14px;">
+                <div class="vt-chips" id="notClasif"></div>
+                <input class="field" id="notFiltro" placeholder="Filtrar por título o etiqueta" style="margin-bottom:10px;">
+                <button class="btn btn-primary btn-sm" type="button" id="notNueva" style="width:100%; margin-bottom:10px;">+ Nueva nota</button>
+                <div class="vt-list" id="notLista"></div>
+            </div>
+            <div class="luxury-card" id="notDetalle"><div class="vt-vacio">Elige una nota o crea una nueva. Usa <span class="mono">[[Título]]</span> para enlazar notas y bloques.</div></div>
+        </div>
+    </div>
+
+    <!-- MISIÓN -->
+    <div data-panel="mision" hidden>
+        <div class="vt-cols">
+            <div class="luxury-card" style="padding:14px;">
+                <h3 class="stat-label" style="margin-top:0;">Nueva checklist</h3>
+                <input class="field" id="chkObjetivo" placeholder="Objetivo (ej. API Zmarthket)" maxlength="200">
+                <select class="field" id="chkMet"></select>
+                <button class="btn btn-primary btn-sm" type="button" id="chkCrear" style="width:100%; margin-bottom:12px;">Crear</button>
+                <div class="vt-list" id="chkLista"></div>
+            </div>
+            <div class="luxury-card" id="chkDetalle"><div class="vt-vacio">Crea una checklist por objetivo y marca lo que ya probaste.</div></div>
+        </div>
+    </div>
+
+    <!-- HERRAMIENTAS -->
+    <div data-panel="tools" hidden>
+        <p style="color:var(--text-muted); font-size:13px; margin:0 0 14px;"><i class="ph ph-shield-check"></i> Estas herramientas corren en tu navegador: lo que pegas aquí no se envía ni se guarda en el servidor.</p>
+        <div class="vt-tools">
+            <div class="luxury-card"><h3 class="stat-label">Codificador / decodificador</h3>
+                <select class="field" id="cdOp"><option value="b64e">Base64 · codificar</option><option value="b64d">Base64 · decodificar</option><option value="hexe">Hex · codificar</option><option value="hexd">Hex · decodificar</option><option value="urle">URL · codificar</option><option value="urld">URL · decodificar</option></select>
+                <textarea class="field" id="cdIn" placeholder="Texto de entrada (se convierte al escribir)"></textarea>
+                <div class="vt-out" id="cdOut"></div><button class="btn btn-sm" type="button" data-copy="#cdOut">Copiar resultado</button></div>
+            <div class="luxury-card"><h3 class="stat-label">Hashes</h3>
+                <textarea class="field" id="hsIn" placeholder="Texto a hashear"></textarea>
+                <div class="vt-out" id="hsOut"></div><button class="btn btn-sm" type="button" data-copy="#hsOut">Copiar</button></div>
+            <div class="luxury-card"><h3 class="stat-label">Depurador JWT</h3>
+                <textarea class="field" id="jwIn" placeholder="Pega un token JWT (no se verifica la firma)"></textarea>
+                <div class="vt-out" id="jwOut"></div></div>
+            <div class="luxury-card"><h3 class="stat-label">Defang / Fang</h3>
+                <textarea class="field" id="dfIn" placeholder="Enlaces, IPs o correos peligrosos"></textarea>
+                <div class="vt-row"><button class="btn btn-sm" type="button" id="dfDef">Defang → hxxp://192[.]168[.]1[.]1</button><button class="btn btn-sm" type="button" id="dfFang">Fang (revertir)</button></div>
+                <div class="vt-out" id="dfOut"></div><button class="btn btn-sm" type="button" data-copy="#dfOut">Copiar</button></div>
+            <div class="luxury-card"><h3 class="stat-label">Extractor de IoCs</h3>
+                <textarea class="field" id="ioIn" placeholder="Pega un reporte, log o correo: se extraen IPs, hashes, dominios, correos, URLs, rutas y CVE"></textarea>
+                <div class="vt-ioc" id="ioOut"></div></div>
+            <div class="luxury-card"><h3 class="stat-label">Generadores</h3>
+                <div class="vt-row"><input class="field" type="number" id="pwLen" value="24" min="8" max="256" style="max-width:90px;"><label style="font-size:13px;"><input type="checkbox" id="pwSim" checked> símbolos</label><button class="btn btn-sm" type="button" id="pwGen">Contraseña</button><button class="btn btn-sm" type="button" id="uuGen">UUID</button></div>
+                <div class="vt-out" id="gnOut"></div><button class="btn btn-sm" type="button" data-copy="#gnOut">Copiar</button>
+                <h3 class="stat-label" style="margin-top:18px;">Cadenas de prueba (solo sistemas propios o laboratorios autorizados)</h3>
+                <div id="plOut"></div></div>
+        </div>
+    </div>
+
+    <!-- GRAFO -->
+    <div data-panel="grafo" hidden><div class="luxury-card" id="vtGrafo"><div class="vt-vacio">Cargando…</div></div></div>
+</div>
+
+<div class="vt-cap" id="vtCap" hidden>
+    <div class="luxury-card">
+        <h3 class="stat-label" style="margin-top:0;">Captura rápida</h3>
+        <textarea class="field" id="capTxt" rows="5" placeholder="Una idea, una URL sospechosa, un pensamiento… (Ctrl + Enter guarda · Esc cierra)"></textarea>
+        <div class="vt-row"><select class="field" id="capEf"><option value="">Nota normal</option><option value="1">Se borra en 1 hora</option><option value="24">Se borra en 24 horas</option><option value="cerrar">Se borra al cerrar la bóveda</option></select>
+            <button class="btn btn-primary btn-sm" type="button" id="capGuardar">Guardar</button><button class="btn btn-sm" type="button" id="capCerrar">Cancelar</button></div>
+    </div>
+</div>
+
+<script src="/static/js/vault_tools.js"></script>
+<script>
+(function () {
+    'use strict';
+    var T = window.VaultTools, esc = T.esc, CFG = JSON.parse(document.getElementById('vtCfg').textContent);
+    var S = { codigo: [], notas: [], checks: [], catalogo: {}, plantillas: {}, vars: {}, ars: { lado: 'Todos', id: null }, not: { clasif: 'Todas', id: null }, chk: { id: null }, borrarPortapapeles: null, ultimaActividad: Date.now(), cargado: false };
+    function $(s, r) { return (r || document).querySelector(s); }
+    function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+    function fecha(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return ''; } }
+    function opts(lista, sel) { return lista.map(function (x) { return '<option' + (x === sel ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join(''); }
+
+    var tt;
+    function toast(m, ms) {
+        var e = $('.vt-toast'); if (e) e.remove();
+        e = document.createElement('div'); e.className = 'vt-toast'; e.textContent = m; document.body.appendChild(e);
+        clearTimeout(tt); tt = setTimeout(function () { e.remove(); }, ms || 3500);
+    }
+    function api(metodo, ruta, cuerpo) {
+        var o = { method: metodo, headers: {} };
+        if (cuerpo !== undefined) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(cuerpo); }
+        return fetch('/vault/api/' + ruta, o).then(function (r) {
+            return r.json().catch(function () { return { ok: false, error: 'Respuesta no válida' }; }).then(function (j) {
+                if (r.status === 423) { bloquear('Se cerró la sesión de la bóveda.', true); throw new Error('bloqueada'); }
+                if (!r.ok || j.ok === false) throw new Error(j.error || 'Error ' + r.status);
+                return j;
+            });
+        });
+    }
+    function falla(e) { if (e && e.message !== 'bloqueada') toast(e.message || 'Error'); }
+
+    /* ---------- Bloqueo ---------- */
+    function limpiarPantalla() {
+        S.codigo = []; S.notas = []; S.checks = []; S.vars = {}; S.ars.id = S.not.id = S.chk.id = null; S.ars.item = S.not.item = null; S.cargado = false;
+        ['arsDetalle', 'notDetalle', 'chkDetalle', 'arsLista', 'notLista', 'chkLista', 'ioOut', 'vtGrafo', 'cdOut', 'hsOut', 'jwOut', 'dfOut', 'gnOut', 'vtRes'].forEach(function (i) { $('#' + i).innerHTML = ''; });
+        ['cdIn', 'hsIn', 'jwIn', 'dfIn', 'ioIn', 'capTxt', 'vtBuscar', 'arsFiltro', 'notFiltro'].forEach(function (i) { $('#' + i).value = ''; });
+        $('#vtRes').hidden = true; $('#vtCap').hidden = true;
+    }
+    function bloquear(msg, soloPantalla) {
+        if (!soloPantalla) api('POST', 'bloquear', {}).catch(function () {});
+        limpiarPantalla();
+        $('#vtApp').hidden = true; $('#vtLock').hidden = false;
+        $('#vtLockMsg').textContent = msg || 'Escribe la contraseña de tu cuenta para entrar.';
+        $('#vtPass').value = ''; setTimeout(function () { $('#vtPass').focus(); }, 50);
+    }
+    function desbloquear() {
+        var pw = $('#vtPass').value; if (!pw) return;
+        $('#vtLockErr').textContent = '';
+        fetch('/vault/api/desbloquear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
+            .then(function (r) { return r.json().then(function (j) { return [r, j]; }); })
+            .then(function (x) {
+                if (!x[0].ok) { $('#vtLockErr').textContent = x[1].error || 'No se pudo desbloquear'; return; }
+                $('#vtPass').value = ''; $('#vtLock').hidden = true; $('#vtApp').hidden = false; S.ultimaActividad = Date.now(); cargar();
+            }).catch(function () { $('#vtLockErr').textContent = 'Sin conexión'; });
+    }
+    function actividad() { S.ultimaActividad = Date.now(); }
+    ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, actividad, { passive: true }); });
+    setInterval(function () { if (!$('#vtApp').hidden && Date.now() - S.ultimaActividad >= CFG.bloqueo_s * 1000) bloquear('Bloqueada por inactividad.'); }, 10000);
+    setInterval(function () { if (!$('#vtApp').hidden && Date.now() - S.ultimaActividad < 60000) api('POST', 'latido', {}).catch(function () {}); }, 60000);
+    window.addEventListener('pagehide', function () {
+        if (S.notas.some(function (n) { return n.al_cerrar; })) fetch('/vault/api/bloquear', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    });
+    setInterval(function () {      // notas efímeras que ya caducaron
+        var ahora = Date.now(), antes = S.notas.length;
+        S.notas = S.notas.filter(function (n) { return !n.expira || new Date(n.expira).getTime() > ahora; });
+        if (S.notas.length !== antes) { renderNotas(); }
+    }, 30000);
+
+    /* ---------- Carga ---------- */
+    function cargar() {
+        api('GET', 'inicio').then(function (j) {
+            S.codigo = j.codigo; S.notas = j.notas; S.checks = j.checklists; S.catalogo = j.catalogo; S.plantillas = j.plantillas; S.cargado = true;
+            renderArsenal(); renderNotas(); renderChecks();
+        }).catch(falla);
+    }
+    function mostrarTab(t) {
+        $$('.vt-tab').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === t); });
+        $$('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== t; });
+        if (t === 'grafo') grafo();
+    }
+
+    /* ---------- Editor con números de línea ---------- */
+    function numeros(n) { var s = []; for (var i = 1; i <= Math.max(1, n); i++) s.push(i); return s.join('\n'); }
+    function montarEditor(cont, texto) {
+        cont.innerHTML = '<pre class="vt-gut"></pre><textarea spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>';
+        var ta = $('textarea', cont), g = $('.vt-gut', cont); ta.value = texto || '';
+        function sync() { g.textContent = numeros(ta.value.split('\n').length); g.scrollTop = ta.scrollTop; }
+        ta.addEventListener('input', sync); ta.addEventListener('scroll', function () { g.scrollTop = ta.scrollTop; });
+        ta.addEventListener('keydown', function (e) { if (e.key === 'Tab') { e.preventDefault(); var s = ta.selectionStart; ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(ta.selectionEnd); ta.selectionStart = ta.selectionEnd = s + 2; sync(); } });
+        sync(); return ta;
+    }
+    function copiarTexto(t, aviso) {
+        function listo() {
+            if (!($('#arsAuto') ? $('#arsAuto').checked : true) || aviso === false) { toast('Copiado'); return; }
+            toast('Copiado · se borrará del portapapeles en 30 s');
+            clearTimeout(S.borrarPortapapeles);
+            S.borrarPortapapeles = setTimeout(function () {
+                var limpiar = function () { navigator.clipboard.writeText(' ').then(function () { toast('Portapapeles borrado'); }).catch(function () {}); };
+                if (navigator.clipboard.readText) navigator.clipboard.readText().then(function (a) { if (a === t) limpiar(); }).catch(limpiar); else limpiar();
+            }, 30000);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(listo).catch(function () { toast('No se pudo copiar (permiso del navegador)'); });
+        else { var x = document.createElement('textarea'); x.value = t; document.body.appendChild(x); x.select(); try { document.execCommand('copy'); listo(); } catch (e) { toast('No se pudo copiar'); } x.remove(); }
+    }
+
+    /* ======================= ARSENAL ======================= */
+    function ladoBadge(l) { return '<span class="badge ' + (l === 'OFFENSIVE' ? 'vt-off' : 'vt-def') + '">' + esc(l) + '</span>'; }
+    function renderArsenal() {
+        $('#arsLado').innerHTML = ['Todos'].concat(CFG.lados).map(function (l) { return '<span class="badge vt-chip' + (S.ars.lado === l ? ' on' : '') + '" data-lado="' + esc(l) + '">' + esc(l) + '</span>'; }).join('');
+        var f = $('#arsFiltro').value.toLowerCase();
+        var l = S.codigo.filter(function (c) { return (S.ars.lado === 'Todos' || c.lado === S.ars.lado) && (!f || (c.titulo + ' ' + c.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0); });
+        $('#arsLista').innerHTML = l.length ? l.map(function (c) {
+            return '<div class="vt-item' + (c.id === S.ars.id ? ' on' : '') + '" data-id="' + c.id + '"><b>' + esc(c.titulo) + '</b><small>' + esc(c.lado) + ' · ' + esc(c.lenguaje) + ' · v' + c.version + (c.etiquetas.length ? ' · ' + esc(c.etiquetas.join(', ')) : '') + '</small></div>';
+        }).join('') : '<div class="vt-vacio">Sin bloques.</div>';
+    }
+    function abrirCodigo(id, versionN) {
+        S.ars.id = id; renderArsenal(); mostrarTab('arsenal');
+        api('GET', 'codigo/' + id).then(function (j) { S.ars.item = j.item; S.ars.vers = j.versiones; verCodigo(); }).catch(falla);
+    }
+    function codigoHtml(texto, lang) {
+        var n = texto.split('\n').length;
+        return '<div class="vt-codebox"><pre class="vt-gut">' + numeros(n) + '</pre><pre class="vt-src">' + T.resaltar(texto, lang) + '</pre></div>';
+    }
+    function verCodigo() {
+        var c = S.ars.item, d = $('#arsDetalle');
+        if (c.ilegible) { d.innerHTML = '<div class="vt-vacio">No se pudo descifrar este bloque (la clave de cifrado cambió).</div>'; return; }
+        var lang = c.lenguaje === 'auto' ? T.detectarLenguaje(c.cuerpo) : c.lenguaje, ph = T.placeholders(c.cuerpo);
+        d.innerHTML = '<div class="vt-head"><div><h2>' + esc(c.titulo) + '</h2><div style="margin-top:6px;">' + ladoBadge(c.lado) + ' <span class="badge">' + esc(lang) + '</span> <span class="badge">v' + c.version + '</span> ' + c.etiquetas.map(function (t) { return '<span class="badge">#' + esc(t) + '</span>'; }).join(' ') + '</div></div>' +
+            '<div class="vt-acc"><button class="btn btn-primary btn-sm" data-a="copiar" type="button">Copiar</button><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="hist" type="button">Historial</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
+            (ph.length ? '<div class="vt-vars">' + ph.map(function (p) { return '<label>' + esc(p) + '<input class="field" data-var="' + esc(p) + '" value="' + esc(S.vars[p] || '') + '" placeholder="{{' + esc(p) + '}}" autocomplete="off"></label>'; }).join('') + '</div>' : '') +
+            '<div id="arsCodigo">' + codigoHtml(T.rellenar(c.cuerpo, S.vars), lang) + '</div>' +
+            '<label style="font-size:12px; color:var(--text-muted); display:block; margin-top:10px;"><input type="checkbox" id="arsAuto" checked> Borrar el portapapeles 30 s después de copiar</label><div id="arsHist"></div>';
+    }
+    function formCodigo(c) {
+        c = c || { titulo: '', lado: '', lenguaje: 'auto', etiquetas: [], cuerpo: '' };
+        $('#arsDetalle').innerHTML = '<div class="vt-head"><h2>' + (c.id ? 'Editar bloque' : 'Nuevo bloque de código') + '</h2></div>' +
+            '<div class="grid-2"><label class="lbl">Título<input class="field" id="fcTitulo" maxlength="200" value="' + esc(c.titulo) + '"></label>' +
+            '<label class="lbl">Clasificación (obligatoria)<select class="field" id="fcLado"><option value="">— elige —</option>' + opts(CFG.lados, c.lado) + '</select></label>' +
+            '<label class="lbl">Lenguaje<select class="field" id="fcLang">' + opts(CFG.lenguajes, c.lenguaje) + '</select></label>' +
+            '<label class="lbl">Etiquetas (separadas por coma)<input class="field" id="fcTags" value="' + esc(c.etiquetas.join(', ')) + '"></label></div>' +
+            '<div class="vt-ed" id="fcEd"></div><div id="fcDet" style="font-size:12px; color:var(--text-muted); margin:-6px 0 12px;"></div>' +
+            '<label class="lbl">Nota de esta versión (ej. «Bypass de filtro WAF»)<input class="field" id="fcNota" maxlength="200"></label>' +
+            '<div class="vt-acc"><button class="btn btn-primary" data-a="guardar" type="button">Guardar</button><button class="btn" data-a="cancelar" type="button">Cancelar</button></div>';
+        var ta = montarEditor($('#fcEd'), c.cuerpo);
+        function det() { $('#fcDet').textContent = 'Lenguaje detectado: ' + T.detectarLenguaje(ta.value) + (T.placeholders(ta.value).length ? ' · variables: ' + T.placeholders(ta.value).join(', ') : ''); }
+        ta.addEventListener('input', det); det(); S.ars.editando = c;
+    }
+    function guardarCodigo() {
+        var c = S.ars.editando || {}, lado = $('#fcLado').value;
+        if (!lado) { toast('Elige OFFENSIVE o DEFENSIVE antes de guardar.'); return; }
+        api('POST', 'codigo', { id: c.id || null, titulo: $('#fcTitulo').value, lado: lado, lenguaje: $('#fcLang').value, etiquetas: $('#fcTags').value, cuerpo: $('#fcEd textarea').value, nota_version: $('#fcNota').value })
+            .then(function (j) {
+                var i = S.codigo.findIndex(function (x) { return x.id === j.item.id; }); if (i >= 0) S.codigo[i] = j.item; else S.codigo.unshift(j.item);
+                toast('Guardado'); abrirCodigo(j.item.id);
+            }).catch(falla);
+    }
+    function historial() {
+        var h = $('#arsHist'); if (h.innerHTML) { h.innerHTML = ''; return; }
+        h.innerHTML = '<h3 class="stat-label" style="margin-top:18px;">Historial de versiones</h3>' + S.ars.vers.map(function (v) {
+            return '<div class="vt-ver"><span><b>v' + v.n + '</b> · ' + esc(v.nota || 'sin nota') + ' <span class="mono">' + esc(fecha(v.fecha)) + '</span></span><span class="vt-acc"><button class="btn btn-sm" data-a="vver" data-n="' + v.n + '" type="button">Ver</button>' + (v.n !== S.ars.item.version ? '<button class="btn btn-sm" data-a="vrest" data-n="' + v.n + '" type="button">Restaurar</button>' : '') + '</span></div>';
+        }).join('') + '<div id="arsVer"></div>';
+    }
+
+    /* ======================= CUADERNO ======================= */
+    function clasifBadge(c) { var k = c.indexOf('ZERO') === 0 ? 'ZERO' : c; return '<span class="badge vt-c-' + esc(k) + '">' + esc(c) + '</span>'; }
+    function efimeraTexto(n) { return n.al_cerrar ? 'Efímera · se borra al cerrar' : n.expira ? 'Efímera · caduca ' + fecha(n.expira) : ''; }
+    function renderNotas() {
+        $('#notClasif').innerHTML = ['Todas'].concat(CFG.clasificaciones).map(function (c) { return '<span class="badge vt-chip' + (S.not.clasif === c ? ' on' : '') + '" data-clasif="' + esc(c) + '">' + esc(c) + '</span>'; }).join('');
+        var f = $('#notFiltro').value.toLowerCase();
+        var l = S.notas.filter(function (n) { return (S.not.clasif === 'Todas' || n.clasificacion === S.not.clasif) && (!f || (n.titulo + ' ' + n.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0); });
+        $('#notLista').innerHTML = l.length ? l.map(function (n) {
+            return '<div class="vt-item' + (n.id === S.not.id ? ' on' : '') + '" data-id="' + n.id + '"><b>' + esc(n.titulo) + '</b><small>' + esc(n.clasificacion) + ' · ' + esc(n.tipo) + (efimeraTexto(n) ? ' · ⏱' : '') + '</small></div>';
+        }).join('') : '<div class="vt-vacio">Sin notas.</div>';
+    }
+    function resolver(titulo) {
+        var t = titulo.toLowerCase(), n = S.notas.find(function (x) { return x.titulo.trim().toLowerCase() === t; });
+        if (n) return { tipo: 'nota', id: n.id };
+        var c = S.codigo.find(function (x) { return x.titulo.trim().toLowerCase() === t; });
+        return c ? { tipo: 'codigo', id: c.id } : null;
+    }
+    function panelIoc(texto) {
+        var r = T.extraerIoCs(texto), et = { ips: 'IPs', md5: 'MD5', sha1: 'SHA-1', sha256: 'SHA-256', dominios: 'Dominios', correos: 'Correos', urls: 'URLs', rutas: 'Rutas', cves: 'CVE' };
+        var h = Object.keys(et).filter(function (k) { return r[k].length; }).map(function (k) { return '<h4>' + et[k] + ' (' + r[k].length + ')</h4>' + r[k].map(function (v) { return '<span class="mono" data-ioc="' + esc(v) + '" title="Clic para copiar">' + esc(v) + '</span>'; }).join(''); }).join('');
+        return h || '<div class="vt-vacio" style="padding:10px;">Sin indicadores.</div>';
+    }
+    function abrirNota(id) {
+        S.not.id = id; renderNotas(); mostrarTab('cuaderno');
+        api('GET', 'nota/' + id).then(function (j) { S.not.item = j.item; S.not.entrantes = j.entrantes; verNota(); }).catch(falla);
+    }
+    function verNota() {
+        var n = S.not.item, d = $('#notDetalle');
+        if (n.ilegible) { d.innerHTML = '<div class="vt-vacio">No se pudo descifrar esta nota (la clave de cifrado cambió).</div>'; return; }
+        d.innerHTML = '<div class="vt-head"><div><h2>' + esc(n.titulo) + '</h2><div style="margin-top:6px;">' + clasifBadge(n.clasificacion) + ' <span class="badge">' + esc(n.tipo) + '</span> ' + n.etiquetas.map(function (t) { return '<span class="badge">#' + esc(t) + '</span>'; }).join(' ') + (efimeraTexto(n) ? ' <span class="badge vt-c-CONFIDENCIAL">' + esc(efimeraTexto(n)) + '</span>' : '') + '</div></div>' +
+            '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="md" type="button">Informe .md</button><button class="btn btn-sm" data-a="pdf" type="button">Informe PDF</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
+            '<div class="vt-split"><div class="vt-md">' + T.renderMarkdown(n.cuerpo, resolver) + (S.not.entrantes.length ? '<h4 style="margin-top:24px;">Enlazada desde</h4><p>' + S.not.entrantes.map(function (e) { return '<a href="#" class="vt-wiki" data-tipo="' + esc(e.tipo) + '" data-id="' + e.id + '">' + esc(e.titulo) + '</a>'; }).join(' · ') + '</p>' : '') + '</div>' +
+            '<div class="vt-ioc"><h3 class="stat-label" style="margin:0;">Indicadores (IoCs)</h3>' + panelIoc(n.cuerpo) + '</div></div>';
+    }
+    function formNota(n, titulo) {
+        var nueva = !n; n = n || { titulo: titulo || '', tipo: 'Nota', clasificacion: 'INTERNO', etiquetas: [], cuerpo: '' };
+        $('#notDetalle').innerHTML = '<div class="vt-head"><h2>' + (nueva ? 'Nueva nota' : 'Editar nota') + '</h2></div>' +
+            '<div class="grid-2"><label class="lbl">Título<input class="field" id="fnTitulo" maxlength="200" value="' + esc(n.titulo) + '"></label>' +
+            '<label class="lbl">Plantilla / tipo<select class="field" id="fnTipo">' + opts(CFG.tipos.filter(function (t) { return t !== 'Captura' || n.tipo === 'Captura'; }), n.tipo) + '</select></label>' +
+            '<label class="lbl">Nivel de clasificación<select class="field" id="fnClasif">' + opts(CFG.clasificaciones, n.clasificacion) + '</select></label>' +
+            '<label class="lbl">Etiquetas<input class="field" id="fnTags" value="' + esc(n.etiquetas.join(', ')) + '"></label>' +
+            (nueva ? '<label class="lbl">Efímera (autodestrucción)<select class="field" id="fnEf"><option value="">No</option><option value="1">Tras 1 hora</option><option value="24">Tras 24 horas</option><option value="cerrar">Al cerrar la bóveda</option></select></label>' : '') + '</div>' +
+            '<div class="vt-split"><div><div class="vt-ed" id="fnEd" style="height:380px;"></div></div><div class="vt-ioc"><h3 class="stat-label" style="margin:0;">Indicadores (IoCs)</h3><div id="fnIoc"></div></div></div>' +
+            '<div class="vt-acc"><button class="btn btn-primary" data-a="guardar" type="button">Guardar</button><button class="btn" data-a="cancelar" type="button">Cancelar</button></div>';
+        var ta = montarEditor($('#fnEd'), n.cuerpo), t;
+        function ioc() { clearTimeout(t); t = setTimeout(function () { $('#fnIoc').innerHTML = panelIoc(ta.value); }, 250); }
+        ta.addEventListener('input', ioc); $('#fnIoc').innerHTML = panelIoc(ta.value);
+        $('#fnTipo').addEventListener('change', function () {
+            var p = S.plantillas[this.value]; if (p && (!ta.value.trim() || Object.keys(S.plantillas).some(function (k) { return S.plantillas[k] === ta.value; }))) { ta.value = p; ta.dispatchEvent(new Event('input')); }
+        });
+        S.not.editando = n;
+    }
+    function guardarNota(extra) {
+        var n = S.not.editando || {};
+        api('POST', 'nota', { id: n.id || null, titulo: $('#fnTitulo').value, tipo: $('#fnTipo').value, clasificacion: $('#fnClasif').value, etiquetas: $('#fnTags').value, cuerpo: $('#fnEd textarea').value, efimera: $('#fnEf') ? $('#fnEf').value || null : null })
+            .then(function (j) {
+                var i = S.notas.findIndex(function (x) { return x.id === j.item.id; }); if (i >= 0) S.notas[i] = j.item; else S.notas.unshift(j.item);
+                toast('Guardada'); abrirNota(j.item.id);
+            }).catch(falla);
+    }
+    function pdf(n) {
+        var w = window.open('', '_blank'); if (!w) { toast('Permite las ventanas emergentes para exportar a PDF.'); return; }
+        w.document.write('<!doctype html><meta charset="utf-8"><title>' + esc(n.titulo) + '</title><style>body{font:14px/1.6 system-ui,sans-serif;max-width:760px;margin:30px auto;color:#111}h1{font-size:24px}h2,h3,h4{margin:18px 0 6px}code{font-family:monospace;background:#f1f1f1;padding:1px 5px;border-radius:4px}pre{background:#f6f6f6;border:1px solid #ddd;padding:10px;white-space:pre-wrap;border-radius:6px}pre code{background:none}.m{color:#555;font-size:12px;border-left:3px solid #999;padding-left:10px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}.vt-wiki-roto,.vt-wiki{color:inherit;text-decoration:none}span[class^=vt-],.vt-ph{color:inherit;background:none;font-style:normal}</style>' +
+            '<h1>' + esc(n.titulo) + '</h1><p class="m"><b>Clasificación:</b> ' + esc(n.clasificacion) + ' · <b>Tipo:</b> ' + esc(n.tipo) + ' · <b>Fecha:</b> ' + new Date().toISOString().slice(0, 10) + (n.etiquetas.length ? '<br><b>Etiquetas:</b> ' + esc(n.etiquetas.join(', ')) : '') + '</p>' +
+            T.renderMarkdown(n.cuerpo.replace(/^# .*\n+/, ''), function () { return null; }));
+        w.document.close(); w.focus(); setTimeout(function () { w.print(); }, 300);
+    }
+
+    /* ======================= MISIÓN ======================= */
+    function renderChecks() {
+        $('#chkMet').innerHTML = opts(CFG.metodologias);
+        $('#chkLista').innerHTML = S.checks.length ? S.checks.map(function (c) {
+            return '<div class="vt-item' + (c.id === S.chk.id ? ' on' : '') + '" data-id="' + c.id + '"><b>' + esc(c.objetivo) + '</b><small>' + esc(c.metodologia) + ' · ' + c.hechos.length + '/' + c.total + '</small></div>';
+        }).join('') : '<div class="vt-vacio">Sin checklists.</div>';
+        if (S.chk.id) verCheck();
+    }
+    function verCheck() {
+        var c = S.checks.find(function (x) { return x.id === S.chk.id; }); if (!c) { $('#chkDetalle').innerHTML = ''; return; }
+        var pct = c.total ? Math.round(c.hechos.length * 100 / c.total) : 0;
+        $('#chkDetalle').innerHTML = '<div class="vt-head"><div><h2>' + esc(c.objetivo) + '</h2><span class="badge">' + esc(c.metodologia) + '</span> <span class="badge">' + c.hechos.length + '/' + c.total + ' · ' + pct + '%</span></div><div class="vt-acc"><button class="btn btn-sm" data-a="chkborrar" type="button">Eliminar</button></div></div><div class="vt-bar"><i style="width:' + pct + '%"></i></div>' +
+            (S.catalogo[c.metodologia] || []).map(function (g) {
+                var hechosG = g.items.filter(function (_x, i) { return c.hechos.indexOf(g.codigo + '.' + i) >= 0; }).length;
+                return '<div class="vt-grp">' + esc(g.codigo) + ' · ' + esc(g.titulo) + ' <span class="mono">' + hechosG + '/' + g.items.length + '</span></div>' + g.items.map(function (it, i) {
+                    var k = g.codigo + '.' + i; return '<label class="vt-chk"><input type="checkbox" data-k="' + esc(k) + '"' + (c.hechos.indexOf(k) >= 0 ? ' checked' : '') + '> <span>' + esc(it) + '</span></label>';
+                }).join('');
+            }).join('');
+    }
+
+    /* ======================= HERRAMIENTAS ======================= */
+    function codec() {
+        var v = $('#cdIn').value, o = $('#cdOp').value, r;
+        try { r = { b64e: T.b64Enc, b64d: T.b64Dec, hexe: T.hexEnc, hexd: T.hexDec, urle: T.urlEnc, urld: T.urlDec }[o](v); } catch (e) { r = '⚠ ' + e.message; }
+        $('#cdOut').textContent = v ? r : '';
+    }
+    function hashes() {
+        var v = $('#hsIn').value, o = $('#hsOut'); if (!v) { o.textContent = ''; return; }
+        var base = 'MD5      ' + T.md5(v); o.textContent = base;
+        Promise.all(['SHA-1', 'SHA-256', 'SHA-512'].map(function (a) { return T.sha(a, v); })).then(function (h) {
+            if ($('#hsIn').value === v) o.textContent = base + '\nSHA-1    ' + h[0] + '\nSHA-256  ' + h[1] + '\nSHA-512  ' + h[2];
+        }).catch(function (e) { o.textContent = base + '\n⚠ ' + e.message; });
+    }
+    function jwt() {
+        var v = $('#jwIn').value.trim(), o = $('#jwOut'); if (!v) { o.textContent = ''; return; }
+        try { var r = T.jwtDecode(v); o.textContent = JSON.stringify(r.encabezado, null, 2) + '\n' + JSON.stringify(r.contenido, null, 2) + '\n\n' + r.avisos.map(function (a) { return '• ' + a; }).join('\n'); } catch (e) { o.textContent = '⚠ ' + e.message; }
+    }
+    function iocLibre() {
+        var v = $('#ioIn').value; $('#ioOut').innerHTML = v ? panelIoc(v) : '';
+    }
+    function payloads() {
+        $('#plOut').innerHTML = Object.keys(T.CADENAS_PRUEBA).map(function (k) {
+            return '<h4 style="margin:10px 0 4px; font-size:12px; color:var(--text-muted);">' + esc(k) + '</h4>' + T.CADENAS_PRUEBA[k].map(function (p) { return '<span class="mono" style="display:block; cursor:pointer; overflow-wrap:anywhere;" data-ioc="' + esc(p) + '">' + esc(p.length > 80 ? p.slice(0, 40) + '…(' + p.length + ' caracteres)' : p) + '</span>'; }).join('');
+        }).join('');
+    }
+
+    /* ======================= GRAFO ======================= */
+    function grafo() {
+        api('GET', 'grafo').then(function (j) {
+            var g = $('#vtGrafo'); if (!j.nodos.length) { g.innerHTML = '<div class="vt-vacio">Aún no hay notas ni bloques. Enlázalos con [[Título]] y aparecerán aquí.</div>'; return; }
+            var W = 900, H = 560, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 70, pos = {};
+            j.nodos.forEach(function (n, i) { var a = 2 * Math.PI * i / j.nodos.length - Math.PI / 2; pos[n.id] = [cx + R * Math.cos(a), cy + R * Math.sin(a), a]; });
+            var s = '<svg viewBox="0 0 ' + W + ' ' + H + '">' + j.aristas.map(function (e) { return '<line x1="' + pos[e.de][0] + '" y1="' + pos[e.de][1] + '" x2="' + pos[e.a][0] + '" y2="' + pos[e.a][1] + '" stroke="#555" stroke-width="1.2"/>'; }).join('') +
+                j.nodos.map(function (n) {
+                    var p = pos[n.id], der = Math.cos(p[2]) >= 0, t = n.titulo.length > 24 ? n.titulo.slice(0, 23) + '…' : n.titulo, par = n.id.split(':');
+                    return '<g data-tipo="' + par[0] + '" data-id="' + par[1] + '"><circle cx="' + p[0] + '" cy="' + p[1] + '" r="7" fill="' + (n.tipo === 'nota' ? '#fff' : '#c8a96a') + '"/><text x="' + (p[0] + (der ? 12 : -12)) + '" y="' + (p[1] + 4) + '" text-anchor="' + (der ? 'start' : 'end') + '">' + esc(t) + '</text></g>';
+                }).join('') + '</svg><div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Blanco: notas · Dorado: bloques de código · Las líneas son enlaces [[wiki]].</div>';
+            g.innerHTML = s;
+        }).catch(falla);
+    }
+
+    /* ======================= Búsqueda y captura ======================= */
+    var tb;
+    function buscar() {
+        var q = $('#vtBuscar').value.trim(), r = $('#vtRes');
+        clearTimeout(tb); if (q.length < 2) { r.hidden = true; return; }
+        tb = setTimeout(function () {
+            api('GET', 'buscar?q=' + encodeURIComponent(q)).then(function (j) {
+                r.innerHTML = j.resultados.length ? j.resultados.map(function (x) { return '<div data-tipo="' + x.tipo + '" data-id="' + x.id + '"><b>' + (x.tipo === 'codigo' ? '⌨ ' : '📝 ') + esc(x.titulo) + '</b> <span class="mono">' + esc(x.detalle) + '</span>' + (x.linea ? '<small>' + esc(x.linea) + '</small>' : '') + '</div>'; }).join('') : '<div>Sin resultados</div>';
+                r.hidden = false;
+            }).catch(falla);
+        }, 250);
+    }
+    function abrirCaptura() { if ($('#vtApp').hidden) return; $('#vtCap').hidden = false; $('#capTxt').focus(); }
+    function guardarCaptura() {
+        var t = $('#capTxt').value; if (!t.trim()) return;
+        var primera = t.trim().split('\n')[0].slice(0, 60), hora = new Date().toLocaleString();
+        api('POST', 'nota', { titulo: 'Captura · ' + hora + (primera ? ' · ' + primera : ''), tipo: 'Captura', clasificacion: 'INTERNO', etiquetas: 'captura', cuerpo: t, efimera: $('#capEf').value || null })
+            .then(function (j) { S.notas.unshift(j.item); renderNotas(); $('#capTxt').value = ''; $('#vtCap').hidden = true; toast('Captura guardada'); }).catch(falla);
+    }
+
+    /* ======================= Eventos ======================= */
+    function abrirTipo(tipo, id) { if (tipo === 'codigo') abrirCodigo(+id); else abrirNota(+id); }
+    document.addEventListener('click', function (e) {
+        var el = e.target, x;
+        if ((x = el.closest('[data-tab]')) && x.classList.contains('vt-tab')) return mostrarTab(x.getAttribute('data-tab'));
+        if (!el.closest('.vt-buscar')) $('#vtRes').hidden = true;
+        if ((x = el.closest('#vtRes [data-id]'))) { $('#vtRes').hidden = true; return abrirTipo(x.getAttribute('data-tipo'), x.getAttribute('data-id')); }
+        if ((x = el.closest('#vtGrafo g[data-id]'))) return abrirTipo(x.getAttribute('data-tipo'), x.getAttribute('data-id'));
+        if ((x = el.closest('a.vt-wiki'))) { e.preventDefault(); return abrirTipo(x.getAttribute('data-tipo'), x.getAttribute('data-id')); }
+        if ((x = el.closest('.vt-wiki-roto'))) { if (confirm('La nota «' + x.textContent + '» no existe. ¿Crearla?')) { mostrarTab('cuaderno'); formNota(null, x.textContent); } return; }
+        if ((x = el.closest('[data-ioc]'))) return copiarTexto(x.getAttribute('data-ioc'), false);
+        if ((x = el.closest('[data-copy]'))) return copiarTexto($(x.getAttribute('data-copy')).textContent, true);
+        if ((x = el.closest('[data-lado]'))) { S.ars.lado = x.getAttribute('data-lado'); return renderArsenal(); }
+        if ((x = el.closest('[data-clasif]'))) { S.not.clasif = x.getAttribute('data-clasif'); return renderNotas(); }
+        if ((x = el.closest('#arsLista .vt-item'))) return abrirCodigo(+x.getAttribute('data-id'));
+        if ((x = el.closest('#notLista .vt-item'))) return abrirNota(+x.getAttribute('data-id'));
+        if ((x = el.closest('#chkLista .vt-item'))) { S.chk.id = +x.getAttribute('data-id'); renderChecks(); return; }
+        if ((x = el.closest('[data-a]'))) return accion(x.getAttribute('data-a'), x);
+    });
+    function accion(a, b) {
+        var pa = b.closest('#arsDetalle') ? 'ars' : b.closest('#notDetalle') ? 'not' : b.closest('#chkDetalle') ? 'chk' : '';
+        if (pa === 'ars') {
+            var c = S.ars.item;
+            if (a === 'copiar') { var txt = T.rellenar(c.cuerpo, S.vars), faltan = T.placeholders(txt); copiarTexto(txt); if (faltan.length) toast('Copiado, pero faltan variables: ' + faltan.join(', '), 5000); }
+            else if (a === 'editar') formCodigo(c);
+            else if (a === 'cancelar') { if (S.ars.id && S.ars.item) verCodigo(); else $('#arsDetalle').innerHTML = '<div class="vt-vacio">Elige un bloque o crea uno nuevo.</div>'; }
+            else if (a === 'guardar') guardarCodigo();
+            else if (a === 'hist') historial();
+            else if (a === 'vver') api('GET', 'codigo/' + c.id + '/version/' + b.getAttribute('data-n')).then(function (j) { $('#arsVer').innerHTML = '<h4>v' + j.n + '</h4>' + codigoHtml(j.cuerpo, c.lenguaje); }).catch(falla);
+            else if (a === 'vrest') { if (confirm('¿Restaurar la versión v' + b.getAttribute('data-n') + '? Se guarda como una versión nueva.')) api('POST', 'codigo/' + c.id + '/restaurar/' + b.getAttribute('data-n'), {}).then(function () { toast('Restaurada'); abrirCodigo(c.id); }).catch(falla); }
+            else if (a === 'borrar') { if (confirm('¿Eliminar «' + c.titulo + '» y todas sus versiones?')) api('DELETE', 'codigo/' + c.id).then(function () { S.codigo = S.codigo.filter(function (x) { return x.id !== c.id; }); S.ars.id = null; S.ars.item = null; renderArsenal(); $('#arsDetalle').innerHTML = '<div class="vt-vacio">Eliminado.</div>'; }).catch(falla); }
+        } else if (pa === 'not') {
+            var n = S.not.item;
+            if (a === 'editar') formNota(n);
+            else if (a === 'cancelar') { if (S.not.id && S.not.item) verNota(); else $('#notDetalle').innerHTML = '<div class="vt-vacio">Elige una nota o crea una nueva.</div>'; }
+            else if (a === 'guardar') guardarNota();
+            else if (a === 'md') window.location.href = '/vault/api/nota/' + n.id + '/informe.md';
+            else if (a === 'pdf') pdf(n);
+            else if (a === 'borrar') { if (confirm('¿Eliminar «' + n.titulo + '»?')) api('DELETE', 'nota/' + n.id).then(function () { S.notas = S.notas.filter(function (x) { return x.id !== n.id; }); S.not.id = null; S.not.item = null; renderNotas(); $('#notDetalle').innerHTML = '<div class="vt-vacio">Eliminada.</div>'; }).catch(falla); }
+        } else if (pa === 'chk' && a === 'chkborrar') {
+            if (confirm('¿Eliminar esta checklist?')) api('DELETE', 'checklist/' + S.chk.id).then(function () { S.checks = S.checks.filter(function (x) { return x.id !== S.chk.id; }); S.chk.id = null; renderChecks(); $('#chkDetalle').innerHTML = '<div class="vt-vacio">Eliminada.</div>'; }).catch(falla);
+        }
+    }
+    document.addEventListener('input', function (e) {
+        var el = e.target;
+        if (el.getAttribute && el.getAttribute('data-var') !== null) { S.vars[el.getAttribute('data-var')] = el.value; var c = S.ars.item; if (c) $('#arsCodigo').innerHTML = codigoHtml(T.rellenar(c.cuerpo, S.vars), c.lenguaje === 'auto' ? T.detectarLenguaje(c.cuerpo) : c.lenguaje); }
+    });
+    document.addEventListener('change', function (e) {
+        var el = e.target; if (!el.getAttribute || el.getAttribute('data-k') === null) return;
+        var c = S.checks.find(function (x) { return x.id === S.chk.id; }); if (!c) return;
+        var k = el.getAttribute('data-k'), h = c.hechos.filter(function (x) { return x !== k; }); if (el.checked) h.push(k);
+        api('POST', 'checklist/' + c.id, { hechos: h }).then(function (j) { S.checks[S.checks.indexOf(c)] = j.item; renderChecks(); }).catch(function (er) { el.checked = !el.checked; falla(er); });
+    });
+    $('#vtUnlock').addEventListener('click', desbloquear);
+    $('#vtPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') desbloquear(); });
+    $('#vtLockBtn').addEventListener('click', function () { bloquear('Bóveda bloqueada.'); });
+    $('#vtBuscar').addEventListener('input', buscar);
+    $('#arsFiltro').addEventListener('input', renderArsenal); $('#notFiltro').addEventListener('input', renderNotas);
+    $('#arsNuevo').addEventListener('click', function () { formCodigo(null); });
+    $('#notNueva').addEventListener('click', function () { formNota(null); });
+    $('#chkCrear').addEventListener('click', function () {
+        api('POST', 'checklist', { objetivo: $('#chkObjetivo').value, metodologia: $('#chkMet').value }).then(function (j) { S.checks.unshift(j.item); S.chk.id = j.item.id; $('#chkObjetivo').value = ''; renderChecks(); }).catch(falla);
+    });
+    $('#vtCapBtn').addEventListener('click', abrirCaptura); $('#capCerrar').addEventListener('click', function () { $('#vtCap').hidden = true; });
+    $('#capGuardar').addEventListener('click', guardarCaptura);
+    $('#cdIn').addEventListener('input', codec); $('#cdOp').addEventListener('change', codec); $('#hsIn').addEventListener('input', hashes);
+    $('#jwIn').addEventListener('input', jwt); $('#ioIn').addEventListener('input', iocLibre);
+    $('#dfDef').addEventListener('click', function () { $('#dfOut').textContent = T.defang($('#dfIn').value); });
+    $('#dfFang').addEventListener('click', function () { $('#dfOut').textContent = T.fang($('#dfIn').value); });
+    $('#pwGen').addEventListener('click', function () { try { var r = T.generarPassword(+$('#pwLen').value, { simbolos: $('#pwSim').checked }); $('#gnOut').textContent = r.valor; toast('Entropía aproximada: ' + r.entropia + ' bits'); } catch (e) { toast(e.message); } });
+    $('#uuGen').addEventListener('click', function () { $('#gnOut').textContent = T.uuid4(); });
+    document.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); abrirCaptura(); }
+        else if (e.key === 'Escape') { $('#vtCap').hidden = true; $('#vtRes').hidden = true; }
+        else if (e.key === 'Enter' && e.ctrlKey && !$('#vtCap').hidden) guardarCaptura();
+    });
+    payloads();
+    if (CFG.desbloqueada) { $('#vtApp').hidden = false; cargar(); } else { bloquear(undefined, true); }
+})();
+</script>
+{% endraw %}
+{% endblock %}

@@ -1,0 +1,53 @@
+ZEDYTH OPS VAULT — workspace privado de ciberseguridad
+=======================================================
+
+DÓNDE APARECE
+  Arriba, en el avatar del perfil: la tarjeta trae un recuadro "ZEDYTH OPS VAULT" con el botón «Ir» (solo para rol admin).
+  Ruta directa: /vault
+
+ARCHIVOS NUEVOS (cópialos tal cual al proyecto, respetando carpetas)
+  vault.py                      backend: modelos cifrados, bloqueo, búsqueda, checklists, informes
+  templates/vault.html          interfaz (5 pestañas)
+  static/js/vault_tools.js      herramientas que corren en el navegador (codecs, JWT, hashes, defang, IoCs, resaltado, Markdown)
+  test_vault.py                 pruebas del backend         ->  python -m unittest test_vault -v
+  test_vault_tools.js           pruebas de las herramientas ->  node test_vault_tools.js
+
+ARCHIVOS QUE YA EXISTÍAN Y SE MODIFICARON (cambios mínimos, ver cambios_vault.diff)
+  app.py                        +2 líneas (registrar el módulo) y "vault." en la lista de rutas solo-admin
+  templates/base.html           +6 líneas: recuadro con el botón «Ir» en la tarjeta de perfil
+  Si ya cambiaste app.py o base.html, NO los sobrescribas: aplica el .diff a mano.
+
+ANTES DE DESPLEGAR (importante)
+  1) En Render crea la variable VAULT_KEY con una clave Fernet propia:
+       python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+     Guárdala en un lugar seguro. Si no existe, se deriva de SECRET_KEY. Si la clave cambia, lo ya guardado NO se puede leer.
+  2) No hace falta instalar nada nuevo (usa cryptography, que ya está en requirements.txt).
+  3) Las tablas (vault_codigo, vault_version, vault_nota, vault_checklist) se crean solas al primer uso.
+  4) Opcional: VAULT_BLOQUEO_S (segundos de inactividad antes de bloquear; por defecto 300).
+
+QUÉ INCLUYE
+  Arsenal de código   OFFENSIVE / DEFENSIVE obligatorio, lenguaje auto-detectado, números de línea y resaltado,
+                      variables {{TARGET_IP}} con cajas arriba (se llenan una vez), copia con borrado del portapapeles a los 30 s,
+                      historial de versiones con restaurar.
+  Cuaderno            [[Wiki-links]] con "enlazada desde", clasificación (PUBLICABLE / INTERNO / CONFIDENCIAL / ZERO-DAY / CRÍTICO),
+                      plantillas Recon, Finding y CTF, notas efímeras (1 h, 24 h o al cerrar), panel lateral de IoCs,
+                      informe .md (servidor) e informe PDF (diálogo de impresión).
+  Modo misión         Checklists OWASP Top 10, PTES y MITRE ATT&CK por objetivo, con progreso.
+  Herramientas        Base64 / Hex / URL, hashes MD5-SHA1-256-512, depurador JWT, defang/fang, extractor de IoCs, generador de
+                      contraseñas y UUID, cadenas de prueba. Todo en el navegador: no viaja al servidor.
+  Captura rápida      Ctrl + K o Alt + N (dentro del vault).
+  Grafo               Mapa de enlaces [[wiki]] entre notas y bloques.
+  Búsqueda            Texto completo en títulos, etiquetas y contenido (también el código de hace meses).
+  Seguridad           Contenido cifrado en la base (Fernet), solo admin, bloqueo a los 5 min (servidor y navegador),
+                      se desbloquea con la contraseña de tu cuenta (6 intentos / 10 min), todo queda en Auditoría.
+
+LÍMITES QUE DEBES CONOCER
+  * Se cifra el CONTENIDO. Títulos, etiquetas, clasificación y fechas se guardan en claro (para listar y filtrar).
+    No pongas secretos en los títulos. En Auditoría solo queda "tipo: título" (las notas efímeras no guardan título).
+  * El extractor de IoCs reconoce IPv4, MD5/SHA-1/SHA-256, URLs, correos, dominios (lista de TLD comunes), rutas y CVE; no IPv6.
+  * El depurador JWT decodifica pero no verifica la firma.
+  * El borrado del portapapeles necesita la pestaña abierta; si el navegador no deja leerlo, lo sobrescribe igual a los 30 s.
+  * Nota efímera "al cerrar": se borra al bloquear la bóveda o al salir de la página (el servidor además las limpia a las 12 h).
+  * Qué se probó: las herramientas y el resaltado (18 pruebas en node), la lógica del backend (12 pruebas) y el flujo
+    de bloqueo / límite de intentos / rol admin con un entorno simulado. Las rutas que leen y escriben en la base de datos
+    NO se pudieron correr aquí (no había Flask-SQLAlchemy): pruébalas en local con tu SQLite antes de subir a Render.

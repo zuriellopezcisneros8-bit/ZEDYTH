@@ -1,0 +1,576 @@
+"""vault.py — ZEDYTH OPS VAULT: workspace privado de ciberseguridad (solo administradores).
+
+Qué incluye (todo bajo /vault):
+  * Arsenal de código   Snippets OFFENSIVE / DEFENSIVE con lenguaje, variables {{PLACEHOLDER}} y versiones.
+  * Cuaderno            Notas con [[wiki-links]], niveles de clasificación, plantillas (Recon, Finding, CTF) y notas efímeras.
+  * Modo misión         Checklists interactivos OWASP Top 10, PTES y MITRE ATT&CK por objetivo.
+  * Caja de herramientas (Base64, hex, URL, JWT, hashes, defang, IoCs, generadores): vive en el navegador
+                        (static/js/vault_tools.js); lo que pegas ahí NO viaja al servidor.
+  * Búsqueda            Texto completo en títulos, etiquetas y contenido.
+  * Seguridad           Todo el contenido se guarda CIFRADO (Fernet). Bloqueo por inactividad (5 min) en el servidor y en
+                        el navegador: se desbloquea con la contraseña de tu cuenta.
+
+Se conecta en app.py:
+    import vault
+    app.register_blueprint(vault.crear_blueprint(app, db, registrar, limitar))
+
+Clave de cifrado: variable VAULT_KEY (una clave Fernet). Si no existe se deriva de SECRET_KEY. IMPORTANTE: si cambias esa
+clave, lo ya guardado no se podrá leer. Define VAULT_KEY en Render y guárdala en un lugar seguro.
+"""
+import base64
+import hashlib
+import json
+import os
+import re
+import time
+from datetime import datetime, timedelta
+from functools import wraps
+
+from flask import Blueprint, Response, abort, jsonify, render_template, request, session
+from flask_login import current_user
+from werkzeug.exceptions import HTTPException
+
+LADOS = ("OFFENSIVE", "DEFENSIVE")
+CLASIFICACIONES = ("PUBLICABLE", "INTERNO", "CONFIDENCIAL", "ZERO-DAY / CRÍTICO")
+TIPOS_NOTA = ("Nota", "Captura", "Recon", "Finding", "CTF")
+METODOLOGIAS = ("OWASP Top 10", "PTES", "MITRE ATT&CK")
+LENGUAJES = ("auto", "bash", "python", "powershell", "sql", "cpp", "yara", "regex", "terminal", "javascript", "texto")
+EFIMERAS_HORAS = (1, 24)           # además de «al cerrar»
+BLOQUEO_SEGUNDOS = int(os.environ.get("VAULT_BLOQUEO_S", "300") or 300)
+MAX_CUERPO = 400_000               # caracteres por elemento
+MAX_ELEMENTOS = 5000
+MAX_VERSIONES = 50
+AL_CERRAR_CADUCA_H = 12            # respaldo del servidor para las notas «al cerrar» que el navegador no alcanzó a borrar
+
+PLANTILLAS = {
+    "Recon": ("# Ficha de reconocimiento\n\n"
+              "- **Dominio:** \n- **Subdominios:** \n- **Puertos abiertos:** \n- **Tecnologías detectadas:** \n\n"
+              "## Superficie de ataque\n\n\n## Notas\n\n"),
+    "Finding": ("# Reporte de vulnerabilidad\n\n"
+                "- **Severidad (CVSS):** \n- **Activo afectado:** \n\n"
+                "## Descripción\n\n\n## Prueba de concepto (PoC)\n\n```\n\n```\n\n## Impacto\n\n\n## Remediación\n\n"),
+    "CTF": ("# Bitácora de laboratorio / CTF\n\n"
+            "- **Plataforma / máquina:** \n- **Objetivo:** {{TARGET_IP}}\n\n"
+            "## Enumeración\n\n\n## Explotación\n\n\n## Escalada de privilegios\n\n\n## Lecciones aprendidas\n\n"),
+}
+
+CHECKLISTS = {
+    "OWASP Top 10": [
+        ("A01", "Control de acceso roto", ["IDOR: cambiar IDs en URL/cuerpo", "Escalada horizontal y vertical de privilegios", "CORS permisivo y forzado de navegación"]),
+        ("A02", "Fallas criptográficas", ["TLS y suites débiles", "Datos sensibles en claro (tránsito/reposo)", "Hashing de contraseñas y gestión de llaves"]),
+        ("A03", "Inyección", ["SQLi (parámetros, cabeceras, JSON)", "XSS reflejado, almacenado y DOM", "Inyección de comandos / plantillas (SSTI)"]),
+        ("A04", "Diseño inseguro", ["Modelado de amenazas del flujo", "Límites de negocio y abuso de lógica"]),
+        ("A05", "Configuración incorrecta", ["Cabeceras de seguridad (CSP, HSTS)", "Puertos/servicios y paneles expuestos", "Mensajes de error y modo debug"]),
+        ("A06", "Componentes vulnerables", ["Inventario de dependencias y versiones", "CVE conocidos de cada componente"]),
+        ("A07", "Fallas de identificación y autenticación", ["Fuerza bruta y bloqueo de cuentas", "Gestión de sesión (cookies, caducidad)", "MFA y recuperación de contraseña"]),
+        ("A08", "Integridad de software y datos", ["Pipeline CI/CD y dependencias firmadas", "Deserialización insegura"]),
+        ("A09", "Registro y monitoreo", ["Eventos críticos registrados", "Alertas y retención de logs"]),
+        ("A10", "SSRF", ["Parámetros que cargan URLs", "Acceso a metadatos cloud / red interna"]),
+    ],
+    "PTES": [
+        ("1", "Pre-engagement", ["Alcance y reglas de compromiso", "Autorización por escrito", "Ventanas y contactos de emergencia"]),
+        ("2", "Recopilación de inteligencia", ["OSINT pasivo", "Enumeración de subdominios y DNS", "Fingerprinting de tecnologías"]),
+        ("3", "Modelado de amenazas", ["Activos y atacantes probables", "Vectores prioritarios"]),
+        ("4", "Análisis de vulnerabilidades", ["Escaneo de puertos y servicios", "Revisión manual de hallazgos", "Falsos positivos descartados"]),
+        ("5", "Explotación", ["Pruebas de concepto controladas", "Evidencia (capturas, logs)"]),
+        ("6", "Post-explotación", ["Alcance real del impacto", "Persistencia (solo si el alcance lo permite)", "Limpieza de artefactos"]),
+        ("7", "Reporte", ["Resumen ejecutivo", "Detalle técnico y remediación", "Retest de correcciones"]),
+    ],
+    "MITRE ATT&CK": [
+        ("TA0043", "Reconnaissance", ["Escaneo activo (T1595)", "Búsqueda en fuentes abiertas (T1593)"]),
+        ("TA0042", "Resource Development", ["Infraestructura y cuentas (T1583/T1585)"]),
+        ("TA0001", "Initial Access", ["Phishing (T1566)", "Explotación de app pública (T1190)", "Cuentas válidas (T1078)"]),
+        ("TA0002", "Execution", ["Intérprete de comandos y scripts (T1059)"]),
+        ("TA0003", "Persistence", ["Tareas programadas (T1053)", "Claves de ejecución / servicios (T1547/T1543)"]),
+        ("TA0004", "Privilege Escalation", ["Explotación para escalar (T1068)", "Abuso de control de elevación (T1548)"]),
+        ("TA0005", "Defense Evasion", ["Enmascaramiento (T1036)", "Deshabilitar herramientas de seguridad (T1562)"]),
+        ("TA0006", "Credential Access", ["Volcado de credenciales (T1003)", "Fuerza bruta (T1110)"]),
+        ("TA0007", "Discovery", ["Descubrimiento de red y cuentas (T1046/T1087)"]),
+        ("TA0008", "Lateral Movement", ["Servicios remotos (T1021)"]),
+        ("TA0009", "Collection", ["Datos del sistema local (T1005)"]),
+        ("TA0011", "Command and Control", ["Protocolos de capa de aplicación (T1071)"]),
+        ("TA0010", "Exfiltration", ["Exfiltración por canal C2 (T1041)"]),
+        ("TA0040", "Impact", ["Cifrado para impacto (T1486)", "Denegación de servicio (T1498)"]),
+    ],
+}
+
+
+def claves_checklist(metodologia):
+    """Todas las claves de ítem válidas de una metodología, p. ej. 'A01.0'."""
+    return {f"{cod}.{i}" for cod, _t, items in CHECKLISTS.get(metodologia, []) for i in range(len(items))}
+
+
+def catalogo_para_cliente():
+    return {m: [{"codigo": c, "titulo": t, "items": it} for c, t, it in filas] for m, filas in CHECKLISTS.items()}
+
+
+# --- Cifrado -----------------------------------------------------------------
+def _fernet(secreto_app):
+    from cryptography.fernet import Fernet
+    k = (os.environ.get("VAULT_KEY") or "").strip()
+    if not k:
+        k = base64.urlsafe_b64encode(hashlib.sha256(("vault:" + secreto_app).encode()).digest()).decode()
+    return Fernet(k)
+
+
+def cifrar(f, texto):
+    return f.encrypt((texto or "").encode()).decode()
+
+
+def descifrar(f, token):
+    try:
+        return f.decrypt((token or "").encode()).decode()
+    except Exception:
+        return None          # clave distinta o dato dañado
+
+
+# --- Utilidades puras (con pruebas) ------------------------------------------
+_RE_WIKI = re.compile(r"\[\[([^\[\]\n]{1,200})\]\]")
+
+
+def enlaces_wiki(texto):
+    """Títulos enlazados con [[...]] dentro de un texto (sin repetir, sin distinguir mayúsculas)."""
+    vistos, salida = set(), []
+    for m in _RE_WIKI.finditer(texto or ""):
+        t = m.group(1).strip()
+        if t and t.lower() not in vistos:
+            vistos.add(t.lower())
+            salida.append(t)
+    return salida
+
+
+def limpiar_etiquetas(texto):
+    et, vistas = [], set()
+    for p in re.split(r"[,\n;]", texto or ""):
+        p = re.sub(r"\s+", " ", p.strip().lstrip("#"))[:30]
+        if p and p.lower() not in vistas:
+            vistas.add(p.lower())
+            et.append(p)
+    return et[:15]
+
+
+def coincide(consulta, *campos):
+    """Búsqueda de texto completo: todas las palabras de la consulta deben aparecer en algún campo."""
+    pajar = "\n".join((c or "") for c in campos).lower()
+    palabras = [w for w in re.split(r"\s+", (consulta or "").strip().lower()) if w]
+    return bool(palabras) and all(w in pajar for w in palabras)
+
+
+def informe_markdown(titulo, clasificacion, tipo, etiquetas, cuerpo, autor, ahora=None):
+    """Nota técnica -> informe Markdown limpio para archivar o entregar."""
+    ahora = ahora or datetime.utcnow()
+    cab = [f"# {titulo}", "",
+           f"> **Clasificación:** {clasificacion} · **Tipo:** {tipo} · **Fecha:** {ahora:%Y-%m-%d} · **Autor:** {autor}"]
+    if etiquetas:
+        cab.append(f"> **Etiquetas:** {', '.join(etiquetas)}")
+    cuerpo = re.sub(r"^# .*\n+", "", (cuerpo or "").lstrip(), count=1) if (cuerpo or "").lstrip().startswith("# ") else (cuerpo or "")
+    return "\n".join(cab) + "\n\n" + cuerpo.strip() + "\n"
+
+
+def nombre_archivo(texto):
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", texto or "informe").strip("_.")[:60]
+    return base or "informe"
+
+
+# --- Blueprint ---------------------------------------------------------------
+def crear_blueprint(app, db, registrar, limitar=None):
+    bp = Blueprint("vault", __name__)
+    secreto = app.config["SECRET_KEY"]
+    F = _fernet(secreto)
+
+    class VaultCodigo(db.Model):
+        __tablename__ = "vault_codigo"
+        id = db.Column(db.Integer, primary_key=True)
+        titulo = db.Column(db.String(200), nullable=False)
+        lado = db.Column(db.String(12), nullable=False)             # OFFENSIVE | DEFENSIVE
+        lenguaje = db.Column(db.String(20), default="auto")
+        etiquetas = db.Column(db.String(400), default="")
+        cuerpo = db.Column(db.Text, nullable=False)                 # cifrado
+        version = db.Column(db.Integer, default=1)
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    class VaultVersion(db.Model):
+        __tablename__ = "vault_version"
+        id = db.Column(db.Integer, primary_key=True)
+        codigo_id = db.Column(db.Integer, db.ForeignKey("vault_codigo.id", ondelete="CASCADE"), nullable=False, index=True)
+        n = db.Column(db.Integer, nullable=False)
+        nota = db.Column(db.String(200), default="")
+        cuerpo = db.Column(db.Text, nullable=False)                 # cifrado
+        fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class VaultNota(db.Model):
+        __tablename__ = "vault_nota"
+        id = db.Column(db.Integer, primary_key=True)
+        tipo = db.Column(db.String(12), default="Nota")
+        titulo = db.Column(db.String(200), nullable=False)
+        clasificacion = db.Column(db.String(24), default="INTERNO")
+        etiquetas = db.Column(db.String(400), default="")
+        cuerpo = db.Column(db.Text, default="")                     # cifrado
+        expira = db.Column(db.DateTime)                             # UTC; NULL = no caduca
+        al_cerrar = db.Column(db.Boolean, default=False)            # efímera: se borra al bloquear/cerrar la bóveda
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    class VaultChecklist(db.Model):
+        __tablename__ = "vault_checklist"
+        id = db.Column(db.Integer, primary_key=True)
+        objetivo = db.Column(db.String(200), nullable=False)
+        metodologia = db.Column(db.String(20), nullable=False)
+        hechos = db.Column(db.Text, default="[]")                   # lista JSON de claves marcadas
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    estado = {"ok": False}
+
+    def asegurar():
+        if estado["ok"]:
+            return
+        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist):
+            m.__table__.create(db.engine, checkfirst=True)
+        estado["ok"] = True
+
+    def es_admin():
+        return current_user.is_authenticated and (getattr(current_user, "rol", "") or "").lower() == "admin"
+
+    def solo_admin(f):
+        @wraps(f)
+        def envoltura(*a, **k):
+            if not es_admin():
+                abort(403)
+            return f(*a, **k)
+        return envoltura
+
+    def desbloqueado(tocar=True):
+        t = session.get("vault_ts")
+        ok = isinstance(t, (int, float)) and (time.time() - t) < BLOQUEO_SEGUNDOS
+        if ok and tocar:
+            session["vault_ts"] = time.time()
+        return ok
+
+    def api(f):
+        """Rutas JSON: solo admin y bóveda desbloqueada (423 si está bloqueada)."""
+        @wraps(f)
+        @solo_admin
+        def envoltura(*a, **k):
+            asegurar()
+            if not desbloqueado():
+                return jsonify(ok=False, error="bloqueada"), 423
+            purgar()
+            return f(*a, **k)
+        return envoltura
+
+    def purgar(todo_al_cerrar=False):
+        ahora = datetime.utcnow()
+        q = VaultNota.query.filter(VaultNota.expira.isnot(None), VaultNota.expira <= ahora)
+        n = q.delete(synchronize_session=False)
+        viejas = VaultNota.query.filter(VaultNota.al_cerrar.is_(True))
+        if not todo_al_cerrar:
+            viejas = viejas.filter(VaultNota.creado <= ahora - timedelta(hours=AL_CERRAR_CADUCA_H))
+        n += viejas.delete(synchronize_session=False)
+        if n:
+            db.session.commit()
+        return n
+
+    def datos():
+        d = request.get_json(silent=True)
+        if not isinstance(d, dict):
+            abort(400)
+        return d
+
+    def texto(d, campo, maximo, obligatorio=False):
+        v = d.get(campo)
+        v = v if isinstance(v, str) else ""
+        if obligatorio and not v.strip():
+            abort(400, description=f"Falta {campo}")
+        return v[:maximo]
+
+    @bp.errorhandler(HTTPException)
+    def error_json(e):
+        """Las rutas /vault/api devuelven siempre JSON, también en errores."""
+        if request.path.startswith("/vault/api/"):
+            return jsonify(ok=False, error=e.description if e.code == 400 else e.name), e.code
+        return e
+
+    # ---- Página y bloqueo -----------------------------------------------------
+    @bp.route("/vault")
+    @solo_admin
+    def vault_inicio():
+        asegurar()
+        cfg = {"desbloqueada": desbloqueado(tocar=False), "bloqueo_s": BLOQUEO_SEGUNDOS, "lados": list(LADOS),
+               "clasificaciones": list(CLASIFICACIONES), "tipos": list(TIPOS_NOTA), "lenguajes": list(LENGUAJES),
+               "metodologias": list(METODOLOGIAS)}
+        return render_template("vault.html", cfg=cfg)
+
+    @bp.route("/vault/api/desbloquear", methods=["POST"])
+    @solo_admin
+    def vault_desbloquear():
+        d = datos()
+        clave = f"vault_unlock:{current_user.id}"
+        if limitar and not limitar(clave, 6, 600, sumar=False):
+            return jsonify(ok=False, error="Demasiados intentos. Espera unos minutos."), 429
+        if not current_user.check_password(d.get("password") if isinstance(d.get("password"), str) else ""):
+            if limitar:
+                limitar(clave, 6, 600)
+            registrar("vault_fallo", "vault", None, "Contraseña incorrecta al desbloquear")
+            db.session.commit()
+            return jsonify(ok=False, error="Contraseña incorrecta."), 403
+        session["vault_ts"] = time.time()
+        registrar("vault_abrir", "vault", None, "Bóveda desbloqueada")
+        db.session.commit()
+        return jsonify(ok=True)
+
+    @bp.route("/vault/api/bloquear", methods=["POST"])
+    @solo_admin
+    def vault_bloquear():
+        asegurar()
+        session.pop("vault_ts", None)
+        purgar(todo_al_cerrar=True)
+        return jsonify(ok=True)
+
+    @bp.route("/vault/api/latido", methods=["POST"])
+    @api
+    def vault_latido():
+        return jsonify(ok=True)
+
+    # ---- Inicio rápido: listados (sin contenido) ------------------------------
+    def resumen_codigo(c):
+        return {"id": c.id, "titulo": c.titulo, "lado": c.lado, "lenguaje": c.lenguaje, "etiquetas": limpiar_etiquetas(c.etiquetas),
+                "version": c.version, "actualizado": c.actualizado.isoformat() + "Z"}
+
+    def resumen_nota(n):
+        return {"id": n.id, "titulo": n.titulo, "tipo": n.tipo, "clasificacion": n.clasificacion, "etiquetas": limpiar_etiquetas(n.etiquetas),
+                "expira": n.expira.isoformat() + "Z" if n.expira else None, "al_cerrar": bool(n.al_cerrar),
+                "actualizado": n.actualizado.isoformat() + "Z"}
+
+    def resumen_check(c):
+        try:
+            hechos = json.loads(c.hechos or "[]")
+        except ValueError:
+            hechos = []
+        return {"id": c.id, "objetivo": c.objetivo, "metodologia": c.metodologia, "hechos": hechos,
+                "total": len(claves_checklist(c.metodologia)), "actualizado": c.actualizado.isoformat() + "Z"}
+
+    @bp.route("/vault/api/inicio")
+    @api
+    def vault_datos():
+        return jsonify(ok=True,
+                       codigo=[resumen_codigo(c) for c in VaultCodigo.query.order_by(VaultCodigo.actualizado.desc()).all()],
+                       notas=[resumen_nota(n) for n in VaultNota.query.order_by(VaultNota.actualizado.desc()).all()],
+                       checklists=[resumen_check(c) for c in VaultChecklist.query.order_by(VaultChecklist.actualizado.desc()).all()],
+                       catalogo=catalogo_para_cliente(), plantillas=PLANTILLAS)
+
+    # ---- Código ---------------------------------------------------------------
+    @bp.route("/vault/api/codigo/<int:cid>")
+    @api
+    def vault_codigo_ver(cid):
+        c = db.session.get(VaultCodigo, cid) or abort(404)
+        cuerpo = descifrar(F, c.cuerpo)
+        vers = VaultVersion.query.filter_by(codigo_id=cid).order_by(VaultVersion.n.desc()).all()
+        return jsonify(ok=True, item=dict(resumen_codigo(c), cuerpo=cuerpo, ilegible=cuerpo is None),
+                       versiones=[{"n": v.n, "nota": v.nota, "fecha": v.fecha.isoformat() + "Z"} for v in vers])
+
+    @bp.route("/vault/api/codigo/<int:cid>/version/<int:n>")
+    @api
+    def vault_codigo_version(cid, n):
+        v = VaultVersion.query.filter_by(codigo_id=cid, n=n).first() or abort(404)
+        return jsonify(ok=True, n=v.n, nota=v.nota, cuerpo=descifrar(F, v.cuerpo) or "")
+
+    @bp.route("/vault/api/codigo", methods=["POST"])
+    @api
+    def vault_codigo_guardar():
+        d = datos()
+        titulo = texto(d, "titulo", 200, True).strip()
+        lado = d.get("lado")
+        if lado not in LADOS:
+            abort(400, description="Elige OFFENSIVE o DEFENSIVE")
+        lenguaje = d.get("lenguaje") if d.get("lenguaje") in LENGUAJES else "auto"
+        cuerpo = texto(d, "cuerpo", MAX_CUERPO)
+        nota_version = texto(d, "nota_version", 200).strip()
+        etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
+        cid = d.get("id")
+        if cid:
+            c = db.session.get(VaultCodigo, int(cid)) or abort(404)
+            if descifrar(F, c.cuerpo) != cuerpo:        # cambió el código: la versión anterior queda en el historial
+                c.version = (c.version or 1) + 1
+                db.session.add(VaultVersion(codigo_id=c.id, n=c.version, nota=nota_version, cuerpo=cifrar(F, cuerpo)))
+                c.cuerpo = cifrar(F, cuerpo)
+                viejas = VaultVersion.query.filter_by(codigo_id=c.id).order_by(VaultVersion.n.desc()).offset(MAX_VERSIONES).all()
+                for v in viejas:
+                    db.session.delete(v)
+            c.titulo, c.lado, c.lenguaje, c.etiquetas = titulo, lado, lenguaje, etiquetas
+        else:
+            if VaultCodigo.query.count() >= MAX_ELEMENTOS:
+                abort(400, description="Límite de elementos alcanzado")
+            c = VaultCodigo(titulo=titulo, lado=lado, lenguaje=lenguaje, etiquetas=etiquetas, cuerpo=cifrar(F, cuerpo), version=1)
+            db.session.add(c)
+            db.session.flush()
+            db.session.add(VaultVersion(codigo_id=c.id, n=1, nota=nota_version or "Versión inicial", cuerpo=cifrar(F, cuerpo)))
+        registrar("vault_codigo", "vault_codigo", c.id, f"{lado}: {titulo[:80]}")
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_codigo(c))
+
+    @bp.route("/vault/api/codigo/<int:cid>/restaurar/<int:n>", methods=["POST"])
+    @api
+    def vault_codigo_restaurar(cid, n):
+        c = db.session.get(VaultCodigo, cid) or abort(404)
+        v = VaultVersion.query.filter_by(codigo_id=cid, n=n).first() or abort(404)
+        c.version = (c.version or 1) + 1
+        db.session.add(VaultVersion(codigo_id=cid, n=c.version, nota=f"Restaurada desde v{n}", cuerpo=v.cuerpo))
+        c.cuerpo = v.cuerpo
+        registrar("vault_codigo", "vault_codigo", cid, f"Restaurada v{n}")
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_codigo(c))
+
+    @bp.route("/vault/api/codigo/<int:cid>", methods=["DELETE"])
+    @api
+    def vault_codigo_borrar(cid):
+        c = db.session.get(VaultCodigo, cid) or abort(404)
+        VaultVersion.query.filter_by(codigo_id=cid).delete()
+        registrar("vault_codigo_borrar", "vault_codigo", cid, c.titulo[:80])
+        db.session.delete(c)
+        db.session.commit()
+        return jsonify(ok=True)
+
+    # ---- Notas ----------------------------------------------------------------
+    @bp.route("/vault/api/nota/<int:nid>")
+    @api
+    def vault_nota_ver(nid):
+        n = db.session.get(VaultNota, nid) or abort(404)
+        cuerpo = descifrar(F, n.cuerpo)
+        titulo_l = n.titulo.strip().lower()
+        entrantes = []                      # backlinks: notas y snippets que enlazan a esta
+        for o in VaultNota.query.filter(VaultNota.id != nid).all():
+            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
+                entrantes.append({"tipo": "nota", "id": o.id, "titulo": o.titulo})
+        for o in VaultCodigo.query.all():
+            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
+                entrantes.append({"tipo": "codigo", "id": o.id, "titulo": o.titulo})
+        return jsonify(ok=True, item=dict(resumen_nota(n), cuerpo=cuerpo, ilegible=cuerpo is None), entrantes=entrantes)
+
+    @bp.route("/vault/api/nota", methods=["POST"])
+    @api
+    def vault_nota_guardar():
+        d = datos()
+        titulo = texto(d, "titulo", 200, True).strip()
+        tipo = d.get("tipo") if d.get("tipo") in TIPOS_NOTA else "Nota"
+        clasif = d.get("clasificacion") if d.get("clasificacion") in CLASIFICACIONES else "INTERNO"
+        cuerpo = texto(d, "cuerpo", MAX_CUERPO)
+        etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
+        efimera = d.get("efimera")                      # None | 1 | 24 | "cerrar"
+        nid = d.get("id")
+        if nid:
+            n = db.session.get(VaultNota, int(nid)) or abort(404)
+        else:
+            if VaultNota.query.count() >= MAX_ELEMENTOS:
+                abort(400, description="Límite de elementos alcanzado")
+            n = VaultNota()
+            db.session.add(n)
+            if efimera == "cerrar":
+                n.al_cerrar = True
+            elif efimera in EFIMERAS_HORAS:
+                n.expira = datetime.utcnow() + timedelta(hours=int(efimera))
+        n.titulo, n.tipo, n.clasificacion, n.etiquetas, n.cuerpo = titulo, tipo, clasif, etiquetas, cifrar(F, cuerpo)
+        db.session.flush()
+        registrar("vault_nota", "vault_nota", n.id, f"{clasif}: {titulo[:80]}" if not (n.expira or n.al_cerrar) else "nota efímera")
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_nota(n))
+
+    @bp.route("/vault/api/nota/<int:nid>", methods=["DELETE"])
+    @api
+    def vault_nota_borrar(nid):
+        n = db.session.get(VaultNota, nid) or abort(404)
+        registrar("vault_nota_borrar", "vault_nota", nid, "" if (n.expira or n.al_cerrar) else n.titulo[:80])
+        db.session.delete(n)
+        db.session.commit()
+        return jsonify(ok=True)
+
+    @bp.route("/vault/api/nota/<int:nid>/informe.md")
+    @api
+    def vault_nota_informe(nid):
+        n = db.session.get(VaultNota, nid) or abort(404)
+        md = informe_markdown(n.titulo, n.clasificacion, n.tipo, limpiar_etiquetas(n.etiquetas), descifrar(F, n.cuerpo) or "",
+                              current_user.nombre or current_user.username)
+        registrar("vault_exportar", "vault_nota", nid, "Informe Markdown")
+        db.session.commit()
+        return Response(md, mimetype="text/markdown; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename={nombre_archivo(n.titulo)}.md", "Cache-Control": "no-store"})
+
+    # ---- Checklists -----------------------------------------------------------
+    @bp.route("/vault/api/checklist", methods=["POST"])
+    @api
+    def vault_check_crear():
+        d = datos()
+        objetivo = texto(d, "objetivo", 200, True).strip()
+        met = d.get("metodologia")
+        if met not in METODOLOGIAS:
+            abort(400, description="Metodología no válida")
+        c = VaultChecklist(objetivo=objetivo, metodologia=met, hechos="[]")
+        db.session.add(c)
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_check(c))
+
+    @bp.route("/vault/api/checklist/<int:cid>", methods=["POST"])
+    @api
+    def vault_check_marcar(cid):
+        c = db.session.get(VaultChecklist, cid) or abort(404)
+        d = datos()
+        validas = claves_checklist(c.metodologia)
+        hechos = [k for k in (d.get("hechos") or []) if isinstance(k, str) and k in validas]
+        c.hechos = json.dumps(sorted(set(hechos)))
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_check(c))
+
+    @bp.route("/vault/api/checklist/<int:cid>", methods=["DELETE"])
+    @api
+    def vault_check_borrar(cid):
+        c = db.session.get(VaultChecklist, cid) or abort(404)
+        db.session.delete(c)
+        db.session.commit()
+        return jsonify(ok=True)
+
+    # ---- Búsqueda y grafo -----------------------------------------------------
+    @bp.route("/vault/api/buscar")
+    @api
+    def vault_buscar():
+        q = (request.args.get("q") or "").strip()[:100]
+        if len(q) < 2:
+            return jsonify(ok=True, resultados=[])
+        res = []
+        for c in VaultCodigo.query.all():
+            cuerpo = descifrar(F, c.cuerpo) or ""
+            if coincide(q, c.titulo, c.etiquetas, c.lado, c.lenguaje, cuerpo):
+                res.append({"tipo": "codigo", "id": c.id, "titulo": c.titulo, "detalle": c.lado, "linea": _linea(cuerpo, q)})
+        for n in VaultNota.query.all():
+            cuerpo = descifrar(F, n.cuerpo) or ""
+            if coincide(q, n.titulo, n.etiquetas, n.clasificacion, n.tipo, cuerpo):
+                res.append({"tipo": "nota", "id": n.id, "titulo": n.titulo, "detalle": n.clasificacion, "linea": _linea(cuerpo, q)})
+        return jsonify(ok=True, resultados=res[:100])
+
+    @bp.route("/vault/api/grafo")
+    @api
+    def vault_grafo():
+        nodos, por_titulo = [], {}
+        elementos = [("nota", n.id, n.titulo, n.cuerpo) for n in VaultNota.query.all()] + \
+                    [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all()]
+        for tipo, i, titulo, _c in elementos:
+            nodos.append({"id": f"{tipo}:{i}", "tipo": tipo, "titulo": titulo})
+            por_titulo.setdefault(titulo.strip().lower(), f"{tipo}:{i}")
+        aristas = []
+        for tipo, i, _t, cuerpo in elementos:
+            for t in enlaces_wiki(descifrar(F, cuerpo)):
+                destino = por_titulo.get(t.lower())
+                if destino and destino != f"{tipo}:{i}":
+                    aristas.append({"de": f"{tipo}:{i}", "a": destino})
+        return jsonify(ok=True, nodos=nodos, aristas=aristas)
+
+    return bp
+
+
+def _linea(cuerpo, q):
+    """Primera línea del contenido que contiene alguna palabra de la búsqueda (para mostrar el contexto)."""
+    palabras = [w for w in q.lower().split() if w]
+    for linea in (cuerpo or "").splitlines():
+        if any(w in linea.lower() for w in palabras):
+            return linea.strip()[:160]
+    return ""
