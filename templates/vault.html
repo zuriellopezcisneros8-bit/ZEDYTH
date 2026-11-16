@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block content %}
 <script type="application/json" id="vtCfg">{{ cfg|tojson }}</script>
+<script>window.ZVT_UID = {{ current_user.id|tojson }};</script>
 {% raw %}
 <style>
     .vt-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
@@ -634,6 +635,7 @@
         Object.keys(VACIO).forEach(function (i) { $('#' + i).innerHTML = VACIO[i]; });
     }
     function bloquear(msg, soloPantalla) {
+        if (window.ZVT_R) ZVT_R.pausar();      // guarda dónde estabas antes de limpiar la pantalla
         if (!soloPantalla) api('POST', 'bloquear', {}).catch(function () {});
         limpiarPantalla();
         $('#vtApp').hidden = true; $('#vtLock').hidden = false;
@@ -668,6 +670,7 @@
         api('GET', 'inicio').then(function (j) {
             S.codigo = j.codigo; S.notas = j.notas; S.checks = j.checklists; S.catalogo = j.catalogo; S.plantillas = j.plantillas; S.herr = j.herramientas || []; S.hall = j.hallazgos || []; S.tec = j.tecnologias || []; S.cargado = true;
             renderArsenal(); renderNotas(); renderChecks(); renderBiblio(); renderHall(); renderTec();
+            if (window.ZVT_R) ZVT_R.restaurar();   // vuelve a donde estabas
         }).catch(falla);
     }
     function mostrarTab(t) {
@@ -1306,6 +1309,116 @@
     $('#vtAviso').textContent = CFG.ceo ? 'Acceso del CEO: ves todo el contenido de la bóveda. Iconos: 🔒 solo su autor · 👥 todo el personal · 👤 personas elegidas.'
         : 'Cada elemento tiene su propia visibilidad (🔒 solo tú · 👥 todo el personal · 👤 personas elegidas). El CEO siempre tiene acceso a todo.' + (CFG.admin ? '' : ' Aquí ves lo que el equipo ha compartido contigo.');
     if (!CFG.escribe) ['arsNuevo', 'notNueva', 'bibNueva', 'hallNuevo', 'tecNueva', 'chkCrear', 'chkObjetivo', 'chkMet', 'vtCapBtn'].forEach(function (i) { $('#' + i).style.display = 'none'; });
+
+    /* ======================= VOLVER A DONDE ESTABAS =======================
+       - Posición (pestaña, elemento abierto, filtros de chips): localStorage. Solo guarda ids y nombres de pestaña, nada del contenido.
+       - Borradores de formularios (lo que estás escribiendo): sessionStorage. Se borran al cerrar la pestaña, así el texto de la
+         bóveda no queda guardado en el navegador. Se descartan al guardar o cancelar el formulario. */
+    window.ZVT_R = (function () {
+        var UID = String(window.ZVT_UID || '0'), KP = 'zvt_pos_' + UID, KD = 'zvt_draft_' + UID;
+        var pausa = true, tm = null, VIDA_POS = 7 * 24 * 3600 * 1000;
+        var TIPOS = {
+            tec:  { panel: 'tec', pk: 'tc',  cont: 'tecDetalle',  marca: 'ftNombre',  st: S.tc,  lista: function () { return S.tec; },    ruta: 'tecnologia/', abrir: function (i) { abrirTec(i); },    form: function (x) { formTec(x); },    render: function () { renderTec(); } },
+            hall: { panel: 'hall', pk: 'hl',  cont: 'hallDetalle', marca: 'fhlTitulo', st: S.hl,  lista: function () { return S.hall; },   ruta: 'hallazgo/',   abrir: function (i) { abrirHall(i); },   form: function (x) { formHall(x); },   render: function () { renderHall(); } },
+            ars:  { panel: 'arsenal', pk: 'ars', cont: 'arsDetalle',  marca: 'fcTitulo',  st: S.ars, lista: function () { return S.codigo; },  ruta: 'codigo/',     abrir: function (i) { abrirCodigo(i); }, form: function (x) { formCodigo(x); }, render: function () { renderArsenal(); } },
+            not:  { panel: 'cuaderno', pk: 'not', cont: 'notDetalle',  marca: 'fnTitulo',  st: S.not, lista: function () { return S.notas; },   ruta: 'nota/',       abrir: function (i) { abrirNota(i); },   form: function (x) { formNota(x); },   render: function () { renderNotas(); } },
+            bib:  { panel: 'biblio', pk: 'bib', cont: 'bibDetalle',  marca: 'fhNombre',  st: S.bib, lista: function () { return S.herr; },    ruta: 'herramienta/', abrir: function (i) { abrirHerr(i); },  form: function (x) { formHerr(x); },  render: function () { renderBiblio(); } }
+        };
+        function leer(k, alm) { try { return JSON.parse(alm.getItem(k) || 'null'); } catch (e) { return null; } }
+        function poner(k, val, alm) { try { alm.setItem(k, JSON.stringify(val)); } catch (e) {} }
+        function borradores() { return leer(KD, sessionStorage) || {}; }
+        function quitarBorrador(k) { var d = borradores(); if (d[k]) { delete d[k]; poner(KD, d, sessionStorage); } }
+        function campos(cont) {
+            return Array.prototype.slice.call(cont.querySelectorAll('input,select,textarea')).filter(function (e) { return e.type !== 'password' && e.type !== 'file'; });
+        }
+        function esCheck(e) { return e.type === 'checkbox' || e.type === 'radio'; }
+
+        function posicion() {
+            var on = $('.vt-tab.on');
+            return { tab: on ? on.getAttribute('data-tab') : 'arsenal', ars: S.ars.id, not: S.not.id, bib: S.bib.id, hl: S.hl.id, tc: S.tc.id, chk: S.chk.id,
+                     lado: S.ars.lado, clasif: S.not.clasif, tcCat: S.tc.cat, tcPlat: S.tc.plat, bibCat: S.bib.cat, hlTipo: S.hl.tipo, hlAutor: S.hl.autor,
+                     y: Math.round(window.scrollY || 0), ts: Date.now() };
+        }
+        function guardarPos() { if (pausa || $('#vtApp').hidden) return; poner(KP, posicion(), localStorage); }
+        function capturar(k) {
+            var t = TIPOS[k], cont = document.getElementById(t.cont);
+            if (!cont || !cont.querySelector('#' + t.marca)) return;
+            var d = borradores(), ed = t.st.editando;
+            d[k] = { id: (ed && ed.id) || null, v: campos(cont).map(function (e) { return esCheck(e) ? !!e.checked : e.value; }), t: Date.now() };
+            poner(KD, d, sessionStorage);
+        }
+        function capturarTodos() { if (!pausa) Object.keys(TIPOS).forEach(capturar); }
+        function programar() { clearTimeout(tm); tm = setTimeout(function () { capturarTodos(); guardarPos(); }, 400); }
+
+        function aplicar(t, vals) {
+            var cont = document.getElementById(t.cont); if (!cont) return;
+            campos(cont).forEach(function (e, i) {
+                if (i >= vals.length) return;
+                if (esCheck(e)) e.checked = !!vals[i]; else e.value = vals[i];
+                e.dispatchEvent(new Event(e.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));   // números de línea, detección de lenguaje, etc.
+            });
+        }
+        function pausar() {
+            if (pausa) return;
+            capturarTodos(); guardarPos(); pausa = true;      // desde aquí no se toca nada: limpiarPantalla vacía los contenedores
+        }
+        function restaurar() {
+            var p = leer(KP, localStorage), d = borradores(), hubo = false;
+            try {
+                if (p && Date.now() - (p.ts || 0) < VIDA_POS) {
+                    if (p.lado) S.ars.lado = p.lado;
+                    if (p.clasif) S.not.clasif = p.clasif;
+                    if (p.tcCat) S.tc.cat = p.tcCat;
+                    if (p.tcPlat) S.tc.plat = p.tcPlat;
+                    if (p.bibCat) S.bib.cat = p.bibCat;
+                    if (p.hlTipo) S.hl.tipo = p.hlTipo;
+                    if (p.hlAutor) S.hl.autor = p.hlAutor;
+                    if (p.chk && S.checks.some(function (x) { return x.id === p.chk; })) { S.chk.id = p.chk; renderChecks(); hubo = true; }
+                    renderArsenal(); renderNotas(); renderBiblio(); renderHall(); renderTec();
+                    var sp = $('#tecPlat');
+                    if (sp && p.tcPlat && Array.prototype.some.call(sp.options, function (o) { return o.value === p.tcPlat; })) sp.value = p.tcPlat;
+                }
+                Object.keys(TIPOS).forEach(function (k) {
+                    var t = TIPOS[k], r = d[k], id = p && p[t.pk];
+                    if (r) {                                   // hay un borrador: se reabre el formulario tal como lo dejaste
+                        t.pend = true; hubo = true;
+                        var armar = function (item) {
+                            t.form(item); aplicar(t, r.v);
+                            if (r.id) { t.st.id = r.id; t.render(); }
+                            t.pend = false;
+                            mostrarTab(t.panel);
+                        };
+                        if (r.id) api('GET', t.ruta + r.id).then(function (j) { armar(j.item); }).catch(function () { t.pend = false; quitarBorrador(k); });
+                        else armar(null);
+                    } else if (id && t.lista().some(function (x) { return x.id === id; })) { t.abrir(id); hubo = true; }
+                });
+                if (p && p.tab) {
+                    mostrarTab(p.tab);
+                    if (p.y > 0) setTimeout(function () { window.scrollTo(0, p.y); }, 350);
+                }
+                if (hubo) toast(Object.keys(d).length ? 'Recuperé lo que estabas escribiendo' : 'Te devolví a donde estabas', 2800);
+            } catch (e) { /* si algo falla, la bóveda abre normal */ }
+            pausa = false;
+        }
+
+        // Si cierras o cancelas un formulario, su borrador ya no sirve (solo se mira el contenedor que cambió).
+        var obs = new MutationObserver(function (ms) {
+            if (pausa) return;
+            ms.forEach(function (m) {
+                Object.keys(TIPOS).forEach(function (k) {
+                    var t = TIPOS[k];
+                    if (m.target.id === t.cont && !t.pend && !m.target.querySelector('#' + t.marca)) quitarBorrador(k);
+                });
+            });
+        });
+        Object.keys(TIPOS).forEach(function (k) { var c = document.getElementById(TIPOS[k].cont); if (c) obs.observe(c, { childList: true }); });
+
+        ['input', 'change', 'click', 'keyup'].forEach(function (ev) { document.addEventListener(ev, programar, true); });
+        window.addEventListener('scroll', programar, { passive: true });
+        window.addEventListener('pagehide', function () { capturarTodos(); guardarPos(); });
+        document.addEventListener('visibilitychange', function () { if (document.hidden) { capturarTodos(); guardarPos(); } });
+        return { pausar: pausar, restaurar: restaurar };
+    })();
     payloads();
     if (CFG.desbloqueada) { $('#vtApp').hidden = false; cargar(); } else { bloquear(undefined, true); }
 })();

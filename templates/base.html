@@ -526,5 +526,60 @@
         })();
     </script>
 
+    {% if current_user.is_authenticated %}
+    <script>
+        // Continuar donde estabas: recuerda la última pantalla y el scroll. En el Tablero ofrece volver con un clic.
+        (function () {
+            var UID = {{ current_user.id|tojson }}, KU = 'zed_ultima_' + UID, KY = 'zed_volver_y_' + UID;
+            var VIDA = 3 * 24 * 3600 * 1000;
+            var ruta = location.pathname + location.search;
+            var IGNORAR = /^\/(login|logout|static|api|healthz|sw\.js|offline|cuenta\/seguridad|avisos)(\/|$|\?)/;
+            function leer() { try { return JSON.parse(localStorage.getItem(KU) || 'null'); } catch (e) { return null; } }
+            function poner(o) { try { localStorage.setItem(KU, JSON.stringify(o)); } catch (e) {} }
+            function nombre() {
+                var a = document.querySelector('#mainNav .nav-item.active');
+                var t = a ? a.textContent.replace(/\s+/g, ' ').trim() : '';
+                return t || (document.title || ruta).replace(/\s*[|·-]\s*ZEDYTH.*$/i, '').trim();
+            }
+            var esInicio = location.pathname === '/panel';
+            var segura = function (p) { return typeof p === 'string' && p.charAt(0) === '/' && p.charAt(1) !== '/'; };
+
+            // Al llegar con "Continuar", recupera el scroll
+            try {
+                var y = sessionStorage.getItem(KY);
+                if (y !== null) { sessionStorage.removeItem(KY); window.addEventListener('load', function () { setTimeout(function () { window.scrollTo(0, +y || 0); }, 250); }); }
+            } catch (e) {}
+
+            if (!esInicio && !IGNORAR.test(location.pathname)) {
+                var guardar = function () { poner({ p: ruta, n: nombre(), y: Math.round(window.scrollY || 0), ts: Date.now() }); };
+                guardar();
+                var tm;
+                window.addEventListener('scroll', function () { clearTimeout(tm); tm = setTimeout(guardar, 500); }, { passive: true });
+                window.addEventListener('pagehide', guardar);
+                document.addEventListener('visibilitychange', function () { if (document.hidden) guardar(); });
+                return;
+            }
+            if (!esInicio) return;
+
+            var u = leer();
+            if (!u || !segura(u.p) || Date.now() - (u.ts || 0) > VIDA) return;
+            var min = Math.max(1, Math.round((Date.now() - u.ts) / 60000));
+            var hace = min < 60 ? min + ' min' : min < 1440 ? Math.round(min / 60) + ' h' : Math.round(min / 1440) + ' d';
+            var chip = document.createElement('div');
+            chip.setAttribute('role', 'status');
+            chip.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:9998;max-width:calc(100vw - 32px);display:flex;align-items:center;gap:10px;padding:10px 12px 10px 16px;border-radius:999px;background:#14110b;border:1px solid rgba(200,169,106,.55);color:#f2e9d6;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.5)';
+            var ir = document.createElement('a');
+            ir.href = u.p; ir.style.cssText = 'color:inherit;text-decoration:none;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+            ir.textContent = '↩ Continuar en ' + (u.n || 'donde estabas') + ' · hace ' + hace;
+            ir.addEventListener('click', function () { try { sessionStorage.setItem(KY, String(u.y || 0)); } catch (e) {} });
+            var x = document.createElement('button');
+            x.type = 'button'; x.setAttribute('aria-label', 'Descartar'); x.textContent = '✕';
+            x.style.cssText = 'background:none;border:0;color:#9a9a9a;cursor:pointer;font-size:14px;padding:2px 6px';
+            x.addEventListener('click', function () { try { localStorage.removeItem(KU); } catch (e) {} chip.remove(); });
+            chip.appendChild(ir); chip.appendChild(x); document.body.appendChild(chip);
+        })();
+    </script>
+    {% endif %}
+
 </body>
 </html>
