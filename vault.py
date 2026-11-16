@@ -37,7 +37,9 @@ import pdf_scan
 
 LADOS = ("OFFENSIVE", "DEFENSIVE")
 CLASIFICACIONES = ("PUBLICABLE", "INTERNO", "CONFIDENCIAL", "ZERO-DAY / CRÍTICO")
-TIPOS_NOTA = ("Nota", "Captura", "Recon", "Finding", "CTF", "Aprendizaje")
+TIPOS_NOTA = ("Nota", "Captura", "Recon", "Finding", "CTF", "Aprendizaje", "Aprendí hoy")
+TIPOS_HALLAZGO = ("Atajo", "Código", "Búsqueda", "Configuración", "Otro")
+DONDE_SUGERIDOS = ("Windows", "Linux", "macOS", "Google", "Microsoft", "Navegador", "Terminal", "Otro")
 METODOLOGIAS = ("OWASP Top 10", "PTES", "MITRE ATT&CK")
 CATEGORIAS_HERR = ("Malware / virus", "Actividad de personas", "Bots y automatización", "Red y tráfico", "Web y apps", "Forense y logs", "OSINT", "Otra")
 NIVELES_HERR = ("Por probar", "Probando", "La domino")
@@ -50,6 +52,7 @@ MAX_VERSIONES = 50
 AL_CERRAR_CADUCA_H = 12            # respaldo del servidor para las notas «al cerrar» que el navegador no alcanzó a borrar
 
 PLANTILLAS = {
+    "Aprendí hoy": "## Qué aprendí\n\n\n## Para qué sirve\n\n\n## Cómo se hace\n\n",
     "Aprendizaje": ("# Lo que aprendí hoy\n\n- **Tema:** \n- **Fuente (curso, video, laboratorio):** \n\n"
                     "## Idea clave\n\n\n## Cómo lo probé\n\n\n## Herramientas usadas\n\n- [[ ]]\n\n## Dudas / qué sigue\n\n"),
     "Herramienta": ("## Para qué sirve\n\n\n## Cómo se usa\n\n```\n\n```\n\n## Lo que aprendí\n\n\n## Cuidado / límites\n\n\n## Relacionado\n\n- [[ ]]\n"),
@@ -244,12 +247,36 @@ def crear_blueprint(app, db, registrar, limitar=None):
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    class VaultHallazgo(db.Model):
+        """«Si hago X pasa Y»: un acto, un resultado y un dónde. Lo valida el equipo con votos."""
+        __tablename__ = "vault_hallazgo"
+        id = db.Column(db.Integer, primary_key=True)
+        titulo = db.Column(db.String(200), nullable=False)
+        tipo = db.Column(db.String(16), default="Atajo")
+        donde = db.Column(db.String(60), default="")
+        etiquetas = db.Column(db.String(400), default="")
+        enlace = db.Column(db.String(200), default="")              # título de una nota/bloque ([[enlace]])
+        accion = db.Column(db.Text, default="")                     # cifrado: qué hice (teclas, comando, código)
+        resultado = db.Column(db.Text, default="")                  # cifrado: qué pasó
+        autor = db.Column(db.String(80), default="")
+        autor_id = db.Column(db.Integer, index=True)
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    class VaultVoto(db.Model):
+        __tablename__ = "vault_voto"
+        __table_args__ = (db.UniqueConstraint("hallazgo_id", "usuario_id", name="uq_vault_voto"),)
+        id = db.Column(db.Integer, primary_key=True)
+        hallazgo_id = db.Column(db.Integer, db.ForeignKey("vault_hallazgo.id", ondelete="CASCADE"), nullable=False, index=True)
+        usuario_id = db.Column(db.Integer, nullable=False)
+        valor = db.Column(db.Integer, nullable=False)               # 1 = me funcionó, -1 = no me funcionó
+
     estado = {"ok": False}
 
     def asegurar():
         if estado["ok"]:
             return
-        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta):
+        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta, VaultHallazgo, VaultVoto):
             m.__table__.create(db.engine, checkfirst=True)
         try:        # base ya existente: agrega la columna «notas» a vault_codigo sin perder nada
             from sqlalchemy import inspect, text
@@ -329,7 +356,8 @@ def crear_blueprint(app, db, registrar, limitar=None):
         asegurar()
         cfg = {"desbloqueada": desbloqueado(tocar=False), "bloqueo_s": BLOQUEO_SEGUNDOS, "lados": list(LADOS),
                "clasificaciones": list(CLASIFICACIONES), "tipos": list(TIPOS_NOTA), "lenguajes": list(LENGUAJES),
-               "metodologias": list(METODOLOGIAS), "categorias": list(CATEGORIAS_HERR), "niveles": list(NIVELES_HERR)}
+               "metodologias": list(METODOLOGIAS), "categorias": list(CATEGORIAS_HERR), "niveles": list(NIVELES_HERR),
+               "tipos_hall": list(TIPOS_HALLAZGO), "donde_sug": list(DONDE_SUGERIDOS)}
         return render_template("vault.html", cfg=cfg)
 
     @bp.route("/vault/api/desbloquear", methods=["POST"])
@@ -385,10 +413,36 @@ def crear_blueprint(app, db, registrar, limitar=None):
         return {"id": h.id, "nombre": h.nombre, "categoria": h.categoria, "nivel": h.nivel, "enlace": h.enlace or "",
                 "etiquetas": limpiar_etiquetas(h.etiquetas), "actualizado": h.actualizado.isoformat() + "Z"}
 
+    def votos_de(ids):
+        """{hallazgo_id: (funciona, no_funciona, mi_voto)} para una lista de hallazgos."""
+        r = {i: [0, 0, 0] for i in ids}
+        if not ids:
+            return {}
+        for v in VaultVoto.query.filter(VaultVoto.hallazgo_id.in_(ids)).all():
+            fila = r.get(v.hallazgo_id)
+            if fila is None:
+                continue
+            fila[0 if v.valor == 1 else 1] += 1
+            if v.usuario_id == current_user.id:
+                fila[2] = v.valor
+        return {k: tuple(v) for k, v in r.items()}
+
+    def resumen_hall(h, votos=None):
+        si, no, mio = (votos or {}).get(h.id, (0, 0, 0))
+        return {"id": h.id, "titulo": h.titulo, "tipo": h.tipo, "donde": h.donde or "", "etiquetas": limpiar_etiquetas(h.etiquetas),
+                "enlace": h.enlace or "", "autor": h.autor or "", "funciona": si, "no_funciona": no, "mi_voto": mio,
+                "actualizado": h.actualizado.isoformat() + "Z"}
+
+    def lista_hallazgos():
+        hs = VaultHallazgo.query.order_by(VaultHallazgo.actualizado.desc()).all()
+        votos = votos_de([h.id for h in hs])
+        return [resumen_hall(h, votos) for h in hs]
+
     @bp.route("/vault/api/inicio")
     @api
     def vault_datos():
         return jsonify(ok=True,
+                       hallazgos=lista_hallazgos(),
                        codigo=[resumen_codigo(c) for c in VaultCodigo.query.order_by(VaultCodigo.actualizado.desc()).all()],
                        notas=[resumen_nota(n) for n in VaultNota.query.order_by(VaultNota.actualizado.desc()).all()],
                        checklists=[resumen_check(c) for c in VaultChecklist.query.order_by(VaultChecklist.actualizado.desc()).all()],
@@ -488,6 +542,10 @@ def crear_blueprint(app, db, registrar, limitar=None):
         for o in VaultHerramienta.query.all():
             if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
                 entrantes.append({"tipo": "herramienta", "id": o.id, "titulo": o.nombre})
+        for o in VaultHallazgo.query.all():
+            texto_h = "\n".join([descifrar(F, o.accion) or "", descifrar(F, o.resultado) or "", f"[[{o.enlace}]]" if o.enlace else ""])
+            if titulo_l in [t.lower() for t in enlaces_wiki(texto_h)]:
+                entrantes.append({"tipo": "hallazgo", "id": o.id, "titulo": o.titulo})
         return jsonify(ok=True, item=dict(resumen_nota(n), cuerpo=cuerpo, ilegible=cuerpo is None), entrantes=entrantes)
 
     @bp.route("/vault/api/nota", methods=["POST"])
@@ -581,6 +639,71 @@ def crear_blueprint(app, db, registrar, limitar=None):
         db.session.commit()
         return jsonify(ok=True)
 
+    # ---- Hallazgos («si hago X pasa Y») ----------------------------------------
+    @bp.route("/vault/api/hallazgo/<int:hid>")
+    @api
+    def vault_hall_ver(hid):
+        h = db.session.get(VaultHallazgo, hid) or abort(404)
+        accion, resultado = descifrar(F, h.accion), descifrar(F, h.resultado)
+        return jsonify(ok=True, item=dict(resumen_hall(h, votos_de([hid])), accion=accion or "", resultado=resultado or "",
+                                          ilegible=accion is None or resultado is None))
+
+    @bp.route("/vault/api/hallazgo", methods=["POST"])
+    @api
+    def vault_hall_guardar():
+        d = datos()
+        titulo = texto(d, "titulo", 200, True).strip()
+        accion = texto(d, "accion", MAX_CUERPO)
+        resultado = texto(d, "resultado", MAX_CUERPO)
+        tipo = d.get("tipo") if d.get("tipo") in TIPOS_HALLAZGO else "Otro"
+        donde = re.sub(r"\s+", " ", texto(d, "donde", 60)).strip()
+        etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
+        enlace = re.sub(r"^\[\[|\]\]$", "", texto(d, "enlace", 200).strip()).strip()
+        hid = d.get("id")
+        if hid:
+            h = db.session.get(VaultHallazgo, int(hid)) or abort(404)
+        else:
+            if VaultHallazgo.query.count() >= MAX_ELEMENTOS:
+                abort(400, description="Límite de elementos alcanzado")
+            h = VaultHallazgo(autor=(current_user.nombre or current_user.username or "")[:80], autor_id=current_user.id)
+            db.session.add(h)
+        h.titulo, h.tipo, h.donde, h.etiquetas, h.enlace = titulo, tipo, donde, etiquetas, enlace
+        h.accion, h.resultado = cifrar(F, accion), cifrar(F, resultado)
+        if hid:     # al cambiar el contenido, los votos anteriores ya no validan lo nuevo
+            VaultVoto.query.filter_by(hallazgo_id=h.id).delete()
+        db.session.flush()
+        registrar("vault_hallazgo", "vault_hallazgo", h.id, f"{tipo}: {titulo[:80]}")
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_hall(h, votos_de([h.id])))
+
+    @bp.route("/vault/api/hallazgo/<int:hid>", methods=["DELETE"])
+    @api
+    def vault_hall_borrar(hid):
+        h = db.session.get(VaultHallazgo, hid) or abort(404)
+        VaultVoto.query.filter_by(hallazgo_id=hid).delete()
+        registrar("vault_hallazgo_borrar", "vault_hallazgo", hid, h.titulo[:80])
+        db.session.delete(h)
+        db.session.commit()
+        return jsonify(ok=True)
+
+    @bp.route("/vault/api/hallazgo/<int:hid>/voto", methods=["POST"])
+    @api
+    def vault_hall_voto(hid):
+        h = db.session.get(VaultHallazgo, hid) or abort(404)
+        valor = datos().get("valor")
+        if valor not in (1, -1, 0):
+            abort(400, description="Voto no válido")
+        v = VaultVoto.query.filter_by(hallazgo_id=hid, usuario_id=current_user.id).first()
+        if valor == 0 or (v and v.valor == valor):      # volver a pulsar el mismo botón quita el voto
+            if v:
+                db.session.delete(v)
+        elif v:
+            v.valor = valor
+        else:
+            db.session.add(VaultVoto(hallazgo_id=hid, usuario_id=current_user.id, valor=valor))
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_hall(h, votos_de([hid])))
+
     # ---- Checklists -----------------------------------------------------------
     @bp.route("/vault/api/checklist", methods=["POST"])
     @api
@@ -656,6 +779,11 @@ def crear_blueprint(app, db, registrar, limitar=None):
             cuerpo = descifrar(F, h.cuerpo) or ""
             if coincide(q, h.nombre, h.etiquetas, h.categoria, h.nivel, cuerpo):
                 res.append({"tipo": "herramienta", "id": h.id, "titulo": h.nombre, "detalle": h.categoria, "linea": _linea(cuerpo, q)})
+        for x in VaultHallazgo.query.all():
+            acc, rta = descifrar(F, x.accion) or "", descifrar(F, x.resultado) or ""
+            if coincide(q, x.titulo, x.etiquetas, x.tipo, x.donde, x.autor, acc, rta):
+                res.append({"tipo": "hallazgo", "id": x.id, "titulo": x.titulo, "detalle": f"{x.tipo} · {x.donde}" if x.donde else x.tipo,
+                            "linea": _linea(acc + "\n" + rta, q)})
         return jsonify(ok=True, resultados=res[:100])
 
     @bp.route("/vault/api/grafo")
@@ -664,13 +792,16 @@ def crear_blueprint(app, db, registrar, limitar=None):
         nodos, por_titulo = [], {}
         elementos = [("nota", n.id, n.titulo, n.cuerpo) for n in VaultNota.query.all()] + \
                     [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all()] + \
-                    [("herramienta", h.id, h.nombre, h.cuerpo) for h in VaultHerramienta.query.all()]
+                    [("herramienta", h.id, h.nombre, h.cuerpo) for h in VaultHerramienta.query.all()] + \
+                    [("hallazgo", x.id, x.titulo, "\n".join([descifrar(F, x.accion) or "", descifrar(F, x.resultado) or "", f"[[{x.enlace}]]" if x.enlace else ""]))
+                     for x in VaultHallazgo.query.all()]
         for tipo, i, titulo, _c in elementos:
             nodos.append({"id": f"{tipo}:{i}", "tipo": tipo, "titulo": titulo})
             por_titulo.setdefault(titulo.strip().lower(), f"{tipo}:{i}")
         aristas = []
         for tipo, i, _t, cuerpo in elementos:
-            for t in enlaces_wiki(descifrar(F, cuerpo)):
+            plano = cuerpo if tipo == "hallazgo" else descifrar(F, cuerpo)      # los hallazgos ya vienen en claro
+            for t in enlaces_wiki(plano):
                 destino = por_titulo.get(t.lower())
                 if destino and destino != f"{tipo}:{i}":
                     aristas.append({"de": f"{tipo}:{i}", "a": destino})

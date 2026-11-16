@@ -77,6 +77,12 @@
     .vt-toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:30000; background:#14110b; border:1px solid rgba(200,169,106,.55); color:#f3ead7; padding:12px 20px; border-radius:12px; font-size:14px; max-width:calc(100vw - 32px); }
     .vt-nota { border:1px solid var(--border-hover); border-left:3px solid #c8a96a; border-radius:10px; padding:12px 14px; margin:0 0 12px; }
     .vt-vacio { color:var(--text-muted); padding:30px 10px; text-align:center; font-size:14px; }
+    .vt-cap [hidden] { display:none !important; }
+    .vt-cap textarea.field { font-family:var(--mono); font-size:13px; resize:vertical; }
+    .vt-hall-sel { width:100%; margin:0 0 10px; }
+    .vt-voto-ok { border-color:var(--accent-green); color:var(--accent-green); }
+    .vt-voto-no { border-color:#ff5a52; color:#ff8f8f; }
+    .vt-accion { border:1px solid var(--border-color); border-radius:12px; background:#050505; padding:12px 14px; margin:0 0 12px; }
     .vt-ver { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border-color); font-size:13px; }
     #vtGrafo svg { width:100%; height:auto; background:#050505; border:1px solid var(--border-color); border-radius:12px; }
     #vtGrafo text { fill:#cfcfcf; font-size:11px; cursor:pointer; } #vtGrafo circle { cursor:pointer; }
@@ -112,6 +118,7 @@
         <button class="vt-tab" data-tab="cuaderno" type="button">Cuaderno</button>
         <button class="vt-tab" data-tab="mision" type="button">Modo misión</button>
         <button class="vt-tab" data-tab="biblio" type="button">Biblioteca</button>
+        <button class="vt-tab" data-tab="hall" type="button">Hallazgos</button>
         <button class="vt-tab" data-tab="tools" type="button">Utilidades</button>
         <button class="vt-tab" data-tab="grafo" type="button">Grafo</button>
     </div>
@@ -152,6 +159,20 @@
                 <div class="vt-list" id="bibLista"></div>
             </div>
             <div class="luxury-card" id="bibDetalle"><div class="vt-vacio">Guarda aquí cada herramienta que aprendes: para qué sirve (virus, actividad de personas, bots…), cómo se usa y lo que aprendiste.</div></div>
+        </div>
+    </div>
+
+    <!-- HALLAZGOS -->
+    <div data-panel="hall" hidden>
+        <div class="vt-cols">
+            <div class="luxury-card" style="padding:14px;">
+                <div class="vt-chips" id="hallTipo"></div>
+                <select class="field vt-hall-sel" id="hallAutor" title="Filtrar por persona"></select>
+                <input class="field" id="hallFiltro" placeholder="Filtrar por título, dónde o etiqueta" style="margin-bottom:10px;">
+                <button class="btn btn-primary btn-sm" type="button" id="hallNuevo" style="width:100%; margin-bottom:10px;">+ Nuevo hallazgo</button>
+                <div class="vt-list" id="hallLista"></div>
+            </div>
+            <div class="luxury-card" id="hallDetalle"><div class="vt-vacio">Registra «si hago X pasa Y»: qué hiciste, qué pasó y dónde. Con <b>Ctrl + K</b> puedes guardar uno desde cualquier pestaña.</div></div>
         </div>
     </div>
 
@@ -209,7 +230,15 @@
 <div class="vt-cap" id="vtCap" hidden>
     <div class="luxury-card">
         <h3 class="stat-label" style="margin-top:0;">Captura rápida</h3>
+        <div class="vt-row"><select class="field" id="capModo"><option value="nota">Nota</option><option value="hall">Hallazgo (si hago X pasa Y)</option></select></div>
         <textarea class="field" id="capTxt" rows="5" placeholder="Una idea, una URL sospechosa, un pensamiento… (Ctrl + Enter guarda · Esc cierra)"></textarea>
+        <div id="capHall" hidden>
+            <input class="field" id="capHTitulo" maxlength="200" placeholder="Título (ej. Ctrl+Shift+Esc abre el Administrador de tareas)">
+            <textarea class="field" id="capHAccion" rows="2" placeholder="Qué hice: teclas, comando o código"></textarea>
+            <textarea class="field" id="capHResultado" rows="2" placeholder="Qué pasó"></textarea>
+            <div class="vt-row"><input class="field" id="capHDonde" maxlength="60" list="dondeSug" placeholder="Dónde (Windows, Linux, Google…)"><select class="field" id="capHTipo"></select></div>
+        </div>
+        <datalist id="dondeSug"></datalist>
         <div class="vt-row"><select class="field" id="capEf"><option value="">Nota normal</option><option value="1">Se borra en 1 hora</option><option value="24">Se borra en 24 horas</option><option value="cerrar">Se borra al cerrar la bóveda</option></select>
             <button class="btn btn-primary btn-sm" type="button" id="capGuardar">Guardar</button><button class="btn btn-sm" type="button" id="capCerrar">Cancelar</button></div>
     </div>
@@ -529,7 +558,7 @@
 (function () {
     'use strict';
     var T = window.VaultTools, esc = T.esc, CFG = JSON.parse(document.getElementById('vtCfg').textContent);
-    var S = { codigo: [], notas: [], checks: [], herr: [], bib: { cat: 'Todas', id: null }, catalogo: {}, plantillas: {}, vars: {}, ars: { lado: 'Todos', id: null }, not: { clasif: 'Todas', id: null }, chk: { id: null }, borrarPortapapeles: null, ultimaActividad: Date.now(), cargado: false };
+    var S = { codigo: [], notas: [], checks: [], herr: [], hall: [], hl: { tipo: 'Todos', autor: 'Todos', id: null, item: null }, bib: { cat: 'Todas', id: null }, catalogo: {}, plantillas: {}, vars: {}, ars: { lado: 'Todos', id: null }, not: { clasif: 'Todas', id: null }, chk: { id: null }, borrarPortapapeles: null, ultimaActividad: Date.now(), cargado: false };
     function $(s, r) { return (r || document).querySelector(s); }
     function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
     function fecha(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return ''; } }
@@ -556,15 +585,16 @@
 
     /* ---------- Bloqueo ---------- */
     var VACIO = {
+        hallDetalle: '<div class="vt-vacio">Registra «si hago X pasa Y»: qué hiciste, qué pasó y dónde. Con <b>Ctrl + K</b> puedes guardar uno desde cualquier pestaña.</div>',
         arsDetalle: '<div class="vt-vacio">Elige un bloque o crea uno nuevo.</div>',
         notDetalle: '<div class="vt-vacio">Elige una nota o crea una nueva. Usa <span class="mono">[[Título]]</span> para enlazar notas y bloques.</div>',
         chkDetalle: '<div class="vt-vacio">Crea una checklist por objetivo y marca lo que ya probaste.</div>',
         bibDetalle: '<div class="vt-vacio">Guarda aquí cada herramienta que aprendes: para qué sirve (virus, actividad de personas, bots…), cómo se usa y lo que aprendiste.</div>'
     };
     function limpiarPantalla() {
-        S.codigo = []; S.notas = []; S.checks = []; S.herr = []; S.bib.id = null; S.vars = {}; S.ars.id = S.not.id = S.chk.id = null; S.ars.item = S.not.item = null; S.cargado = false;
-        ['arsLista', 'notLista', 'chkLista', 'bibLista', 'ioOut', 'vtGrafo', 'cdOut', 'hsOut', 'jwOut', 'dfOut', 'gnOut', 'vtRes'].forEach(function (i) { $('#' + i).innerHTML = ''; });
-        ['cdIn', 'hsIn', 'jwIn', 'dfIn', 'ioIn', 'capTxt', 'vtBuscar', 'arsFiltro', 'notFiltro', 'bibFiltro'].forEach(function (i) { $('#' + i).value = ''; });
+        S.codigo = []; S.notas = []; S.checks = []; S.herr = []; S.hall = []; S.hl.id = null; S.hl.item = null; S.bib.id = null; S.vars = {}; S.ars.id = S.not.id = S.chk.id = null; S.ars.item = S.not.item = null; S.cargado = false;
+        ['arsLista', 'notLista', 'chkLista', 'bibLista', 'hallLista', 'ioOut', 'vtGrafo', 'cdOut', 'hsOut', 'jwOut', 'dfOut', 'gnOut', 'vtRes'].forEach(function (i) { $('#' + i).innerHTML = ''; });
+        ['cdIn', 'hsIn', 'jwIn', 'dfIn', 'ioIn', 'capTxt', 'vtBuscar', 'arsFiltro', 'notFiltro', 'bibFiltro', 'hallFiltro', 'capHTitulo', 'capHAccion', 'capHResultado', 'capHDonde'].forEach(function (i) { $('#' + i).value = ''; });
         $('#vtRes').hidden = true; $('#vtCap').hidden = true;
         Object.keys(VACIO).forEach(function (i) { $('#' + i).innerHTML = VACIO[i]; });
     }
@@ -601,8 +631,8 @@
     /* ---------- Carga ---------- */
     function cargar() {
         api('GET', 'inicio').then(function (j) {
-            S.codigo = j.codigo; S.notas = j.notas; S.checks = j.checklists; S.catalogo = j.catalogo; S.plantillas = j.plantillas; S.herr = j.herramientas || []; S.cargado = true;
-            renderArsenal(); renderNotas(); renderChecks(); renderBiblio();
+            S.codigo = j.codigo; S.notas = j.notas; S.checks = j.checklists; S.catalogo = j.catalogo; S.plantillas = j.plantillas; S.herr = j.herramientas || []; S.hall = j.hallazgos || []; S.cargado = true;
+            renderArsenal(); renderNotas(); renderChecks(); renderBiblio(); renderHall();
         }).catch(falla);
     }
     function mostrarTab(t) {
@@ -717,7 +747,9 @@
         var c = S.codigo.find(function (x) { return x.titulo.trim().toLowerCase() === t; });
         if (c) return { tipo: 'codigo', id: c.id };
         var h = S.herr.find(function (x) { return x.nombre.trim().toLowerCase() === t; });
-        return h ? { tipo: 'herramienta', id: h.id } : null;
+        if (h) return { tipo: 'herramienta', id: h.id };
+        var k = S.hall.find(function (x) { return x.titulo.trim().toLowerCase() === t; });
+        return k ? { tipo: 'hallazgo', id: k.id } : null;
     }
     function panelIoc(texto) {
         var r = T.extraerIoCs(texto), et = { ips: 'IPs', md5: 'MD5', sha1: 'SHA-1', sha256: 'SHA-256', dominios: 'Dominios', correos: 'Correos', urls: 'URLs', rutas: 'Rutas', cves: 'CVE' };
@@ -813,6 +845,72 @@
             }).catch(falla);
     }
 
+    /* ======================= HALLAZGOS ======================= */
+    function votoTxt(h) { return '👍 ' + h.funciona + ' · 👎 ' + h.no_funciona; }
+    function renderHall() {
+        $('#hallTipo').innerHTML = ['Todos'].concat(CFG.tipos_hall).map(function (t) { return '<span class="badge vt-chip' + (S.hl.tipo === t ? ' on' : '') + '" data-htipo="' + esc(t) + '">' + esc(t) + '</span>'; }).join('');
+        var autores = []; S.hall.forEach(function (h) { if (h.autor && autores.indexOf(h.autor) < 0) autores.push(h.autor); });
+        if (S.hl.autor !== 'Todos' && autores.indexOf(S.hl.autor) < 0) S.hl.autor = 'Todos';
+        $('#hallAutor').innerHTML = ['Todos'].concat(autores).map(function (a) { return '<option value="' + esc(a) + '"' + (a === S.hl.autor ? ' selected' : '') + '>' + (a === 'Todos' ? 'Todas las personas' : esc(a)) + '</option>'; }).join('');
+        var f = $('#hallFiltro').value.toLowerCase();
+        var l = S.hall.filter(function (h) {
+            return (S.hl.tipo === 'Todos' || h.tipo === S.hl.tipo) && (S.hl.autor === 'Todos' || h.autor === S.hl.autor) &&
+                (!f || (h.titulo + ' ' + h.donde + ' ' + h.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0);
+        });
+        $('#hallLista').innerHTML = l.length ? l.map(function (h) {
+            return '<div class="vt-item' + (h.id === S.hl.id ? ' on' : '') + '" data-id="' + h.id + '"><b>' + esc(h.titulo) + '</b><small>' + esc(h.tipo) + (h.donde ? ' · ' + esc(h.donde) : '') + ' · ' + esc(h.autor || '—') + ' · ' + votoTxt(h) + '</small></div>';
+        }).join('') : '<div class="vt-vacio">Sin hallazgos.</div>';
+        $('#dondeSug').innerHTML = CFG.donde_sug.map(function (d) { return '<option value="' + esc(d) + '">'; }).join('');
+        var ct = $('#capHTipo'); if (!ct.options.length) ct.innerHTML = opts(CFG.tipos_hall);
+    }
+    function abrirHall(id) {
+        S.hl.id = id; renderHall(); mostrarTab('hall');
+        api('GET', 'hallazgo/' + id).then(function (j) { S.hl.item = j.item; verHall(); if (window.matchMedia('(max-width:900px)').matches) { var d = $('#hallDetalle'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }).catch(falla);
+    }
+    function verHall() {
+        var h = S.hl.item, d = $('#hallDetalle');
+        if (h.ilegible) { d.innerHTML = '<div class="vt-vacio">No se pudo descifrar este hallazgo (la clave de cifrado cambió).</div>'; return; }
+        var r = h.enlace ? resolver(h.enlace) : null;
+        var enlace = h.enlace ? (r ? '<a href="#" class="vt-wiki" data-tipo="' + esc(r.tipo) + '" data-id="' + esc(r.id) + '">' + esc(h.enlace) + '</a>' : '<span class="vt-wiki-roto" title="No existe todavía">' + esc(h.enlace) + '</span>') : '';
+        d.innerHTML = '<div class="vt-head"><div><h2>' + esc(h.titulo) + '</h2><div style="margin-top:6px;"><span class="badge">' + esc(h.tipo) + '</span> ' + (h.donde ? '<span class="badge">' + esc(h.donde) + '</span> ' : '') + '<span class="badge">' + esc(h.autor || '—') + '</span> ' + h.etiquetas.map(function (t) { return '<span class="badge">#' + esc(t) + '</span>'; }).join(' ') + '</div>' + (enlace ? '<div style="margin-top:8px; font-size:13px;">Relacionado: ' + enlace + '</div>' : '') + '</div>' +
+            '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
+            '<h3 class="stat-label">Qué hice</h3>' + (h.accion ? codigoHtml(h.accion, 'auto') + '<div style="margin:8px 0 12px;"><button class="btn btn-sm" data-a="copiar" type="button">Copiar</button></div>' : '<div style="color:var(--text-muted); font-size:13px; margin-bottom:12px;">—</div>') +
+            '<h3 class="stat-label">Resultado</h3><div class="vt-md">' + (h.resultado ? T.renderMarkdown(h.resultado, resolver) : '<span style="color:var(--text-muted); font-size:13px;">—</span>') + '</div>' +
+            '<h3 class="stat-label" style="margin-top:18px;">¿Le funcionó al equipo?</h3><div class="vt-acc"><button class="btn btn-sm' + (h.mi_voto === 1 ? ' vt-voto-ok' : '') + '" data-a="si" type="button">👍 Me funcionó (' + h.funciona + ')</button><button class="btn btn-sm' + (h.mi_voto === -1 ? ' vt-voto-no' : '') + '" data-a="no" type="button">👎 No me funcionó (' + h.no_funciona + ')</button></div>';
+    }
+    function formHall(h) {
+        var nueva = !h; h = h || { titulo: '', tipo: CFG.tipos_hall[0], donde: '', etiquetas: [], enlace: '', accion: '', resultado: '' };
+        var titulos = S.notas.map(function (x) { return x.titulo; }).concat(S.codigo.map(function (x) { return x.titulo; }), S.herr.map(function (x) { return x.nombre; }));
+        $('#hallDetalle').innerHTML = '<div class="vt-head"><h2>' + (nueva ? 'Nuevo hallazgo' : 'Editar hallazgo') + '</h2></div>' +
+            '<div class="grid-2"><label class="lbl">Título<input class="field" id="fhlTitulo" maxlength="200" placeholder="Ctrl+Shift+Esc abre el Administrador de tareas" value="' + esc(h.titulo) + '"></label>' +
+            '<label class="lbl">Tipo<select class="field" id="fhlTipo">' + opts(CFG.tipos_hall, h.tipo) + '</select></label>' +
+            '<label class="lbl">Dónde (Windows, Linux, Google, Microsoft, app X…)<input class="field" id="fhlDonde" maxlength="60" list="dondeSug" value="' + esc(h.donde) + '"></label>' +
+            '<label class="lbl">Etiquetas (separadas por coma)<input class="field" id="fhlTags" value="' + esc(h.etiquetas.join(', ')) + '"></label></div>' +
+            '<label class="lbl">Qué hice (teclas, comando o código)<textarea class="field" id="fhlAccion" rows="4" spellcheck="false" style="font-family:var(--mono); font-size:13px; resize:vertical;">' + esc(h.accion) + '</textarea></label>' +
+            '<label class="lbl">Resultado (qué pasó · acepta Markdown)<textarea class="field" id="fhlResultado" rows="4" style="resize:vertical;">' + esc(h.resultado) + '</textarea></label>' +
+            '<label class="lbl">Enlace opcional a una nota, bloque o herramienta (su título)<input class="field" id="fhlEnlace" maxlength="200" list="fhlTitulos" value="' + esc(h.enlace) + '"></label>' +
+            '<datalist id="fhlTitulos">' + titulos.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
+            '<div class="vt-acc"><button class="btn btn-primary" data-a="guardar" type="button">Guardar</button><button class="btn" data-a="cancelar" type="button">Cancelar</button></div>' +
+            (nueva ? '' : '<div style="font-size:12px; color:var(--text-muted); margin-top:10px;">Al guardar cambios se reinician los votos, porque el equipo validó la versión anterior.</div>');
+        S.hl.editando = h; $('#fhlTitulo').focus();
+    }
+    function guardarHall() {
+        var h = S.hl.editando || {};
+        api('POST', 'hallazgo', { id: h.id || null, titulo: $('#fhlTitulo').value, tipo: $('#fhlTipo').value, donde: $('#fhlDonde').value, etiquetas: $('#fhlTags').value, enlace: $('#fhlEnlace').value, accion: $('#fhlAccion').value, resultado: $('#fhlResultado').value })
+            .then(function (j) {
+                var i = S.hall.findIndex(function (x) { return x.id === j.item.id; }); if (i >= 0) S.hall[i] = j.item; else S.hall.unshift(j.item);
+                toast('Hallazgo guardado'); abrirHall(j.item.id);
+            }).catch(falla);
+    }
+    function votarHall(valor) {
+        var h = S.hl.item; if (!h) return;
+        api('POST', 'hallazgo/' + h.id + '/voto', { valor: valor }).then(function (j) {
+            S.hl.item = Object.assign(S.hl.item, j.item);
+            var i = S.hall.findIndex(function (x) { return x.id === j.item.id; }); if (i >= 0) S.hall[i] = j.item;
+            verHall(); renderHall();
+        }).catch(falla);
+    }
+
     /* ======================= MISIÓN ======================= */
     function renderChecks() {
         $('#chkMet').innerHTML = opts(CFG.metodologias);
@@ -868,8 +966,8 @@
             var s = '<svg viewBox="0 0 ' + W + ' ' + H + '">' + j.aristas.map(function (e) { return '<line x1="' + pos[e.de][0] + '" y1="' + pos[e.de][1] + '" x2="' + pos[e.a][0] + '" y2="' + pos[e.a][1] + '" stroke="#555" stroke-width="1.2"/>'; }).join('') +
                 j.nodos.map(function (n) {
                     var p = pos[n.id], der = Math.cos(p[2]) >= 0, t = n.titulo.length > 24 ? n.titulo.slice(0, 23) + '…' : n.titulo, par = n.id.split(':');
-                    return '<g data-tipo="' + par[0] + '" data-id="' + par[1] + '"><circle cx="' + p[0] + '" cy="' + p[1] + '" r="7" fill="' + (n.tipo === 'nota' ? '#fff' : n.tipo === 'herramienta' ? '#7cc4ff' : '#c8a96a') + '"/><text x="' + (p[0] + (der ? 12 : -12)) + '" y="' + (p[1] + 4) + '" text-anchor="' + (der ? 'start' : 'end') + '">' + esc(t) + '</text></g>';
-                }).join('') + '</svg><div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Blanco: notas · Dorado: bloques de código · Azul: biblioteca · Las líneas son enlaces [[wiki]].</div>';
+                    return '<g data-tipo="' + par[0] + '" data-id="' + par[1] + '"><circle cx="' + p[0] + '" cy="' + p[1] + '" r="7" fill="' + (n.tipo === 'nota' ? '#fff' : n.tipo === 'herramienta' ? '#7cc4ff' : n.tipo === 'hallazgo' ? '#3ddc84' : '#c8a96a') + '"/><text x="' + (p[0] + (der ? 12 : -12)) + '" y="' + (p[1] + 4) + '" text-anchor="' + (der ? 'start' : 'end') + '">' + esc(t) + '</text></g>';
+                }).join('') + '</svg><div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Blanco: notas · Dorado: bloques de código · Azul: biblioteca · Verde: hallazgos · Las líneas son enlaces [[wiki]].</div>';
             g.innerHTML = s;
         }).catch(falla);
     }
@@ -881,13 +979,24 @@
         clearTimeout(tb); if (q.length < 2) { r.hidden = true; return; }
         tb = setTimeout(function () {
             api('GET', 'buscar?q=' + encodeURIComponent(q)).then(function (j) {
-                r.innerHTML = j.resultados.length ? j.resultados.map(function (x) { return '<div data-tipo="' + x.tipo + '" data-id="' + x.id + '"><b>' + (x.tipo === 'codigo' ? '⌨ ' : x.tipo === 'herramienta' ? '🧰 ' : '📝 ') + esc(x.titulo) + '</b> <span class="mono">' + esc(x.detalle) + '</span>' + (x.linea ? '<small>' + esc(x.linea) + '</small>' : '') + '</div>'; }).join('') : '<div>Sin resultados</div>';
+                r.innerHTML = j.resultados.length ? j.resultados.map(function (x) { return '<div data-tipo="' + x.tipo + '" data-id="' + x.id + '"><b>' + (x.tipo === 'codigo' ? '⌨ ' : x.tipo === 'herramienta' ? '🧰 ' : x.tipo === 'hallazgo' ? '💡 ' : '📝 ') + esc(x.titulo) + '</b> <span class="mono">' + esc(x.detalle) + '</span>' + (x.linea ? '<small>' + esc(x.linea) + '</small>' : '') + '</div>'; }).join('') : '<div>Sin resultados</div>';
                 r.hidden = false;
             }).catch(falla);
         }, 250);
     }
-    function abrirCaptura() { if ($('#vtApp').hidden) return; $('#vtCap').hidden = false; $('#capTxt').focus(); }
+    function modoCaptura() {
+        var h = $('#capModo').value === 'hall';
+        $('#capHall').hidden = !h; $('#capTxt').hidden = h; $('#capEf').hidden = h;
+        (h ? $('#capHTitulo') : $('#capTxt')).focus();
+    }
+    function abrirCaptura() { if ($('#vtApp').hidden) return; $('#vtCap').hidden = false; modoCaptura(); }
     function guardarCaptura() {
+        if ($('#capModo').value === 'hall') {
+            var tit = $('#capHTitulo').value.trim(); if (!tit) { toast('Escribe un título para el hallazgo'); return; }
+            api('POST', 'hallazgo', { titulo: tit, tipo: $('#capHTipo').value, donde: $('#capHDonde').value, accion: $('#capHAccion').value, resultado: $('#capHResultado').value, etiquetas: '' })
+                .then(function (j) { S.hall.unshift(j.item); renderHall(); ['capHTitulo', 'capHAccion', 'capHResultado'].forEach(function (i) { $('#' + i).value = ''; }); $('#vtCap').hidden = true; toast('Hallazgo guardado'); }).catch(falla);
+            return;
+        }
         var t = $('#capTxt').value; if (!t.trim()) return;
         var primera = t.trim().split('\n')[0].slice(0, 60), hora = new Date().toLocaleString();
         api('POST', 'nota', { titulo: 'Captura · ' + hora + (primera ? ' · ' + primera : ''), tipo: 'Captura', clasificacion: 'INTERNO', etiquetas: 'captura', cuerpo: t, efimera: $('#capEf').value || null })
@@ -932,7 +1041,7 @@
     document.addEventListener('change', function (e) { if (e.target && e.target.id === 'pdfArchivo') $('#pdfOut').innerHTML = ''; });
 
     /* ======================= Eventos ======================= */
-    function abrirTipo(tipo, id) { if (tipo === 'codigo') abrirCodigo(+id); else if (tipo === 'herramienta') abrirHerr(+id); else abrirNota(+id); }
+    function abrirTipo(tipo, id) { if (tipo === 'codigo') abrirCodigo(+id); else if (tipo === 'herramienta') abrirHerr(+id); else if (tipo === 'hallazgo') abrirHall(+id); else abrirNota(+id); }
     document.addEventListener('click', function (e) {
         var el = e.target, x;
         if ((x = el.closest('[data-tab]')) && x.classList.contains('vt-tab')) return mostrarTab(x.getAttribute('data-tab'));
@@ -950,10 +1059,12 @@
         if ((x = el.closest('#chkLista .vt-item'))) { S.chk.id = +x.getAttribute('data-id'); renderChecks(); return; }
         if ((x = el.closest('[data-cat]'))) { S.bib.cat = x.getAttribute('data-cat'); return renderBiblio(); }
         if ((x = el.closest('#bibLista .vt-item'))) return abrirHerr(+x.getAttribute('data-id'));
+        if ((x = el.closest('[data-htipo]'))) { S.hl.tipo = x.getAttribute('data-htipo'); return renderHall(); }
+        if ((x = el.closest('#hallLista .vt-item'))) return abrirHall(+x.getAttribute('data-id'));
         if ((x = el.closest('[data-a]'))) return accion(x.getAttribute('data-a'), x);
     });
     function accion(a, b) {
-        var pa = b.closest('#arsDetalle') ? 'ars' : b.closest('#notDetalle') ? 'not' : b.closest('#chkDetalle') ? 'chk' : b.closest('#bibDetalle') ? 'bib' : '';
+        var pa = b.closest('#arsDetalle') ? 'ars' : b.closest('#notDetalle') ? 'not' : b.closest('#chkDetalle') ? 'chk' : b.closest('#bibDetalle') ? 'bib' : b.closest('#hallDetalle') ? 'hall' : '';
         if (pa === 'ars') {
             var c = S.ars.item;
             if (a === 'copiar') { var txt = T.rellenar(c.cuerpo, S.vars), faltan = T.placeholders(txt); copiarTexto(txt); if (faltan.length) toast('Copiado, pero faltan variables: ' + faltan.join(', '), 5000); }
@@ -978,6 +1089,15 @@
             else if (a === 'cancelar') { if (S.bib.id && S.bib.item) verHerr(); else $('#bibDetalle').innerHTML = VACIO.bibDetalle; }
             else if (a === 'guardar') guardarHerr();
             else if (a === 'borrar') { if (confirm('¿Eliminar «' + h.nombre + '»?')) api('DELETE', 'herramienta/' + h.id).then(function () { S.herr = S.herr.filter(function (x) { return x.id !== h.id; }); S.bib.id = null; S.bib.item = null; renderBiblio(); $('#bibDetalle').innerHTML = '<div class="vt-vacio">Eliminada.</div>'; }).catch(falla); }
+        } else if (pa === 'hall') {
+            var k = S.hl.item;
+            if (a === 'editar') formHall(k);
+            else if (a === 'cancelar') { if (S.hl.id && S.hl.item) verHall(); else $('#hallDetalle').innerHTML = VACIO.hallDetalle; }
+            else if (a === 'guardar') guardarHall();
+            else if (a === 'copiar') copiarTexto(k.accion, false);
+            else if (a === 'si') votarHall(1);
+            else if (a === 'no') votarHall(-1);
+            else if (a === 'borrar') { if (confirm('¿Eliminar «' + k.titulo + '»?')) api('DELETE', 'hallazgo/' + k.id).then(function () { S.hall = S.hall.filter(function (x) { return x.id !== k.id; }); S.hl.id = null; S.hl.item = null; renderHall(); $('#hallDetalle').innerHTML = '<div class="vt-vacio">Eliminado.</div>'; }).catch(falla); }
         } else if (pa === 'chk' && a === 'chkborrar') {
             if (confirm('¿Eliminar esta checklist?')) api('DELETE', 'checklist/' + S.chk.id).then(function () { S.checks = S.checks.filter(function (x) { return x.id !== S.chk.id; }); S.chk.id = null; renderChecks(); $('#chkDetalle').innerHTML = '<div class="vt-vacio">Eliminada.</div>'; }).catch(falla);
         }
@@ -1000,6 +1120,10 @@
     $('#arsNuevo').addEventListener('click', function () { formCodigo(null); });
     $('#bibNueva').addEventListener('click', function () { formHerr(null); }); $('#bibFiltro').addEventListener('input', renderBiblio);
     $('#notNueva').addEventListener('click', function () { formNota(null); });
+    $('#hallNuevo').addEventListener('click', function () { formHall(null); });
+    $('#hallFiltro').addEventListener('input', renderHall);
+    $('#hallAutor').addEventListener('change', function () { S.hl.autor = this.value; renderHall(); });
+    $('#capModo').addEventListener('change', modoCaptura);
     $('#chkCrear').addEventListener('click', function () {
         api('POST', 'checklist', { objetivo: $('#chkObjetivo').value, metodologia: $('#chkMet').value }).then(function (j) { S.checks.unshift(j.item); S.chk.id = j.item.id; $('#chkObjetivo').value = ''; renderChecks(); }).catch(falla);
     });
@@ -1015,6 +1139,7 @@
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); abrirCaptura(); }
         else if (e.key === 'Escape') { $('#vtCap').hidden = true; $('#vtRes').hidden = true; }
         else if (e.key === 'Enter' && e.ctrlKey && !$('#vtCap').hidden) guardarCaptura();
+        else if (e.key === 'Enter' && e.ctrlKey && $('#fhlTitulo') && !$('[data-panel="hall"]').hidden) guardarHall();
     });
     payloads();
     if (CFG.desbloqueada) { $('#vtApp').hidden = false; cargar(); } else { bloquear(undefined, true); }
