@@ -16,7 +16,13 @@
     .vt-tab:hover { color:#fff; }
     .vt-tab.on { color:#fff; border-color:#fff; }
     .vt-cols { display:grid; grid-template-columns:minmax(240px,320px) 1fr; gap:18px; align-items:start; }
-    @media (max-width:900px) { .vt-cols { grid-template-columns:1fr; } }
+    @media (max-width:900px) { .vt-cols { grid-template-columns:minmax(0,1fr); } }
+    /* Evita que el código (white-space:pre) ensanche la página en celular */
+    #vtApp, .vt-cols > *, .vt-split > *, .vt-tools > * { min-width:0; max-width:100%; }
+    #vtApp { overflow-x:clip; }
+    .vt-md, .vt-nota { overflow-wrap:anywhere; }
+    .vt-md pre.vt-code, .vt-tabla { max-width:100%; }
+    .vt-md .vt-tabla { display:block; overflow-x:auto; }
     .vt-list { max-height:70vh; overflow:auto; padding:8px; }
     .vt-item { padding:10px 12px; border-radius:10px; cursor:pointer; border:1px solid transparent; }
     .vt-item:hover { background:rgba(255,255,255,.05); }
@@ -34,7 +40,7 @@
     .vt-head { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px; }
     .vt-head h2 { margin:0; font-size:20px; font-weight:500; overflow-wrap:anywhere; }
     .vt-acc { display:flex; gap:8px; flex-wrap:wrap; }
-    .vt-vars { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin:0 0 12px; padding:12px; border:1px dashed var(--border-hover); border-radius:12px; }
+    .vt-vars { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr)); gap:10px; margin:0 0 12px; padding:12px; border:1px dashed var(--border-hover); border-radius:12px; }
     .vt-vars label { font-size:12px; color:var(--text-muted); }
     .vt-vars .field { margin:4px 0 0; padding:8px 10px; font-family:var(--mono); font-size:13px; }
     .vt-codebox { display:flex; border:1px solid var(--border-color); border-radius:12px; overflow:auto; background:#050505; max-height:60vh; }
@@ -53,13 +59,13 @@
     .vt-md blockquote { border-left:3px solid var(--border-hover); margin:10px 0; padding:2px 12px; color:var(--text-muted); }
     .vt-tabla { border-collapse:collapse; margin:10px 0; } .vt-tabla th,.vt-tabla td { border:1px solid var(--border-color); padding:6px 10px; font-size:13px; }
     .vt-wiki { color:#c8a96a; text-decoration:underline dotted; } .vt-wiki-roto { color:#ff8f8f; cursor:pointer; text-decoration:underline dotted; }
-    .vt-split { display:grid; grid-template-columns:1fr 260px; gap:16px; } @media (max-width:1100px) { .vt-split { grid-template-columns:1fr; } }
+    .vt-split { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:16px; } @media (max-width:1100px) { .vt-split { grid-template-columns:minmax(0,1fr); } }
     .vt-ioc h4 { margin:12px 0 4px; font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
     .vt-ioc .mono { display:block; font-size:12px; overflow-wrap:anywhere; cursor:pointer; padding:1px 0; } .vt-ioc .mono:hover { color:#fff; }
     .vt-bar { height:8px; border-radius:99px; background:#1b1b1b; overflow:hidden; } .vt-bar i { display:block; height:100%; background:var(--accent-green); }
     .vt-grp { margin:14px 0 4px; font-weight:500; } .vt-chk { display:flex; gap:10px; align-items:flex-start; padding:5px 0; font-size:14px; cursor:pointer; }
     .vt-chk input { margin-top:3px; }
-    .vt-tools { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; }
+    .vt-tools { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr)); gap:16px; }
     .vt-tools textarea.field { font-family:var(--mono); font-size:13px; min-height:90px; resize:vertical; }
     .vt-out { font-family:var(--mono); font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; background:#050505; border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; min-height:42px; margin-bottom:10px; }
     .vt-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; } .vt-row .field { margin:0; width:auto; flex:1 1 120px; }
@@ -641,7 +647,7 @@
     }
     function abrirCodigo(id, versionN) {
         S.ars.id = id; renderArsenal(); mostrarTab('arsenal');
-        api('GET', 'codigo/' + id).then(function (j) { S.ars.item = j.item; S.ars.vers = j.versiones; verCodigo(); }).catch(falla);
+        api('GET', 'codigo/' + id).then(function (j) { S.ars.item = j.item; S.ars.vers = j.versiones; verCodigo(); if (window.matchMedia('(max-width:900px)').matches) { var d = document.getElementById('arsDetalle'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }).catch(falla);
     }
     function codigoHtml(texto, lang) {
         var n = texto.split('\n').length;
