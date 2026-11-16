@@ -3,18 +3,30 @@
 
 {% block content %}
 <style>
-  .rd-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:8px; }
   .rd-mut { color:var(--text-muted, #9aa3b2); font-size:13px; }
-  .rd-badge { display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:99px; white-space:nowrap; }
-  .rd-ok { background:rgba(74,222,128,.18); color:#4ade80; }
-  .rd-mal { background:rgba(248,113,113,.18); color:#f87171; }
-  .rd-amb { background:rgba(245,185,76,.18); color:#f5b94c; }
-  .rd-gris { background:rgba(128,128,128,.22); color:var(--text-muted, #9aa3b2); }
-  .rd-tabla table { min-width:820px; }
-  .rd-vacio { padding:16px; color:var(--text-muted, #9aa3b2); }
+  .rd-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:8px; }
+  .rd-stat .rd-mut { text-transform:uppercase; letter-spacing:.04em; font-size:12px; }
+  .rd-stat b { display:block; font-size:30px; margin-top:4px; }
+  .rd-lista { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:16px; }
+  .rd-card { border:1px solid var(--border, rgba(255,255,255,.12)); border-radius:16px; padding:20px 22px; background:rgba(255,255,255,.02); }
+  .rd-top { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; justify-content:space-between; margin-bottom:14px; }
+  .rd-name { font-size:18px; font-weight:700; word-break:break-word; }
+  .rd-sub { color:var(--text-muted, #9aa3b2); font-size:13px; margin-top:3px; }
+  .rd-plat { font-size:13px; margin-top:6px; }
+  .rd-pill { display:inline-block; font-size:12px; font-weight:700; padding:4px 12px; border-radius:99px; white-space:nowrap; }
+  .rd-ok { background:rgba(74,222,128,.16); color:#4ade80; } .rd-mal { background:rgba(248,113,113,.16); color:#f87171; }
+  .rd-amb { background:rgba(245,185,76,.16); color:#f5b94c; } .rd-gris { background:rgba(128,128,128,.2); color:var(--text-muted, #9aa3b2); }
+  .rd-et { color:var(--text-muted, #9aa3b2); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin:14px 0 6px; }
+  .rd-commit { font-size:14px; word-break:break-word; }
+  .rd-bar { height:8px; border-radius:99px; background:rgba(128,128,128,.25); overflow:hidden; }
+  .rd-bar i { display:block; height:100%; border-radius:99px; }
+  .rd-f-ok { background:#4ade80; } .rd-f-amb { background:#f5b94c; } .rd-f-mal { background:#f87171; }
+  .rd-met-v { font-size:13px; margin-top:6px; }
+  .rd-btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
   .rd-aviso { border-color:#f5b94c; margin-bottom:12px; }
-  .rd-acc { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
-  .rd-acc .btn { padding:4px 10px; font-size:12px; }
+  .rd-cuentas { display:flex; flex-wrap:wrap; gap:12px; }
+  .rd-cuenta { border:1px solid var(--border, rgba(255,255,255,.12)); border-radius:14px; padding:14px 18px; min-width:200px; }
+  .rd-cuenta b { font-size:15px; } .rd-vacio { padding:8px 2px; color:var(--text-muted, #9aa3b2); }
 </style>
 
 <section class="hero">
@@ -28,19 +40,20 @@
 </div>
 
 <div id="avisos"></div>
-<div class="rd-grid" id="tarjetas"></div>
+<div class="rd-stats" id="tarjetas"></div>
 
 <div class="section-title">Cuentas</div>
-<div class="luxury-card rd-tabla"><div class="table-responsive" id="cuentas"></div></div>
+<div class="rd-cuentas" id="cuentas"></div>
 
 <div class="section-title">Servicios</div>
-<div class="luxury-card rd-tabla"><div class="table-responsive" id="servicios"></div></div>
-<p class="rd-mut" style="margin-top:12px; line-height:1.6;">Cada servicio se liga a una de tus plataformas por su <b>repositorio</b>, su <b>dirección de producción</b> o un <b>nombre idéntico</b>. Si uno sale «sin vincular», completa el repositorio o la dirección en la plataforma. Esta pantalla no mide RAM ni CPU: solo muestra lo que la API de Render entrega.</p>
+<div class="rd-lista" id="servicios"></div>
+<p class="rd-mut" style="margin-top:14px; line-height:1.6;">Cada servicio se liga a una de tus plataformas por su <b>repositorio</b>, su <b>dirección de producción</b> o un <b>nombre idéntico</b>. Si uno sale «sin vincular», completa el repositorio o la dirección en la plataforma. La RAM y el CPU son de la última hora; el porcentaje es contra el límite de su plan.</p>
 
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TIPOS = { web_service: "Web", static_site: "Sitio estático", private_service: "Privado", background_worker: "Worker", cron_job: "Cron", workflow: "Workflow" };
+const CON_METRICAS = ["web_service", "private_service", "background_worker"];
 
 function hace(iso) {
   if (!iso) return "—";
@@ -50,33 +63,40 @@ function hace(iso) {
   if (s < 86400) return "hace " + Math.round(s / 3600) + " h";
   return "hace " + Math.round(s / 86400) + " d";
 }
-const badge = (t, n) => `<span class="rd-badge rd-${esc(n)}">${esc(t)}</span>`;
+function barra(titulo, m) {
+  const p = m && m.pct != null ? m.pct : null;
+  const c = p != null && p >= 90 ? "mal" : (p != null && p >= 70 ? "amb" : "ok");
+  return `<div class="rd-et">${esc(titulo)}</div><div class="rd-bar"><i class="rd-f-${c}" style="width:${p == null ? 0 : Math.min(100, Math.round(p))}%"></i></div><div class="rd-met-v">${m ? esc(m.texto) : "—"}</div>`;
+}
+function tarjeta(s) {
+  const dep = s.deploy ? `<div class="rd-commit">${esc(s.deploy.commit || "Sin mensaje de commit")}</div><div class="rd-sub">${esc(s.deploy.hace || hace(s.deploy.terminado || s.deploy.creado))}</div>`
+    : `<div class="rd-sub">${esc(s.deploy_error || "—")}</div>`;
+  const plat = s.plataforma_id ? `<a href="/plataformas/${s.plataforma_id}?tab=infra" style="text-decoration:underline;">${esc(s.plataforma)}</a>` : `<span class="rd-mut">sin vincular</span>`;
+  const met = CON_METRICAS.includes(s.tipo) && !s.suspendido ? barra("Memoria (RAM)", s.metricas && s.metricas.ram) + barra("Procesador (CPU)", s.metricas && s.metricas.cpu) : "";
+  const btn = (s.url ? `<a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener">Abrir sitio</a>` : "") + (s.panel ? `<a class="btn" href="${esc(s.panel)}" target="_blank" rel="noopener">Abrir en Render</a>` : "");
+  return `<div class="rd-card"><div class="rd-top"><div><div class="rd-name">${esc(s.nombre)}</div>
+    <div class="rd-sub">${esc(s.cuenta)} · ${esc(TIPOS[s.tipo] || s.tipo)} · plan ${esc(s.plan || "—")}${s.region ? " · " + esc(s.region) : ""}</div>
+    <div class="rd-plat">Plataforma: ${plat}</div></div><span class="rd-pill rd-${esc(s.nivel)}">${esc(s.estado)}</span></div>
+    <div class="rd-et" style="margin-top:0;">Último deploy</div>${dep}${met}<div class="rd-btns">${btn}</div></div>`;
+}
 
 function pintar(d) {
   if (!d.conectado) {
     $("#estado").textContent = "Render no está conectado.";
-    $("#tarjetas").innerHTML = ""; $("#cuentas").innerHTML = ""; $("#avisos").innerHTML = "";
+    ["#tarjetas", "#cuentas", "#avisos"].forEach((i) => ($(i).innerHTML = ""));
     $("#servicios").innerHTML = `<div class="rd-vacio">Pega tu llave de Render en <a href="/conexiones#render" style="text-decoration:underline;">Conexiones</a> (Render → Account Settings → API Keys).</div>`;
     return;
   }
   const sv = d.servicios;
-  const mal = sv.filter((s) => s.nivel === "mal").length, susp = sv.filter((s) => s.suspendido).length;
   $("#estado").textContent = "Leído " + hace(d.actualizado) + " · se guarda 5 min para no gastar consultas";
   $("#avisos").innerHTML = d.errores.map((e) => `<div class="luxury-card rd-aviso"><p style="margin:0; font-size:14px;">${esc(e)}</p></div>`).join("")
     + d.cuentas.filter((c) => c.aviso).map((c) => `<div class="luxury-card rd-aviso"><p style="margin:0; font-size:14px;"><b>${esc(c.nombre)}:</b> ${esc(c.aviso)}</p></div>`).join("");
-  const t = (n, txt) => `<div class="luxury-card"><div class="rd-mut">${esc(txt)}</div><div style="font-size:28px; font-weight:700;">${n}</div></div>`;
-  $("#tarjetas").innerHTML = t(d.llaves.length, "Llaves") + t(d.cuentas.length, "Cuentas") + t(sv.length, "Servicios")
-    + t(sv.filter((s) => s.nivel === "ok").length, "En línea") + t(mal, "Con problema") + t(susp, "Suspendidos");
-  $("#cuentas").innerHTML = d.cuentas.length ? `<table><thead><tr><th>Cuenta</th><th>Servicios</th><th>Con problema</th><th>Suspendidos</th></tr></thead><tbody>`
-    + d.cuentas.map((c) => `<tr><td>${esc(c.nombre)}</td><td>${c.total}</td><td>${c.fallidos}</td><td>${c.suspendidos}</td></tr>`).join("") + `</tbody></table>`
+  const t = (n, txt) => `<div class="luxury-card rd-stat"><span class="rd-mut">${esc(txt)}</span><b>${n}</b></div>`;
+  $("#tarjetas").innerHTML = t(d.cuentas.length, "Cuentas") + t(sv.length, "Servicios") + t(sv.filter((s) => s.nivel === "ok").length, "En línea")
+    + t(sv.filter((s) => s.nivel === "mal" && !s.suspendido).length, "Con problema") + t(sv.filter((s) => s.suspendido).length, "Suspendidos");
+  $("#cuentas").innerHTML = d.cuentas.length ? d.cuentas.map((c) => `<div class="rd-cuenta"><b>${esc(c.nombre)}</b><div class="rd-mut">${c.total} servicio${c.total === 1 ? "" : "s"}${c.fallidos ? " · " + c.fallidos + " con problema" : ""}${c.suspendidos ? " · " + c.suspendidos + " suspendido" + (c.suspendidos === 1 ? "" : "s") : ""}</div></div>`).join("")
     : `<div class="rd-vacio">${d.llaves.length ? "Ninguna llave devolvió servicios." : "Sin llaves."}</div>`;
-  $("#servicios").innerHTML = sv.length ? `<table><thead><tr><th>Servicio</th><th>Plataforma</th><th>Cuenta</th><th>Tipo · plan</th><th>Estado</th><th>Último deploy</th><th></th></tr></thead><tbody>`
-    + sv.map((s) => {
-      const dep = s.deploy ? `${esc(s.deploy.commit || "—")}<div class="rd-mut">${hace(s.deploy.terminado || s.deploy.creado)}</div>` : (s.deploy_error ? `<span class="rd-mut">${esc(s.deploy_error)}</span>` : "—");
-      const plat = s.plataforma_id ? `<a href="/plataformas/${s.plataforma_id}?tab=infra" style="text-decoration:underline;">${esc(s.plataforma)}</a>` : `<span class="rd-mut">sin vincular</span>`;
-      const acc = (s.url ? `<a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener">Sitio</a>` : "") + (s.panel ? `<a class="btn" href="${esc(s.panel)}" target="_blank" rel="noopener">Render</a>` : "");
-      return `<tr><td><b>${esc(s.nombre)}</b></td><td>${plat}</td><td>${esc(s.cuenta)}</td><td>${esc(TIPOS[s.tipo] || s.tipo)} · ${esc(s.plan || "—")}</td><td>${badge(s.estado, s.nivel)}</td><td>${dep}</td><td><div class="rd-acc">${acc}</div></td></tr>`;
-    }).join("") + `</tbody></table>` : `<div class="rd-vacio">No hay servicios para mostrar.</div>`;
+  $("#servicios").innerHTML = sv.length ? sv.map(tarjeta).join("") : `<div class="rd-vacio">No hay servicios para mostrar.</div>`;
 }
 
 async function cargar(forzar) {

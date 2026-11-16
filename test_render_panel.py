@@ -44,8 +44,29 @@ DATOS = {
 DEPLOYS = {"srv-1": _dep(1, "build_failed"), "srv-2": _dep(2, "live"), "srv-4": _dep(4, "build_in_progress")}
 
 
+MB = 1024 * 1024
+LLAMADAS_METRICAS = []
+
+
+def _serie_m(rid, inst, valores):
+    return {"labels": [{"field": "resource", "value": rid}, {"field": "instance", "value": inst}],
+            "values": [{"timestamp": str(1700000000 + 300 * i), "value": v} for i, v in enumerate(valores)]}
+
+
+METRICAS = {
+    "/metrics/cpu": [_serie_m("srv-1", "i1", [0.02, 0.05]), _serie_m("srv-2", "i2", [0.01])],
+    "/metrics/cpu-limit": [_serie_m("srv-1", "i1", [0.1]), _serie_m("srv-2", "i2", [0.1])],
+    "/metrics/memory": [_serie_m("srv-1", "i1", [200 * MB, 480 * MB]), _serie_m("srv-2", "i2", [100 * MB])],
+    "/metrics/memory-limit": [_serie_m("srv-1", "i1", [512 * MB]), _serie_m("srv-2", "i2", [512 * MB])],
+}
+
+
 def falso_get(ruta, llave, params=None):
     p = params or {}
+    if ruta.startswith("/metrics/"):
+        LLAMADAS_METRICAS.append((llave, ruta, tuple(p["resource"])))
+        assert "srv-3" not in p["resource"], "un servicio suspendido no debe pedir métricas"
+        return [x for x in METRICAS[ruta] if x["labels"][0]["value"] in p["resource"]]
     if ruta == "/owners":
         return DATOS[(llave, "/owners")]
     if ruta == "/services":
@@ -60,6 +81,7 @@ def falso_get(ruta, llave, params=None):
 
 class PruebasRender(unittest.TestCase):
     def setUp(self):
+        LLAMADAS_METRICAS.clear()
         rp._cache.update(t=0.0, datos=None, cargando=False)
         self.p1 = mock.patch.object(rp, "_get", falso_get)
         self.p2 = mock.patch.object(ajustes, "valor", lambda n, d="": {"RENDER_API_KEY": "A", "RENDER_API_KEY_2": "B"}.get(n, d))
@@ -127,6 +149,56 @@ class PruebasRender(unittest.TestCase):
         with mock.patch.object(rp, "_get", get):
             ok, msg = rp.probar()
         self.assertFalse(ok); self.assertIn("1 de 2", msg)
+
+    def test_metricas_ram_cpu(self):
+        por = {s["id"]: s for s in rp.datos()["servicios"]}
+        ram, cpu = por["srv-1"]["metricas"]["ram"], por["srv-1"]["metricas"]["cpu"]
+        self.assertAlmostEqual(ram["pct"], 93.75, places=1)                  # 480 MB de 512 MB
+        self.assertIn("480 MB de 512 MB", ram["texto"])
+        self.assertAlmostEqual(cpu["pct"], 50.0, places=1)                   # 0.05 de 0.1 CPU
+        self.assertIn("de 0.1 CPU", cpu["texto"])
+        self.assertAlmostEqual(por["srv-2"]["metricas"]["ram"]["pct"], 19.5, places=1)
+        self.assertIsNone(por["srv-4"]["metricas"])                          # sin datos = None, no inventa
+        self.assertIsNone(por["srv-3"]["metricas"])                          # suspendido: ni se consulta
+
+    def test_metricas_son_4_consultas_por_llave_no_por_servicio(self):
+        rp.datos()
+        self.assertEqual(len(LLAMADAS_METRICAS), 8)                          # llave A (srv-1, srv-2) + llave B (srv-4), 4 c/u
+        a = [c for c in LLAMADAS_METRICAS if c[0] == "A"]
+        self.assertEqual({c[2] for c in a}, {("srv-1", "srv-2")})            # ambos servicios en una sola consulta
+
+    def test_si_fallan_las_metricas_el_resto_sigue(self):
+        def get(ruta, llave, params=None):
+            if ruta.startswith("/metrics/"):
+                raise RuntimeError("Render respondió error 500")
+            return falso_get(ruta, llave, params)
+        with mock.patch.object(rp, "_get", get):
+            d = rp.datos(forzar=True)
+        self.assertEqual(len(d["servicios"]), 4)
+        self.assertTrue(all(s["metricas"] is None for s in d["servicios"]))
+        self.assertTrue(any("Métricas" in e for e in d["errores"]))
+        self.assertEqual({s["id"]: s["estado"] for s in d["servicios"]}["srv-2"], "En línea")
+
+    def test_series_ignora_basura(self):
+        raro = [None, "x", {"labels": "mal"}, {"labels": [{"field": "resource", "value": "srv-9"}], "values": [{"timestamp": "a", "value": None}, {"value": 1}]},
+                {"labels": [{"field": "resource", "value": "srv-9"}], "values": [{"timestamp": "2", "value": "0.5"}, {"timestamp": "1", "value": 0.25}]}]
+        self.assertEqual(rp._series(raro), {("srv-9", ""): [0.25, 0.5]})     # ordenado por tiempo, lo ilegible se descarta
+        self.assertEqual(rp._series(None), {})
+        self.assertIsNone(rp._calc({}, {}, "srv-9"))
+        c = rp._calc({("r", "i"): [3.0]}, {}, "r")                           # sin límite: muestra el valor, sin %
+        self.assertIsNone(c["pct"]); self.assertEqual(rp._txt_cpu(c), "3.00 CPU")
+
+    def test_aviso_de_memoria_y_sin_repetir(self):
+        enviados = []
+        rp.alertar(rp.datos(), lambda tipo, titulo, cuerpo, url, urgente, clave: enviados.append((titulo, clave)))
+        ram = [c for t, c in enviados if c.startswith("render-ram-")]
+        self.assertEqual(len(ram), 1)                                        # solo srv-1 (94%); srv-2 está al 19%
+        self.assertTrue(ram[0].startswith("render-ram-srv-1-"))
+
+    def test_hace_se_calcula_al_mostrar(self):
+        d = rp.datos()["servicios"][0]
+        self.assertRegex(rp._con_hace(d)["deploy"]["hace"], r"^hace \d+ (min|h|d)$")
+        self.assertEqual(rp._hace("no es fecha"), "")
 
     def test_la_llave_nunca_sale(self):
         import json

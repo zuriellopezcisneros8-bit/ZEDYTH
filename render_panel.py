@@ -13,7 +13,8 @@ Cuidado con los límites:
   * Consultar la API de Render NO despierta tus servicios ni gasta sus horas de instancia.
   * La llave nunca sale del servidor: la pantalla solo ve los últimos 4 caracteres.
 
-No mide RAM/CPU: no confirmé que la API pública de Render los entregue; solo se muestra lo que sí se lee.
+RAM y CPU: se leen de /v1/metrics/{cpu,memory,cpu-limit,memory-limit} (última hora, 4 consultas por llave sin importar
+cuántos servicios haya). El % sale de uso ÷ límite del plan. Si Render no entrega algo, se muestra «—», nunca un dato inventado.
 
 Conexión en app.py (ya aplicada en este paquete):
     import render_panel
@@ -66,7 +67,7 @@ def _llaves():
 
 
 def _get(ruta, llave, params=None):
-    url = API + ruta + ("?" + _uparse.urlencode(params) if params else "")
+    url = API + ruta + ("?" + _uparse.urlencode(params, doseq=True) if params else "")
     req = _ureq.Request(url, headers={"Authorization": "Bearer " + llave, "Accept": "application/json",
                                       "User-Agent": "zedyth-panel/1.0"})
     try:
@@ -113,7 +114,7 @@ def _servicio(it, cuenta):
             "repo": s.get("repo") or "", "rama": s.get("branch") or "",
             "auto_deploy": s.get("autoDeploy") == "yes",
             "panel": panel if panel.startswith("https://dashboard.render.com/") else "",
-            "cuenta": cuenta, "deploy": None, "deploy_error": None}
+            "cuenta": cuenta, "deploy": None, "deploy_error": None, "metricas": None}
 
 
 def _ultimo_deploy(llave, sid):
@@ -124,6 +125,81 @@ def _ultimo_deploy(llave, sid):
     lineas = ((d.get("commit") or {}).get("message") or "").strip().splitlines()
     return {"id": d.get("id") or "", "estado": d.get("status") or "", "commit": (lineas[0] if lineas else "")[:90],
             "creado": d.get("createdAt"), "terminado": d.get("finishedAt")}
+
+
+# --- RAM y CPU -------------------------------------------------------------------------------------------------
+TIPOS_CON_METRICAS = {"web_service", "private_service", "background_worker"}
+UMBRAL_RAM_AVISO = 90      # % de la memoria del plan a partir del cual se avisa
+MB = 1024 * 1024
+
+
+def _series(resp):
+    """{(recurso, instancia): [valores en orden de tiempo]}. Tolerante: lo que no se entienda se ignora."""
+    out = {}
+    for it in resp if isinstance(resp, list) else []:
+        if not isinstance(it, dict):
+            continue
+        lab = {x.get("field"): x.get("value") for x in (it.get("labels") or []) if isinstance(x, dict)}
+        vals = []
+        for v in it.get("values") or []:
+            try:
+                vals.append((float(v["timestamp"]), float(v["value"])))
+            except (TypeError, ValueError, KeyError):
+                pass
+        if lab.get("resource") and vals:
+            out[(lab["resource"], lab.get("instance") or "")] = [x for _, x in sorted(vals)]
+    return out
+
+
+def _calc(uso, lim, rid):
+    """Mejor instancia (la más cargada) de un recurso: {ultimo, pico, limite, pct, pico_pct} o None."""
+    lim_rid = next((v[-1] for (r, _), v in lim.items() if r == rid and v), None)
+    mejor = None
+    for (r, inst), vals in uso.items():
+        if r != rid or not vals:
+            continue
+        limite = (lim.get((r, inst)) or [lim_rid])[-1]
+        pct = vals[-1] / limite * 100 if limite else None
+        pico = max(vals) / limite * 100 if limite else None
+        c = {"ultimo": vals[-1], "pico": max(vals), "limite": limite or None, "pct": pct, "pico_pct": pico}
+        if mejor is None or (pct or 0) > (mejor["pct"] or 0) or (mejor["pct"] is None and pct is None and c["ultimo"] > mejor["ultimo"]):
+            mejor = c
+    return mejor
+
+
+def _txt_ram(c):
+    if not c:
+        return None
+    t = f"{c['ultimo'] / MB:.0f} MB"
+    if c["limite"]:
+        t += f" de {c['limite'] / MB:.0f} MB · {c['pct']:.0f}%"
+    return t + (f" · pico 1 h: {c['pico_pct']:.0f}%" if c["pico_pct"] is not None else "")
+
+
+def _txt_cpu(c):
+    if not c:
+        return None
+    if c["limite"]:
+        return f"{c['pct']:.0f}% de {c['limite']:g} CPU" + (f" · pico 1 h: {c['pico_pct']:.0f}%" if c["pico_pct"] is not None else "")
+    return f"{c['ultimo']:.2f} CPU"
+
+
+def _metricas(llave, ids):
+    """{id_servicio: {"cpu": {...}, "ram": {...}}}. 4 consultas para TODOS los ids de esa llave (se unen con «o»)."""
+    ahora = int(time.time())
+    base = {"resource": ids, "startTime": ahora - 3600, "endTime": ahora, "resolutionSeconds": 300}
+    cpu, cpu_l = _series(_get("/metrics/cpu", llave, base)), _series(_get("/metrics/cpu-limit", llave, base))
+    ram, ram_l = _series(_get("/metrics/memory", llave, base)), _series(_get("/metrics/memory-limit", llave, base))
+    out = {}
+    for rid in ids:
+        c, r = _calc(cpu, cpu_l, rid), _calc(ram, ram_l, rid)
+        if c or r:
+            if c:
+                c["texto"] = _txt_cpu(c)
+            if r:
+                r["texto"] = _txt_ram(r)
+            out[rid] = {"cpu": c, "ram": r}
+    return out
 
 
 def _estado(s):
@@ -183,6 +259,17 @@ def _leer():
     if lista:
         with ThreadPoolExecutor(max_workers=6) as ex:
             list(ex.map(_dep, lista))
+    por_llave = {}
+    for s in lista:
+        if s["tipo"] in TIPOS_CON_METRICAS and not s["suspendido"]:
+            por_llave.setdefault(origen[s["id"]], []).append(s)
+    for llave, svs in por_llave.items():
+        try:
+            m = _metricas(llave, [x["id"] for x in svs])
+            for x in svs:
+                x["metricas"] = m.get(x["id"])
+        except RuntimeError as e:             # sin métricas no se cae nada: solo se avisa una vez
+            errores.append(f"Métricas de RAM/CPU no disponibles con la llave ····{llave[-4:]}: {e}")
     for s in lista:
         s["estado"], s["nivel"] = _estado(s)
 
@@ -311,18 +398,38 @@ def por_proyecto(p):
         _leer_en_segundo_plano()
         return {"conectado": True, "servicios": [], "pendiente": True, "errores": []}
     return {"conectado": True, "pendiente": False, "errores": d["errores"], "actualizado": d["actualizado"],
-            "servicios": vincular(p, d["servicios"], [s.nombre for s in p.subdominios])}
+            "servicios": [_con_hace(s) for s in vincular(p, d["servicios"], [x.nombre for x in p.subdominios])]}
+
+
+# --- Fechas ---------------------------------------------------------------------------------------------------------
+def _fecha(iso):
+    try:
+        t = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _hace(iso):
+    t = _fecha(iso)
+    if t is None:
+        return ""
+    seg = max(0, (datetime.now(timezone.utc) - t).total_seconds())
+    if seg < 3600:
+        return f"hace {max(1, round(seg / 60))} min"
+    return f"hace {round(seg / 3600)} h" if seg < 86400 else f"hace {round(seg / 86400)} d"
+
+
+def _con_hace(s):
+    """Copia del servicio con «hace X» ya calculado (la caché dura 5 min; el «hace» se calcula al mostrar)."""
+    d = s.get("deploy")
+    return dict(s, deploy=dict(d, hace=_hace(d["terminado"] or d["creado"])) if d else None)
 
 
 # --- Avisos --------------------------------------------------------------------------------------------------------
 def _reciente(iso, horas=AVISO_FALLO_HORAS):
-    try:
-        t = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - t <= timedelta(hours=horas)
-    except ValueError:
-        return False
+    t = _fecha(iso)
+    return t is not None and datetime.now(timezone.utc) - t <= timedelta(hours=horas)
 
 
 def alertar(d, notificar):
@@ -340,6 +447,11 @@ def alertar(d, notificar):
         if dep and dep["estado"] in FALLIDOS and _reciente(dep["terminado"] or dep["creado"]):
             notificar("Render", f"Deploy fallido: {s['nombre']}", (dep["commit"] or "Sin mensaje de commit") + f" · cuenta {s['cuenta']}",
                       "/render", urgente=True, clave=f"render-fallo-{s['id']}-{dep['id']}")
+            n += 1
+        ram = (s.get("metricas") or {}).get("ram")
+        if ram and ram["pct"] is not None and ram["pct"] >= UMBRAL_RAM_AVISO and not s["suspendido"]:
+            notificar("Render", f"Render: «{s['nombre']}» casi sin memoria", f"RAM al {ram['pct']:.0f}% del plan ({ram['texto']}). Puede reiniciarse por falta de memoria.",
+                      "/render", urgente=False, clave=f"render-ram-{s['id']}-{sem[0]}-{sem[1]}")        # 1 aviso por semana
             n += 1
     return n
 
@@ -371,7 +483,7 @@ def crear_blueprint(app, db, crear_notificacion, Proyecto):
         servicios = []
         for s in d["servicios"]:
             p = dueno.get(s["id"])
-            servicios.append(dict(s, plataforma=p.nombre if p else None, plataforma_id=p.id if p else None))
+            servicios.append(dict(_con_hace(s), plataforma=p.nombre if p else None, plataforma_id=p.id if p else None))
         return {"ok": True, "conectado": True, "actualizado": d["actualizado"], "llaves": d["llaves"],
                 "cuentas": d["cuentas"], "servicios": servicios, "errores": d["errores"]}
 
