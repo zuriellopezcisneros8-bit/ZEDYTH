@@ -66,6 +66,7 @@ def falso_get(ruta, llave, params=None):
     if ruta.startswith("/metrics/"):
         LLAMADAS_METRICAS.append((llave, ruta, tuple(p["resource"])))
         assert "srv-3" not in p["resource"], "un servicio suspendido no debe pedir métricas"
+        assert set(p) == {"resource"}, "no se mandan fechas: se usan los valores por defecto de Render"
         return [x for x in METRICAS[ruta] if x["labels"][0]["value"] in p["resource"]]
     if ruta == "/owners":
         return DATOS[(llave, "/owners")]
@@ -187,6 +188,39 @@ class PruebasRender(unittest.TestCase):
         self.assertIsNone(rp._calc({}, {}, "srv-9"))
         c = rp._calc({("r", "i"): [3.0]}, {}, "r")                           # sin límite: muestra el valor, sin %
         self.assertIsNone(c["pct"]); self.assertEqual(rp._txt_cpu(c), "3.00 CPU")
+
+    def test_marcas_de_tiempo_en_formato_fecha_iso(self):
+        """Si Render manda «2026-11-15T10:00:00Z» en vez de números, los valores NO deben descartarse (era un posible fallo)."""
+        def iso(rid, inst, valores):
+            return {"labels": [{"field": "resource", "value": rid}, {"field": "instance", "value": inst}],
+                    "values": [{"timestamp": f"2026-11-15T10:{i * 5:02d}:00Z", "value": v} for i, v in enumerate(valores)]}
+        datos_iso = {"/metrics/cpu": [iso("srv-1", "i1", [0.02, 0.05])], "/metrics/cpu-limit": [iso("srv-1", "i1", [0.1])],
+                     "/metrics/memory": [iso("srv-1", "i1", [200 * MB, 480 * MB])], "/metrics/memory-limit": [iso("srv-1", "i1", [512 * MB])]}
+
+        def get(ruta, llave, params=None):
+            if ruta.startswith("/metrics/"):
+                return datos_iso[ruta]
+            return falso_get(ruta, llave, params)
+        with mock.patch.object(rp, "_get", get):
+            d = rp.datos(forzar=True)
+        por = {s["id"]: s for s in d["servicios"]}
+        self.assertAlmostEqual(por["srv-1"]["metricas"]["ram"]["pct"], 93.75, places=1)
+        self.assertEqual(rp._ts("1700000000"), 1700000000.0)
+        with self.assertRaises(ValueError):
+            rp._ts("basura")
+
+    def test_motivo_visible_cuando_no_hay_datos_o_falla(self):
+        por = {s["id"]: s for s in rp.datos()["servicios"]}
+        self.assertIn("no devolvió datos", por["srv-4"]["metricas_nota"])      # servicio dormido / sin lectura
+        self.assertIsNone(por["srv-1"]["metricas_nota"])
+
+        def get(ruta, llave, params=None):
+            if ruta.startswith("/metrics/"):
+                raise RuntimeError("Render respondió error 400")
+            return falso_get(ruta, llave, params)
+        with mock.patch.object(rp, "_get", get):
+            d = rp.datos(forzar=True)
+        self.assertIn("error 400", {s["id"]: s for s in d["servicios"]}["srv-2"]["metricas_nota"])
 
     def test_aviso_de_memoria_y_sin_repetir(self):
         enviados = []

@@ -1,6 +1,6 @@
 <!-- templates/_render_proyecto.html · servicios de Render ligados a esta plataforma -->
 {% if render_p %}
-{% macro barra(titulo, m) -%}
+{% macro barra(titulo, m, nota) -%}
 <div class="rd-met">
   <div class="rd-met-t"><span>{{ titulo }}</span></div>
   {% if m %}
@@ -8,7 +8,7 @@
     <div class="rd-met-v">{{ m.texto }}</div>
   {% else %}
     <div class="rd-bar"><i style="width:0"></i></div>
-    <div class="rd-met-v">—</div>
+    <div class="rd-met-v" style="color:var(--text-muted, #9aa3b2);">{{ nota or '—' }}</div>
   {% endif %}
 </div>
 {%- endmacro %}
@@ -60,8 +60,8 @@
         {% else %}<div class="rd-hace">—</div>{% endif %}
       </div>
       {% if s.tipo in ['web_service','private_service','background_worker'] and not s.suspendido %}
-      {{ barra('Memoria (RAM)', s.metricas.ram if s.metricas else none) }}
-      {{ barra('Procesador (CPU)', s.metricas.cpu if s.metricas else none) }}
+      {{ barra('Memoria (RAM)', s.metricas.ram if s.metricas else none, s.metricas_nota) }}
+      {{ barra('Procesador (CPU)', s.metricas.cpu if s.metricas else none, s.metricas_nota) }}
       {% endif %}
     </div>
     <div class="rd-btns">
@@ -71,6 +71,7 @@
   </div>
   {% endfor %}
 </div>
+{% for e in render_p.errores %}<p class="rd-pie" style="color:#f5b94c;">⚠ {{ e }}</p>{% endfor %}
 <p class="rd-pie">Leído {{ (render_p.actualizado or '')[:16]|replace('T',' ') }} UTC · se guarda 5 min · <a href="/render" style="text-decoration:underline;">Ver todas las cuentas</a></p>
 {% endif %}
 {% endif %}

@@ -114,7 +114,7 @@ def _servicio(it, cuenta):
             "repo": s.get("repo") or "", "rama": s.get("branch") or "",
             "auto_deploy": s.get("autoDeploy") == "yes",
             "panel": panel if panel.startswith("https://dashboard.render.com/") else "",
-            "cuenta": cuenta, "deploy": None, "deploy_error": None, "metricas": None}
+            "cuenta": cuenta, "deploy": None, "deploy_error": None, "metricas": None, "metricas_nota": None}
 
 
 def _ultimo_deploy(llave, sid):
@@ -133,6 +133,17 @@ UMBRAL_RAM_AVISO = 90      # % de la memoria del plan a partir del cual se avisa
 MB = 1024 * 1024
 
 
+def _ts(v):
+    """Marca de tiempo → número ordenable. Acepta epoch (número o texto) o fecha ISO como «2026-11-15T10:00:00Z»."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        t = _fecha(v if isinstance(v, str) else "")
+        if t is None:
+            raise ValueError("fecha ilegible")
+        return t.timestamp()
+
+
 def _series(resp):
     """{(recurso, instancia): [valores en orden de tiempo]}. Tolerante: lo que no se entienda se ignora."""
     out = {}
@@ -143,7 +154,7 @@ def _series(resp):
         vals = []
         for v in it.get("values") or []:
             try:
-                vals.append((float(v["timestamp"]), float(v["value"])))
+                vals.append((_ts(v["timestamp"]), float(v["value"])))
             except (TypeError, ValueError, KeyError):
                 pass
         if lab.get("resource") and vals:
@@ -186,8 +197,7 @@ def _txt_cpu(c):
 
 def _metricas(llave, ids):
     """{id_servicio: {"cpu": {...}, "ram": {...}}}. 4 consultas para TODOS los ids de esa llave (se unen con «o»)."""
-    ahora = int(time.time())
-    base = {"resource": ids, "startTime": ahora - 3600, "endTime": ahora, "resolutionSeconds": 300}
+    base = {"resource": ids}          # sin fechas: Render responde la última hora (así no dependemos del formato de fecha)
     cpu, cpu_l = _series(_get("/metrics/cpu", llave, base)), _series(_get("/metrics/cpu-limit", llave, base))
     ram, ram_l = _series(_get("/metrics/memory", llave, base)), _series(_get("/metrics/memory-limit", llave, base))
     out = {}
@@ -268,8 +278,12 @@ def _leer():
             m = _metricas(llave, [x["id"] for x in svs])
             for x in svs:
                 x["metricas"] = m.get(x["id"])
-        except RuntimeError as e:             # sin métricas no se cae nada: solo se avisa una vez
+                if not x["metricas"]:
+                    x["metricas_nota"] = "Render no devolvió datos de la última hora (normal si el servicio estaba dormido)"
+        except RuntimeError as e:             # sin métricas no se cae nada: se explica el motivo
             errores.append(f"Métricas de RAM/CPU no disponibles con la llave ····{llave[-4:]}: {e}")
+            for x in svs:
+                x["metricas_nota"] = f"Render respondió: {e}"
     for s in lista:
         s["estado"], s["nivel"] = _estado(s)
 

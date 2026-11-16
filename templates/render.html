@@ -63,16 +63,16 @@ function hace(iso) {
   if (s < 86400) return "hace " + Math.round(s / 3600) + " h";
   return "hace " + Math.round(s / 86400) + " d";
 }
-function barra(titulo, m) {
+function barra(titulo, m, nota) {
   const p = m && m.pct != null ? m.pct : null;
   const c = p != null && p >= 90 ? "mal" : (p != null && p >= 70 ? "amb" : "ok");
-  return `<div class="rd-et">${esc(titulo)}</div><div class="rd-bar"><i class="rd-f-${c}" style="width:${p == null ? 0 : Math.min(100, Math.round(p))}%"></i></div><div class="rd-met-v">${m ? esc(m.texto) : "—"}</div>`;
+  return `<div class="rd-et">${esc(titulo)}</div><div class="rd-bar"><i class="rd-f-${c}" style="width:${p == null ? 0 : Math.min(100, Math.round(p))}%"></i></div><div class="rd-met-v">${m ? esc(m.texto) : `<span class="rd-mut">${esc(nota || "—")}</span>`}</div>`;
 }
 function tarjeta(s) {
   const dep = s.deploy ? `<div class="rd-commit">${esc(s.deploy.commit || "Sin mensaje de commit")}</div><div class="rd-sub">${esc(s.deploy.hace || hace(s.deploy.terminado || s.deploy.creado))}</div>`
     : `<div class="rd-sub">${esc(s.deploy_error || "—")}</div>`;
   const plat = s.plataforma_id ? `<a href="/plataformas/${s.plataforma_id}?tab=infra" style="text-decoration:underline;">${esc(s.plataforma)}</a>` : `<span class="rd-mut">sin vincular</span>`;
-  const met = CON_METRICAS.includes(s.tipo) && !s.suspendido ? barra("Memoria (RAM)", s.metricas && s.metricas.ram) + barra("Procesador (CPU)", s.metricas && s.metricas.cpu) : "";
+  const met = CON_METRICAS.includes(s.tipo) && !s.suspendido ? barra("Memoria (RAM)", s.metricas && s.metricas.ram, s.metricas_nota) + barra("Procesador (CPU)", s.metricas && s.metricas.cpu, s.metricas_nota) : "";
   const btn = (s.url ? `<a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener">Abrir sitio</a>` : "") + (s.panel ? `<a class="btn" href="${esc(s.panel)}" target="_blank" rel="noopener">Abrir en Render</a>` : "");
   return `<div class="rd-card"><div class="rd-top"><div><div class="rd-name">${esc(s.nombre)}</div>
     <div class="rd-sub">${esc(s.cuenta)} · ${esc(TIPOS[s.tipo] || s.tipo)} · plan ${esc(s.plan || "—")}${s.region ? " · " + esc(s.region) : ""}</div>
