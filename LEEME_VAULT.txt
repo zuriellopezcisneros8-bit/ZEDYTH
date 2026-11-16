@@ -8,7 +8,7 @@ DÓNDE APARECE
 ARCHIVOS NUEVOS (cópialos tal cual al proyecto, respetando carpetas)
   vault.py                      backend: modelos cifrados, bloqueo, búsqueda, checklists, informes
   templates/vault.html          interfaz (5 pestañas)
-  static/js/vault_tools.js      herramientas que corren en el navegador (codecs, JWT, hashes, defang, IoCs, resaltado, Markdown)
+  static/js/vault_tools.js      fuente de las herramientas (ya va incluida dentro de vault.html; sirve para las pruebas con node)
   test_vault.py                 pruebas del backend         ->  python -m unittest test_vault -v
   test_vault_tools.js           pruebas de las herramientas ->  node test_vault_tools.js
 
