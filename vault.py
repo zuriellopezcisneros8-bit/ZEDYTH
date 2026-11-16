@@ -9,6 +9,7 @@ Qué incluye (todo bajo /vault):
   * Escáner de PDFs     Análisis estático (JavaScript, /Launch, archivos incrustados, ofuscación…) + ClamAV y VirusTotal por hash
                         si están configurados. El PDF NO se guarda: solo se analiza en memoria y se registra su hash.
   * Biblioteca          Herramientas y aprendizajes: qué hace cada una, cómo se usa y lo que aprendiste (por categoría y nivel).
+  * Tecnologías         Registro de tecnologías, objetos y sistemas (propios o de terceros): cómo funcionan y en qué plataformas viven.
   * Búsqueda            Texto completo en títulos, etiquetas y contenido.
   * Seguridad           Todo el contenido se guarda CIFRADO (Fernet). Bloqueo por inactividad (5 min) en el servidor y en
                         el navegador: se desbloquea con la contraseña de tu cuenta.
@@ -40,6 +41,10 @@ CLASIFICACIONES = ("PUBLICABLE", "INTERNO", "CONFIDENCIAL", "ZERO-DAY / CRÍTICO
 TIPOS_NOTA = ("Nota", "Captura", "Recon", "Finding", "CTF", "Aprendizaje", "Aprendí hoy")
 TIPOS_HALLAZGO = ("Atajo", "Código", "Búsqueda", "Configuración", "Otro")
 DONDE_SUGERIDOS = ("Windows", "Linux", "macOS", "Google", "Microsoft", "Navegador", "Terminal", "Otro")
+CATEGORIAS_TEC = ("Hardware / objeto", "Software / app", "Protocolo / red", "Servicio / plataforma", "Sistema / arquitectura", "Concepto / técnica", "Otra")
+ORIGENES_TEC = ("Nuestra", "De terceros")
+ESTADOS_TEC = ("Idea", "En desarrollo", "En uso", "Archivada")
+PLATAFORMAS_SUGERIDAS = ("Windows", "Linux", "macOS", "Android", "iOS", "Web", "Google", "Microsoft", "AWS", "Render", "GitHub", "Docker")
 METODOLOGIAS = ("OWASP Top 10", "PTES", "MITRE ATT&CK")
 CATEGORIAS_HERR = ("Malware / virus", "Actividad de personas", "Bots y automatización", "Red y tráfico", "Web y apps", "Forense y logs", "OSINT", "Otra")
 NIVELES_HERR = ("Por probar", "Probando", "La domino")
@@ -52,6 +57,7 @@ MAX_VERSIONES = 50
 AL_CERRAR_CADUCA_H = 12            # respaldo del servidor para las notas «al cerrar» que el navegador no alcanzó a borrar
 
 PLANTILLAS = {
+    "Tecnología": ("## Qué es\n\n\n## Cómo funciona\n\n\n## Partes o componentes\n\n- \n\n## Dónde la usamos\n\n\n## Límites / cuidado\n\n\n## Relacionado\n\n- [[ ]]\n"),
     "Aprendí hoy": "## Qué aprendí\n\n\n## Para qué sirve\n\n\n## Cómo se hace\n\n",
     "Aprendizaje": ("# Lo que aprendí hoy\n\n- **Tema:** \n- **Fuente (curso, video, laboratorio):** \n\n"
                     "## Idea clave\n\n\n## Cómo lo probé\n\n\n## Herramientas usadas\n\n- [[ ]]\n\n## Dudas / qué sigue\n\n"),
@@ -271,12 +277,28 @@ def crear_blueprint(app, db, registrar, limitar=None):
         usuario_id = db.Column(db.Integer, nullable=False)
         valor = db.Column(db.Integer, nullable=False)               # 1 = me funcionó, -1 = no me funcionó
 
+    class VaultTecnologia(db.Model):
+        """Registro de tecnologías, cosas u objetos: qué son, cómo funcionan y en qué plataformas se conectan."""
+        __tablename__ = "vault_tecnologia"
+        id = db.Column(db.Integer, primary_key=True)
+        nombre = db.Column(db.String(200), nullable=False)
+        categoria = db.Column(db.String(30), default="Otra")
+        origen = db.Column(db.String(16), default="Nuestra")
+        estado = db.Column(db.String(16), default="En uso")
+        plataformas = db.Column(db.String(400), default="")         # opcional: lista separada por comas
+        enlace = db.Column(db.String(400), default="")
+        etiquetas = db.Column(db.String(400), default="")
+        cuerpo = db.Column(db.Text, default="")                     # cifrado: cómo funciona
+        autor = db.Column(db.String(80), default="")
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     estado = {"ok": False}
 
     def asegurar():
         if estado["ok"]:
             return
-        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta, VaultHallazgo, VaultVoto):
+        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta, VaultHallazgo, VaultVoto, VaultTecnologia):
             m.__table__.create(db.engine, checkfirst=True)
         try:        # base ya existente: agrega la columna «notas» a vault_codigo sin perder nada
             from sqlalchemy import inspect, text
@@ -357,7 +379,8 @@ def crear_blueprint(app, db, registrar, limitar=None):
         cfg = {"desbloqueada": desbloqueado(tocar=False), "bloqueo_s": BLOQUEO_SEGUNDOS, "lados": list(LADOS),
                "clasificaciones": list(CLASIFICACIONES), "tipos": list(TIPOS_NOTA), "lenguajes": list(LENGUAJES),
                "metodologias": list(METODOLOGIAS), "categorias": list(CATEGORIAS_HERR), "niveles": list(NIVELES_HERR),
-               "tipos_hall": list(TIPOS_HALLAZGO), "donde_sug": list(DONDE_SUGERIDOS)}
+               "tipos_hall": list(TIPOS_HALLAZGO), "donde_sug": list(DONDE_SUGERIDOS),
+               "cats_tec": list(CATEGORIAS_TEC), "origenes_tec": list(ORIGENES_TEC), "estados_tec": list(ESTADOS_TEC), "plat_sug": list(PLATAFORMAS_SUGERIDAS)}
         return render_template("vault.html", cfg=cfg)
 
     @bp.route("/vault/api/desbloquear", methods=["POST"])
@@ -433,6 +456,26 @@ def crear_blueprint(app, db, registrar, limitar=None):
                 "enlace": h.enlace or "", "autor": h.autor or "", "funciona": si, "no_funciona": no, "mi_voto": mio,
                 "actualizado": h.actualizado.isoformat() + "Z"}
 
+    def resumen_tec(t):
+        return {"id": t.id, "nombre": t.nombre, "categoria": t.categoria, "origen": t.origen, "estado": t.estado,
+                "plataformas": limpiar_etiquetas(t.plataformas), "enlace": t.enlace or "", "etiquetas": limpiar_etiquetas(t.etiquetas),
+                "autor": t.autor or "", "actualizado": t.actualizado.isoformat() + "Z"}
+
+    def entrantes_de(titulo, excluir=None):
+        """Notas, bloques, herramientas, tecnologías y hallazgos que enlazan a un título con [[...]]."""
+        buscado, salida = titulo.strip().lower(), []
+        def enlaza(txt):
+            return buscado in [x.lower() for x in enlaces_wiki(txt)]
+        for tipo, modelo, campo in (("nota", VaultNota, "titulo"), ("codigo", VaultCodigo, "titulo"),
+                                    ("herramienta", VaultHerramienta, "nombre"), ("tecnologia", VaultTecnologia, "nombre")):
+            for o in modelo.query.all():
+                if excluir != (tipo, o.id) and enlaza(descifrar(F, o.cuerpo)):
+                    salida.append({"tipo": tipo, "id": o.id, "titulo": getattr(o, campo)})
+        for o in VaultHallazgo.query.all():
+            if excluir != ("hallazgo", o.id) and enlaza("\n".join([descifrar(F, o.accion) or "", descifrar(F, o.resultado) or "", f"[[{o.enlace}]]" if o.enlace else ""])):
+                salida.append({"tipo": "hallazgo", "id": o.id, "titulo": o.titulo})
+        return salida
+
     def lista_hallazgos():
         hs = VaultHallazgo.query.order_by(VaultHallazgo.actualizado.desc()).all()
         votos = votos_de([h.id for h in hs])
@@ -443,6 +486,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
     def vault_datos():
         return jsonify(ok=True,
                        hallazgos=lista_hallazgos(),
+                       tecnologias=[resumen_tec(t) for t in VaultTecnologia.query.order_by(VaultTecnologia.actualizado.desc()).all()],
                        codigo=[resumen_codigo(c) for c in VaultCodigo.query.order_by(VaultCodigo.actualizado.desc()).all()],
                        notas=[resumen_nota(n) for n in VaultNota.query.order_by(VaultNota.actualizado.desc()).all()],
                        checklists=[resumen_check(c) for c in VaultChecklist.query.order_by(VaultChecklist.actualizado.desc()).all()],
@@ -546,6 +590,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
             texto_h = "\n".join([descifrar(F, o.accion) or "", descifrar(F, o.resultado) or "", f"[[{o.enlace}]]" if o.enlace else ""])
             if titulo_l in [t.lower() for t in enlaces_wiki(texto_h)]:
                 entrantes.append({"tipo": "hallazgo", "id": o.id, "titulo": o.titulo})
+        for o in VaultTecnologia.query.all():
+            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
+                entrantes.append({"tipo": "tecnologia", "id": o.id, "titulo": o.nombre})
         return jsonify(ok=True, item=dict(resumen_nota(n), cuerpo=cuerpo, ilegible=cuerpo is None), entrantes=entrantes)
 
     @bp.route("/vault/api/nota", methods=["POST"])
@@ -636,6 +683,52 @@ def crear_blueprint(app, db, registrar, limitar=None):
         h = db.session.get(VaultHerramienta, hid) or abort(404)
         registrar("vault_herr_borrar", "vault_herramienta", hid, h.nombre[:80])
         db.session.delete(h)
+        db.session.commit()
+        return jsonify(ok=True)
+
+    # ---- Tecnologías (qué son, cómo funcionan, dónde se conectan) --------------
+    @bp.route("/vault/api/tecnologia/<int:tid>")
+    @api
+    def vault_tec_ver(tid):
+        t = db.session.get(VaultTecnologia, tid) or abort(404)
+        cuerpo = descifrar(F, t.cuerpo)
+        return jsonify(ok=True, item=dict(resumen_tec(t), cuerpo=cuerpo, ilegible=cuerpo is None),
+                       entrantes=entrantes_de(t.nombre, ("tecnologia", tid)))
+
+    @bp.route("/vault/api/tecnologia", methods=["POST"])
+    @api
+    def vault_tec_guardar():
+        d = datos()
+        nombre = texto(d, "nombre", 200, True).strip()
+        cat = d.get("categoria") if d.get("categoria") in CATEGORIAS_TEC else "Otra"
+        origen = d.get("origen") if d.get("origen") in ORIGENES_TEC else "Nuestra"
+        est = d.get("estado") if d.get("estado") in ESTADOS_TEC else "En uso"
+        plataformas = ", ".join(limpiar_etiquetas(texto(d, "plataformas", 400)))
+        enlace = texto(d, "enlace", 400).strip()
+        if enlace and not re.match(r"^https?://", enlace, re.I):
+            abort(400, description="El enlace debe empezar con http:// o https://")
+        etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
+        cuerpo = texto(d, "cuerpo", MAX_CUERPO)
+        tid = d.get("id")
+        if tid:
+            t = db.session.get(VaultTecnologia, int(tid)) or abort(404)
+        else:
+            if VaultTecnologia.query.count() >= MAX_ELEMENTOS:
+                abort(400, description="Límite de elementos alcanzado")
+            t = VaultTecnologia(autor=(current_user.nombre or current_user.username or "")[:80])
+            db.session.add(t)
+        t.nombre, t.categoria, t.origen, t.estado, t.plataformas, t.enlace, t.etiquetas, t.cuerpo = nombre, cat, origen, est, plataformas, enlace, etiquetas, cifrar(F, cuerpo)
+        db.session.flush()
+        registrar("vault_tecnologia", "vault_tecnologia", t.id, f"{cat}: {nombre[:80]}")
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_tec(t))
+
+    @bp.route("/vault/api/tecnologia/<int:tid>", methods=["DELETE"])
+    @api
+    def vault_tec_borrar(tid):
+        t = db.session.get(VaultTecnologia, tid) or abort(404)
+        registrar("vault_tecnologia_borrar", "vault_tecnologia", tid, t.nombre[:80])
+        db.session.delete(t)
         db.session.commit()
         return jsonify(ok=True)
 
@@ -784,6 +877,10 @@ def crear_blueprint(app, db, registrar, limitar=None):
             if coincide(q, x.titulo, x.etiquetas, x.tipo, x.donde, x.autor, acc, rta):
                 res.append({"tipo": "hallazgo", "id": x.id, "titulo": x.titulo, "detalle": f"{x.tipo} · {x.donde}" if x.donde else x.tipo,
                             "linea": _linea(acc + "\n" + rta, q)})
+        for t in VaultTecnologia.query.all():
+            cuerpo = descifrar(F, t.cuerpo) or ""
+            if coincide(q, t.nombre, t.etiquetas, t.categoria, t.origen, t.estado, t.plataformas, cuerpo):
+                res.append({"tipo": "tecnologia", "id": t.id, "titulo": t.nombre, "detalle": t.categoria, "linea": _linea(cuerpo, q)})
         return jsonify(ok=True, resultados=res[:100])
 
     @bp.route("/vault/api/grafo")
@@ -794,7 +891,8 @@ def crear_blueprint(app, db, registrar, limitar=None):
                     [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all()] + \
                     [("herramienta", h.id, h.nombre, h.cuerpo) for h in VaultHerramienta.query.all()] + \
                     [("hallazgo", x.id, x.titulo, "\n".join([descifrar(F, x.accion) or "", descifrar(F, x.resultado) or "", f"[[{x.enlace}]]" if x.enlace else ""]))
-                     for x in VaultHallazgo.query.all()]
+                     for x in VaultHallazgo.query.all()] + \
+                    [("tecnologia", t.id, t.nombre, t.cuerpo) for t in VaultTecnologia.query.all()]
         for tipo, i, titulo, _c in elementos:
             nodos.append({"id": f"{tipo}:{i}", "tipo": tipo, "titulo": titulo})
             por_titulo.setdefault(titulo.strip().lower(), f"{tipo}:{i}")

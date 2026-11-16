@@ -119,6 +119,7 @@
         <button class="vt-tab" data-tab="mision" type="button">Modo misión</button>
         <button class="vt-tab" data-tab="biblio" type="button">Biblioteca</button>
         <button class="vt-tab" data-tab="hall" type="button">Hallazgos</button>
+        <button class="vt-tab" data-tab="tec" type="button">Tecnologías</button>
         <button class="vt-tab" data-tab="tools" type="button">Utilidades</button>
         <button class="vt-tab" data-tab="grafo" type="button">Grafo</button>
     </div>
@@ -173,6 +174,20 @@
                 <div class="vt-list" id="hallLista"></div>
             </div>
             <div class="luxury-card" id="hallDetalle"><div class="vt-vacio">Registra «si hago X pasa Y»: qué hiciste, qué pasó y dónde. Con <b>Ctrl + K</b> puedes guardar uno desde cualquier pestaña.</div></div>
+        </div>
+    </div>
+
+    <!-- TECNOLOGÍAS -->
+    <div data-panel="tec" hidden>
+        <div class="vt-cols">
+            <div class="luxury-card" style="padding:14px;">
+                <div class="vt-chips" id="tecCat"></div>
+                <select class="field vt-hall-sel" id="tecPlat" title="Filtrar por plataforma"></select>
+                <input class="field" id="tecFiltro" placeholder="Filtrar por nombre, plataforma o etiqueta" style="margin-bottom:10px;">
+                <button class="btn btn-primary btn-sm" type="button" id="tecNueva" style="width:100%; margin-bottom:10px;">+ Nueva tecnología</button>
+                <div class="vt-list" id="tecLista"></div>
+            </div>
+            <div class="luxury-card" id="tecDetalle"><div class="vt-vacio">Registra aquí tecnologías, cosas u objetos —propios o de terceros—: cómo funcionan y, si quieres, en qué plataformas se conectan.</div></div>
         </div>
     </div>
 
@@ -239,6 +254,7 @@
             <div class="vt-row"><input class="field" id="capHDonde" maxlength="60" list="dondeSug" placeholder="Dónde (Windows, Linux, Google…)"><select class="field" id="capHTipo"></select></div>
         </div>
         <datalist id="dondeSug"></datalist>
+        <datalist id="platSug"></datalist>
         <div class="vt-row"><select class="field" id="capEf"><option value="">Nota normal</option><option value="1">Se borra en 1 hora</option><option value="24">Se borra en 24 horas</option><option value="cerrar">Se borra al cerrar la bóveda</option></select>
             <button class="btn btn-primary btn-sm" type="button" id="capGuardar">Guardar</button><button class="btn btn-sm" type="button" id="capCerrar">Cancelar</button></div>
     </div>
@@ -558,7 +574,7 @@
 (function () {
     'use strict';
     var T = window.VaultTools, esc = T.esc, CFG = JSON.parse(document.getElementById('vtCfg').textContent);
-    var S = { codigo: [], notas: [], checks: [], herr: [], hall: [], hl: { tipo: 'Todos', autor: 'Todos', id: null, item: null }, bib: { cat: 'Todas', id: null }, catalogo: {}, plantillas: {}, vars: {}, ars: { lado: 'Todos', id: null }, not: { clasif: 'Todas', id: null }, chk: { id: null }, borrarPortapapeles: null, ultimaActividad: Date.now(), cargado: false };
+    var S = { codigo: [], notas: [], checks: [], herr: [], tec: [], tc: { cat: 'Todas', plat: 'Todas', id: null, item: null }, hall: [], hl: { tipo: 'Todos', autor: 'Todos', id: null, item: null }, bib: { cat: 'Todas', id: null }, catalogo: {}, plantillas: {}, vars: {}, ars: { lado: 'Todos', id: null }, not: { clasif: 'Todas', id: null }, chk: { id: null }, borrarPortapapeles: null, ultimaActividad: Date.now(), cargado: false };
     function $(s, r) { return (r || document).querySelector(s); }
     function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
     function fecha(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return ''; } }
@@ -585,6 +601,7 @@
 
     /* ---------- Bloqueo ---------- */
     var VACIO = {
+        tecDetalle: '<div class="vt-vacio">Registra aquí tecnologías, cosas u objetos —propios o de terceros—: cómo funcionan y, si quieres, en qué plataformas se conectan.</div>',
         hallDetalle: '<div class="vt-vacio">Registra «si hago X pasa Y»: qué hiciste, qué pasó y dónde. Con <b>Ctrl + K</b> puedes guardar uno desde cualquier pestaña.</div>',
         arsDetalle: '<div class="vt-vacio">Elige un bloque o crea uno nuevo.</div>',
         notDetalle: '<div class="vt-vacio">Elige una nota o crea una nueva. Usa <span class="mono">[[Título]]</span> para enlazar notas y bloques.</div>',
@@ -592,9 +609,9 @@
         bibDetalle: '<div class="vt-vacio">Guarda aquí cada herramienta que aprendes: para qué sirve (virus, actividad de personas, bots…), cómo se usa y lo que aprendiste.</div>'
     };
     function limpiarPantalla() {
-        S.codigo = []; S.notas = []; S.checks = []; S.herr = []; S.hall = []; S.hl.id = null; S.hl.item = null; S.bib.id = null; S.vars = {}; S.ars.id = S.not.id = S.chk.id = null; S.ars.item = S.not.item = null; S.cargado = false;
-        ['arsLista', 'notLista', 'chkLista', 'bibLista', 'hallLista', 'ioOut', 'vtGrafo', 'cdOut', 'hsOut', 'jwOut', 'dfOut', 'gnOut', 'vtRes'].forEach(function (i) { $('#' + i).innerHTML = ''; });
-        ['cdIn', 'hsIn', 'jwIn', 'dfIn', 'ioIn', 'capTxt', 'vtBuscar', 'arsFiltro', 'notFiltro', 'bibFiltro', 'hallFiltro', 'capHTitulo', 'capHAccion', 'capHResultado', 'capHDonde'].forEach(function (i) { $('#' + i).value = ''; });
+        S.codigo = []; S.notas = []; S.checks = []; S.herr = []; S.hall = []; S.hl.id = null; S.hl.item = null; S.tec = []; S.tc.id = null; S.tc.item = null; S.bib.id = null; S.vars = {}; S.ars.id = S.not.id = S.chk.id = null; S.ars.item = S.not.item = null; S.cargado = false;
+        ['arsLista', 'notLista', 'chkLista', 'bibLista', 'hallLista', 'tecLista', 'ioOut', 'vtGrafo', 'cdOut', 'hsOut', 'jwOut', 'dfOut', 'gnOut', 'vtRes'].forEach(function (i) { $('#' + i).innerHTML = ''; });
+        ['cdIn', 'hsIn', 'jwIn', 'dfIn', 'ioIn', 'capTxt', 'vtBuscar', 'arsFiltro', 'notFiltro', 'bibFiltro', 'hallFiltro', 'tecFiltro', 'capHTitulo', 'capHAccion', 'capHResultado', 'capHDonde'].forEach(function (i) { $('#' + i).value = ''; });
         $('#vtRes').hidden = true; $('#vtCap').hidden = true;
         Object.keys(VACIO).forEach(function (i) { $('#' + i).innerHTML = VACIO[i]; });
     }
@@ -631,8 +648,8 @@
     /* ---------- Carga ---------- */
     function cargar() {
         api('GET', 'inicio').then(function (j) {
-            S.codigo = j.codigo; S.notas = j.notas; S.checks = j.checklists; S.catalogo = j.catalogo; S.plantillas = j.plantillas; S.herr = j.herramientas || []; S.hall = j.hallazgos || []; S.cargado = true;
-            renderArsenal(); renderNotas(); renderChecks(); renderBiblio(); renderHall();
+            S.codigo = j.codigo; S.notas = j.notas; S.checks = j.checklists; S.catalogo = j.catalogo; S.plantillas = j.plantillas; S.herr = j.herramientas || []; S.hall = j.hallazgos || []; S.tec = j.tecnologias || []; S.cargado = true;
+            renderArsenal(); renderNotas(); renderChecks(); renderBiblio(); renderHall(); renderTec();
         }).catch(falla);
     }
     function mostrarTab(t) {
@@ -749,7 +766,9 @@
         var h = S.herr.find(function (x) { return x.nombre.trim().toLowerCase() === t; });
         if (h) return { tipo: 'herramienta', id: h.id };
         var k = S.hall.find(function (x) { return x.titulo.trim().toLowerCase() === t; });
-        return k ? { tipo: 'hallazgo', id: k.id } : null;
+        if (k) return { tipo: 'hallazgo', id: k.id };
+        var te = S.tec.find(function (x) { return x.nombre.trim().toLowerCase() === t; });
+        return te ? { tipo: 'tecnologia', id: te.id } : null;
     }
     function panelIoc(texto) {
         var r = T.extraerIoCs(texto), et = { ips: 'IPs', md5: 'MD5', sha1: 'SHA-1', sha256: 'SHA-256', dominios: 'Dominios', correos: 'Correos', urls: 'URLs', rutas: 'Rutas', cves: 'CVE' };
@@ -911,6 +930,61 @@
         }).catch(falla);
     }
 
+    /* ======================= TECNOLOGÍAS ======================= */
+    function origenBadge(o) { return '<span class="badge' + (o === 'Nuestra' ? ' vt-c-PUBLICABLE' : '') + '">' + esc(o) + '</span>'; }
+    function renderTec() {
+        $('#tecCat').innerHTML = ['Todas'].concat(CFG.cats_tec).map(function (c) { return '<span class="badge vt-chip' + (S.tc.cat === c ? ' on' : '') + '" data-tcat="' + esc(c) + '">' + esc(c) + '</span>'; }).join('');
+        var plats = []; S.tec.forEach(function (t) { t.plataformas.forEach(function (p) { if (plats.indexOf(p) < 0) plats.push(p); }); }); plats.sort();
+        if (S.tc.plat !== 'Todas' && plats.indexOf(S.tc.plat) < 0) S.tc.plat = 'Todas';
+        $('#tecPlat').innerHTML = ['Todas'].concat(plats).map(function (p) { return '<option value="' + esc(p) + '"' + (p === S.tc.plat ? ' selected' : '') + '>' + (p === 'Todas' ? 'Todas las plataformas' : esc(p)) + '</option>'; }).join('');
+        var f = $('#tecFiltro').value.toLowerCase();
+        var l = S.tec.filter(function (t) {
+            return (S.tc.cat === 'Todas' || t.categoria === S.tc.cat) && (S.tc.plat === 'Todas' || t.plataformas.indexOf(S.tc.plat) >= 0) &&
+                (!f || (t.nombre + ' ' + t.plataformas.join(' ') + ' ' + t.etiquetas.join(' ')).toLowerCase().indexOf(f) >= 0);
+        });
+        $('#tecLista').innerHTML = l.length ? l.map(function (t) {
+            return '<div class="vt-item' + (t.id === S.tc.id ? ' on' : '') + '" data-id="' + t.id + '"><b>' + esc(t.nombre) + '</b><small>' + esc(t.categoria) + ' · ' + esc(t.origen) + ' · ' + esc(t.estado) + (t.plataformas.length ? ' · ' + esc(t.plataformas.join(', ')) : '') + '</small></div>';
+        }).join('') : '<div class="vt-vacio">Sin tecnologías todavía.</div>';
+        $('#platSug').innerHTML = CFG.plat_sug.concat(plats.filter(function (p) { return CFG.plat_sug.indexOf(p) < 0; })).map(function (p) { return '<option value="' + esc(p) + '">'; }).join('');
+    }
+    function abrirTec(id) {
+        S.tc.id = id; renderTec(); mostrarTab('tec');
+        api('GET', 'tecnologia/' + id).then(function (j) { S.tc.item = j.item; S.tc.entrantes = j.entrantes; verTec(); if (window.matchMedia('(max-width:900px)').matches) { var d = $('#tecDetalle'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }).catch(falla);
+    }
+    function verTec() {
+        var t = S.tc.item, d = $('#tecDetalle');
+        if (t.ilegible) { d.innerHTML = '<div class="vt-vacio">No se pudo descifrar este registro (la clave de cifrado cambió).</div>'; return; }
+        var enlace = /^https?:\/\//i.test(t.enlace) ? '<a class="vt-wiki" href="' + esc(t.enlace) + '" target="_blank" rel="noopener noreferrer">' + esc(t.enlace) + '</a>' : '';
+        d.innerHTML = '<div class="vt-head"><div><h2>' + esc(t.nombre) + '</h2><div style="margin-top:6px;"><span class="badge">' + esc(t.categoria) + '</span> ' + origenBadge(t.origen) + ' <span class="badge">' + esc(t.estado) + '</span> ' + t.etiquetas.map(function (x) { return '<span class="badge">#' + esc(x) + '</span>'; }).join(' ') + '</div>' +
+            (t.plataformas.length ? '<div style="margin-top:8px; font-size:13px;">Plataformas: ' + t.plataformas.map(function (p) { return '<span class="badge vt-def">' + esc(p) + '</span>'; }).join(' ') + '</div>' : '') +
+            (enlace ? '<div style="margin-top:8px; font-size:13px;">' + enlace + '</div>' : '') + '<div style="margin-top:6px; font-size:12px; color:var(--text-muted);">Registrada por ' + esc(t.autor || '—') + '</div></div>' +
+            '<div class="vt-acc"><button class="btn btn-sm" data-a="editar" type="button">Editar</button><button class="btn btn-sm" data-a="borrar" type="button">Eliminar</button></div></div>' +
+            '<div class="vt-md">' + T.renderMarkdown(t.cuerpo, resolver) + (S.tc.entrantes && S.tc.entrantes.length ? '<h4 style="margin-top:24px;">Enlazada desde</h4><p>' + S.tc.entrantes.map(function (e) { return '<a href="#" class="vt-wiki" data-tipo="' + esc(e.tipo) + '" data-id="' + e.id + '">' + esc(e.titulo) + '</a>'; }).join(' · ') + '</p>' : '') + '</div>';
+    }
+    function formTec(t) {
+        var nueva = !t; t = t || { nombre: '', categoria: CFG.cats_tec[0], origen: CFG.origenes_tec[0], estado: 'En uso', plataformas: [], enlace: '', etiquetas: [], cuerpo: S.plantillas['Tecnología'] || '' };
+        $('#tecDetalle').innerHTML = '<div class="vt-head"><h2>' + (nueva ? 'Nueva tecnología' : 'Editar tecnología') + '</h2></div>' +
+            '<div class="grid-2"><label class="lbl">Nombre<input class="field" id="ftNombre" maxlength="200" value="' + esc(t.nombre) + '"></label>' +
+            '<label class="lbl">Tipo de cosa<select class="field" id="ftCat">' + opts(CFG.cats_tec, t.categoria) + '</select></label>' +
+            '<label class="lbl">Origen<select class="field" id="ftOrigen">' + opts(CFG.origenes_tec, t.origen) + '</select></label>' +
+            '<label class="lbl">Estado<select class="field" id="ftEstado">' + opts(CFG.estados_tec, t.estado) + '</select></label>' +
+            '<label class="lbl">Plataformas donde se conecta (opcional, separadas por coma)<input class="field" id="ftPlat" list="platSug" value="' + esc(t.plataformas.join(', ')) + '"></label>' +
+            '<label class="lbl">Enlace (opcional)<input class="field" id="ftEnlace" maxlength="400" placeholder="https://" value="' + esc(t.enlace) + '"></label>' +
+            '<label class="lbl">Etiquetas (separadas por coma)<input class="field" id="ftTags" value="' + esc(t.etiquetas.join(', ')) + '"></label></div>' +
+            '<div style="font-size:12px; color:var(--text-muted); margin:0 0 6px;">Cómo funciona (Markdown · usa [[Título]] para conectarla con notas, bloques, herramientas u otras tecnologías)</div>' +
+            '<div class="vt-ed" id="ftEd" style="height:380px;"></div>' +
+            '<div class="vt-acc"><button class="btn btn-primary" data-a="guardar" type="button">Guardar</button><button class="btn" data-a="cancelar" type="button">Cancelar</button></div>';
+        montarEditor($('#ftEd'), t.cuerpo); S.tc.editando = t; $('#ftNombre').focus();
+    }
+    function guardarTec() {
+        var t = S.tc.editando || {};
+        api('POST', 'tecnologia', { id: t.id || null, nombre: $('#ftNombre').value, categoria: $('#ftCat').value, origen: $('#ftOrigen').value, estado: $('#ftEstado').value, plataformas: $('#ftPlat').value, enlace: $('#ftEnlace').value, etiquetas: $('#ftTags').value, cuerpo: $('#ftEd textarea').value })
+            .then(function (j) {
+                var i = S.tec.findIndex(function (x) { return x.id === j.item.id; }); if (i >= 0) S.tec[i] = j.item; else S.tec.unshift(j.item);
+                toast('Tecnología guardada'); abrirTec(j.item.id);
+            }).catch(falla);
+    }
+
     /* ======================= MISIÓN ======================= */
     function renderChecks() {
         $('#chkMet').innerHTML = opts(CFG.metodologias);
@@ -966,8 +1040,8 @@
             var s = '<svg viewBox="0 0 ' + W + ' ' + H + '">' + j.aristas.map(function (e) { return '<line x1="' + pos[e.de][0] + '" y1="' + pos[e.de][1] + '" x2="' + pos[e.a][0] + '" y2="' + pos[e.a][1] + '" stroke="#555" stroke-width="1.2"/>'; }).join('') +
                 j.nodos.map(function (n) {
                     var p = pos[n.id], der = Math.cos(p[2]) >= 0, t = n.titulo.length > 24 ? n.titulo.slice(0, 23) + '…' : n.titulo, par = n.id.split(':');
-                    return '<g data-tipo="' + par[0] + '" data-id="' + par[1] + '"><circle cx="' + p[0] + '" cy="' + p[1] + '" r="7" fill="' + (n.tipo === 'nota' ? '#fff' : n.tipo === 'herramienta' ? '#7cc4ff' : n.tipo === 'hallazgo' ? '#3ddc84' : '#c8a96a') + '"/><text x="' + (p[0] + (der ? 12 : -12)) + '" y="' + (p[1] + 4) + '" text-anchor="' + (der ? 'start' : 'end') + '">' + esc(t) + '</text></g>';
-                }).join('') + '</svg><div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Blanco: notas · Dorado: bloques de código · Azul: biblioteca · Verde: hallazgos · Las líneas son enlaces [[wiki]].</div>';
+                    return '<g data-tipo="' + par[0] + '" data-id="' + par[1] + '"><circle cx="' + p[0] + '" cy="' + p[1] + '" r="7" fill="' + (n.tipo === 'nota' ? '#fff' : n.tipo === 'herramienta' ? '#7cc4ff' : n.tipo === 'hallazgo' ? '#3ddc84' : n.tipo === 'tecnologia' ? '#ff9ecf' : '#c8a96a') + '"/><text x="' + (p[0] + (der ? 12 : -12)) + '" y="' + (p[1] + 4) + '" text-anchor="' + (der ? 'start' : 'end') + '">' + esc(t) + '</text></g>';
+                }).join('') + '</svg><div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Blanco: notas · Dorado: bloques de código · Azul: biblioteca · Verde: hallazgos · Rosa: tecnologías · Las líneas son enlaces [[wiki]].</div>';
             g.innerHTML = s;
         }).catch(falla);
     }
@@ -979,7 +1053,7 @@
         clearTimeout(tb); if (q.length < 2) { r.hidden = true; return; }
         tb = setTimeout(function () {
             api('GET', 'buscar?q=' + encodeURIComponent(q)).then(function (j) {
-                r.innerHTML = j.resultados.length ? j.resultados.map(function (x) { return '<div data-tipo="' + x.tipo + '" data-id="' + x.id + '"><b>' + (x.tipo === 'codigo' ? '⌨ ' : x.tipo === 'herramienta' ? '🧰 ' : x.tipo === 'hallazgo' ? '💡 ' : '📝 ') + esc(x.titulo) + '</b> <span class="mono">' + esc(x.detalle) + '</span>' + (x.linea ? '<small>' + esc(x.linea) + '</small>' : '') + '</div>'; }).join('') : '<div>Sin resultados</div>';
+                r.innerHTML = j.resultados.length ? j.resultados.map(function (x) { return '<div data-tipo="' + x.tipo + '" data-id="' + x.id + '"><b>' + (x.tipo === 'codigo' ? '⌨ ' : x.tipo === 'herramienta' ? '🧰 ' : x.tipo === 'hallazgo' ? '💡 ' : x.tipo === 'tecnologia' ? '⚙ ' : '📝 ') + esc(x.titulo) + '</b> <span class="mono">' + esc(x.detalle) + '</span>' + (x.linea ? '<small>' + esc(x.linea) + '</small>' : '') + '</div>'; }).join('') : '<div>Sin resultados</div>';
                 r.hidden = false;
             }).catch(falla);
         }, 250);
@@ -1041,7 +1115,7 @@
     document.addEventListener('change', function (e) { if (e.target && e.target.id === 'pdfArchivo') $('#pdfOut').innerHTML = ''; });
 
     /* ======================= Eventos ======================= */
-    function abrirTipo(tipo, id) { if (tipo === 'codigo') abrirCodigo(+id); else if (tipo === 'herramienta') abrirHerr(+id); else if (tipo === 'hallazgo') abrirHall(+id); else abrirNota(+id); }
+    function abrirTipo(tipo, id) { if (tipo === 'codigo') abrirCodigo(+id); else if (tipo === 'herramienta') abrirHerr(+id); else if (tipo === 'hallazgo') abrirHall(+id); else if (tipo === 'tecnologia') abrirTec(+id); else abrirNota(+id); }
     document.addEventListener('click', function (e) {
         var el = e.target, x;
         if ((x = el.closest('[data-tab]')) && x.classList.contains('vt-tab')) return mostrarTab(x.getAttribute('data-tab'));
@@ -1061,10 +1135,12 @@
         if ((x = el.closest('#bibLista .vt-item'))) return abrirHerr(+x.getAttribute('data-id'));
         if ((x = el.closest('[data-htipo]'))) { S.hl.tipo = x.getAttribute('data-htipo'); return renderHall(); }
         if ((x = el.closest('#hallLista .vt-item'))) return abrirHall(+x.getAttribute('data-id'));
+        if ((x = el.closest('[data-tcat]'))) { S.tc.cat = x.getAttribute('data-tcat'); return renderTec(); }
+        if ((x = el.closest('#tecLista .vt-item'))) return abrirTec(+x.getAttribute('data-id'));
         if ((x = el.closest('[data-a]'))) return accion(x.getAttribute('data-a'), x);
     });
     function accion(a, b) {
-        var pa = b.closest('#arsDetalle') ? 'ars' : b.closest('#notDetalle') ? 'not' : b.closest('#chkDetalle') ? 'chk' : b.closest('#bibDetalle') ? 'bib' : b.closest('#hallDetalle') ? 'hall' : '';
+        var pa = b.closest('#arsDetalle') ? 'ars' : b.closest('#notDetalle') ? 'not' : b.closest('#chkDetalle') ? 'chk' : b.closest('#bibDetalle') ? 'bib' : b.closest('#hallDetalle') ? 'hall' : b.closest('#tecDetalle') ? 'tec' : '';
         if (pa === 'ars') {
             var c = S.ars.item;
             if (a === 'copiar') { var txt = T.rellenar(c.cuerpo, S.vars), faltan = T.placeholders(txt); copiarTexto(txt); if (faltan.length) toast('Copiado, pero faltan variables: ' + faltan.join(', '), 5000); }
@@ -1098,6 +1174,12 @@
             else if (a === 'si') votarHall(1);
             else if (a === 'no') votarHall(-1);
             else if (a === 'borrar') { if (confirm('¿Eliminar «' + k.titulo + '»?')) api('DELETE', 'hallazgo/' + k.id).then(function () { S.hall = S.hall.filter(function (x) { return x.id !== k.id; }); S.hl.id = null; S.hl.item = null; renderHall(); $('#hallDetalle').innerHTML = '<div class="vt-vacio">Eliminado.</div>'; }).catch(falla); }
+        } else if (pa === 'tec') {
+            var te = S.tc.item;
+            if (a === 'editar') formTec(te);
+            else if (a === 'cancelar') { if (S.tc.id && S.tc.item) verTec(); else $('#tecDetalle').innerHTML = VACIO.tecDetalle; }
+            else if (a === 'guardar') guardarTec();
+            else if (a === 'borrar') { if (confirm('¿Eliminar «' + te.nombre + '»?')) api('DELETE', 'tecnologia/' + te.id).then(function () { S.tec = S.tec.filter(function (x) { return x.id !== te.id; }); S.tc.id = null; S.tc.item = null; renderTec(); $('#tecDetalle').innerHTML = '<div class="vt-vacio">Eliminada.</div>'; }).catch(falla); }
         } else if (pa === 'chk' && a === 'chkborrar') {
             if (confirm('¿Eliminar esta checklist?')) api('DELETE', 'checklist/' + S.chk.id).then(function () { S.checks = S.checks.filter(function (x) { return x.id !== S.chk.id; }); S.chk.id = null; renderChecks(); $('#chkDetalle').innerHTML = '<div class="vt-vacio">Eliminada.</div>'; }).catch(falla);
         }
@@ -1124,6 +1206,9 @@
     $('#hallFiltro').addEventListener('input', renderHall);
     $('#hallAutor').addEventListener('change', function () { S.hl.autor = this.value; renderHall(); });
     $('#capModo').addEventListener('change', modoCaptura);
+    $('#tecNueva').addEventListener('click', function () { formTec(null); });
+    $('#tecFiltro').addEventListener('input', renderTec);
+    $('#tecPlat').addEventListener('change', function () { S.tc.plat = this.value; renderTec(); });
     $('#chkCrear').addEventListener('click', function () {
         api('POST', 'checklist', { objetivo: $('#chkObjetivo').value, metodologia: $('#chkMet').value }).then(function (j) { S.checks.unshift(j.item); S.chk.id = j.item.id; $('#chkObjetivo').value = ''; renderChecks(); }).catch(falla);
     });
@@ -1140,6 +1225,7 @@
         else if (e.key === 'Escape') { $('#vtCap').hidden = true; $('#vtRes').hidden = true; }
         else if (e.key === 'Enter' && e.ctrlKey && !$('#vtCap').hidden) guardarCaptura();
         else if (e.key === 'Enter' && e.ctrlKey && $('#fhlTitulo') && !$('[data-panel="hall"]').hidden) guardarHall();
+        else if (e.key === 'Enter' && e.ctrlKey && $('#ftNombre') && !$('[data-panel="tec"]').hidden) guardarTec();
     });
     payloads();
     if (CFG.desbloqueada) { $('#vtApp').hidden = false; cargar(); } else { bloquear(undefined, true); }
