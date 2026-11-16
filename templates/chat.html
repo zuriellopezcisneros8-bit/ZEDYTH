@@ -1,0 +1,321 @@
+{# templates/chat.html #}
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .chat-app {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        height: calc(100vh - 140px);
+        height: calc(100dvh - 140px);
+        min-height: 420px;
+        background: #000;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+    .chat-side {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        padding: 14px;
+        overflow-y: auto;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .chat-side h2 {
+        margin: 14px 0 6px;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: var(--text-muted, #9a9a9a);
+    }
+    .chat-side h2:first-child { margin-top: 0; }
+    .chat-sala {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        width: 100%;
+        padding: 10px 12px;
+        font: inherit;
+        font-size: 14px;
+        text-align: left;
+        color: #fff;
+        background: none;
+        border: 0;
+        border-radius: 10px;
+        cursor: pointer;
+    }
+    .chat-sala small { font-size: 12px; color: var(--text-muted, #9a9a9a); }
+    .chat-sala:hover { background: rgba(255, 255, 255, 0.06); }
+    .chat-sala.on { background: rgba(255, 255, 255, 0.1); }
+    .chat-sala:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.6); outline-offset: 1px; }
+
+    .chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .chat-top {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 14px 18px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        font-weight: 500;
+    }
+    .chat-top small { font-weight: 400; font-size: 12px; color: var(--text-muted, #9a9a9a); }
+
+    #chatMsgs {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+        padding: 18px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .chat-vacio { margin: auto; text-align: center; font-size: 14px; color: var(--text-muted, #9a9a9a); }
+    .chat-dia {
+        align-self: center;
+        padding: 2px 12px;
+        font-size: 11px;
+        color: var(--text-muted, #9a9a9a);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+    }
+    .chat-m {
+        align-self: flex-start;
+        max-width: min(75%, 560px);
+        padding: 9px 13px;
+        background: #161616;
+        border-radius: 14px 14px 14px 4px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        line-height: 1.4;
+    }
+    .chat-m.yo {
+        align-self: flex-end;
+        color: #000;
+        background: #fff;
+        border-radius: 14px 14px 4px 14px;
+    }
+    .chat-m b { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 500; opacity: .65; }
+    .chat-m time { display: block; margin-top: 3px; font-size: 11px; text-align: right; opacity: .5; }
+
+    #chatErr { min-height: 18px; padding: 0 18px 6px; font-size: 13px; color: #ff6b6b; }
+    .chat-form {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 12px 18px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .chat-form textarea {
+        flex: 1;
+        min-width: 0;
+        height: 44px;
+        max-height: 140px;
+        padding: 11px 12px;
+        box-sizing: border-box;
+        font: inherit;
+        font-size: 14px;
+        color: #fff;
+        background: #0d0d0d;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        resize: none;
+    }
+    .chat-form textarea:focus { outline: none; border-color: rgba(255, 255, 255, 0.45); }
+    .chat-form button {
+        height: 44px;
+        padding: 0 20px;
+        font: inherit;
+        font-weight: 500;
+        color: #000;
+        background: #fff;
+        border: 0;
+        border-radius: 12px;
+        cursor: pointer;
+    }
+    .chat-form button:disabled { opacity: .5; cursor: default; }
+
+    @media (max-width: 760px) {
+        .chat-app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: calc(100vh - 120px); height: calc(100dvh - 120px); }
+        .chat-side {
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
+            padding: 8px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border-right: 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .chat-side h2 { display: none; }
+        #chatContactos { display: flex; gap: 6px; }
+        .chat-sala { width: auto; flex: none; white-space: nowrap; }
+        .chat-m { max-width: 88%; }
+    }
+</style>
+
+<div class="chat-app">
+    <aside class="chat-side" aria-label="Conversaciones">
+        <h2>Canales</h2>
+        <button type="button" class="chat-sala on" data-sala="general" data-nombre="General">General<small>Todo el equipo</small></button>
+        <h2>Mensajes directos</h2>
+        <div id="chatContactos"></div>
+    </aside>
+
+    <section class="chat-main">
+        <div class="chat-top">
+            <span id="chatTitulo">General</span>
+            <small><i class="ph ph-lock-simple"></i> Cifrado AES-256-GCM</small>
+        </div>
+        <div id="chatMsgs" aria-live="polite"></div>
+        <div id="chatErr" role="alert"></div>
+        <form class="chat-form" id="chatForm" autocomplete="off">
+            <textarea id="chatTexto" maxlength="2000" rows="1" placeholder="Escribe un mensaje (Enter envía, Shift+Enter salto de línea)" aria-label="Mensaje" required></textarea>
+            <button type="submit" id="chatEnviar">Enviar</button>
+        </form>
+    </section>
+</div>
+
+<script>
+    (function () {
+        var sala = 'general', ultimo = 0, ultimoDia = '', cargando = false;
+        var $ = function (id) { return document.getElementById(id); };
+        var cont = $('chatMsgs'), txt = $('chatTexto'), btnEnviar = $('chatEnviar');
+
+        function fecha(s) { return new Date(s + 'Z'); }
+        function hora(d) { return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }); }
+        function dia(d) { return d.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }); }
+
+        function vacio() {
+            if (cont.children.length) return;
+            var v = document.createElement('div');
+            v.className = 'chat-vacio';
+            v.id = 'chatVacio';
+            v.textContent = 'Aún no hay mensajes. Escribe el primero.';
+            cont.appendChild(v);
+        }
+
+        function pintar(m) {
+            var ph = $('chatVacio');
+            if (ph) ph.remove();
+            var d = fecha(m.creado), k = d.toDateString();
+            if (k !== ultimoDia) {
+                ultimoDia = k;
+                var sep = document.createElement('div');
+                sep.className = 'chat-dia';
+                sep.textContent = dia(d);
+                cont.appendChild(sep);
+            }
+            var el = document.createElement('div');
+            el.className = 'chat-m' + (m.yo ? ' yo' : '');
+            if (!m.yo) {
+                var b = document.createElement('b');
+                b.textContent = m.nombre;
+                el.appendChild(b);
+            }
+            el.appendChild(document.createTextNode(m.texto));
+            var t = document.createElement('time');
+            t.textContent = hora(d);
+            el.appendChild(t);
+            cont.appendChild(el);
+        }
+
+        async function cargar(reset) {
+            if (cargando) return;
+            cargando = true;
+            if (reset) { cont.innerHTML = ''; ultimo = 0; ultimoDia = ''; }
+            var miSala = sala;
+            try {
+                var r = await fetch('/api/chat/mensajes?sala=' + encodeURIComponent(miSala) + '&desde=' + ultimo, { credentials: 'same-origin' });
+                if (!r.ok || miSala !== sala) return;
+                var j = await r.json();
+                var abajo = cont.scrollHeight - cont.scrollTop - cont.clientHeight < 80;
+                j.mensajes.forEach(function (m) { pintar(m); ultimo = m.id; });
+                if (reset) vacio();
+                if (j.mensajes.length && (abajo || reset)) cont.scrollTop = cont.scrollHeight;
+            } catch (e) {
+            } finally {
+                cargando = false;
+            }
+        }
+
+        function elegir(btn) {
+            sala = btn.getAttribute('data-sala');
+            $('chatTitulo').textContent = btn.getAttribute('data-nombre');
+            document.querySelectorAll('.chat-sala').forEach(function (b) { b.classList.remove('on'); });
+            btn.classList.add('on');
+            $('chatErr').textContent = '';
+            cargando = false;
+            cargar(true);
+            txt.focus();
+        }
+
+        document.querySelector('.chat-sala[data-sala="general"]').addEventListener('click', function () { elegir(this); });
+
+        fetch('/api/chat/contactos', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                j.contactos.forEach(function (c) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'chat-sala';
+                    b.setAttribute('data-sala', c.sala);
+                    b.setAttribute('data-nombre', c.nombre);
+                    b.appendChild(document.createTextNode(c.nombre));
+                    if (c.cargo) {
+                        var s = document.createElement('small');
+                        s.textContent = c.cargo;
+                        b.appendChild(s);
+                    }
+                    b.addEventListener('click', function () { elegir(b); });
+                    $('chatContactos').appendChild(b);
+                });
+            })
+            .catch(function () {});
+
+        async function enviar() {
+            var t = txt.value.trim();
+            if (!t) return;
+            $('chatErr').textContent = '';
+            btnEnviar.disabled = true;
+            try {
+                var r = await fetch('/api/chat/enviar', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sala: sala, texto: t })
+                });
+                if (r.ok) {
+                    txt.value = '';
+                    txt.style.height = '44px';
+                    await cargar(false);
+                    cont.scrollTop = cont.scrollHeight;
+                } else {
+                    var j = {};
+                    try { j = await r.json(); } catch (e) {}
+                    $('chatErr').textContent = j.error || 'No se pudo enviar.';
+                }
+            } catch (e) {
+                $('chatErr').textContent = 'Sin conexión. Inténtalo de nuevo.';
+            } finally {
+                btnEnviar.disabled = false;
+            }
+        }
+
+        $('chatForm').addEventListener('submit', function (e) { e.preventDefault(); enviar(); });
+        txt.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); }
+        });
+        txt.addEventListener('input', function () {
+            txt.style.height = '44px';
+            txt.style.height = Math.min(txt.scrollHeight, 140) + 'px';
+        });
+
+        cargar(true);
+        setInterval(function () { if (!document.hidden) cargar(false); }, 3000);
+    })();
+</script>
+{% endblock %}

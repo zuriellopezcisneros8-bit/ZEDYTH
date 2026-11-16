@@ -844,6 +844,65 @@ def cliente_interno():
     return c
 
 
+# --- CHAT INTERNO (personal ZEDYTH) ------------------------------------------------------------
+# Cada mensaje se guarda cifrado con AES-256-GCM (nonce único por mensaje; sala y remitente van como datos
+# autenticados: si alguien mueve o altera una fila en la base, el mensaje deja de descifrar).
+# Llave: CHAT_KEY (32 bytes en base64 urlsafe). Sin ella se deriva de SECRET_KEY (que en Render ya es fija).
+class ChatMensaje(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sala = db.Column(db.String(40), nullable=False, index=True)     # "general" o "dm:<idMenor>:<idMayor>"
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+    nonce = db.Column(db.String(24), nullable=False)
+    cifrado = db.Column(db.Text, nullable=False)                    # base64 del texto cifrado + etiqueta GCM
+    creado = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    usuario = db.relationship('Usuario')
+
+
+CHAT_MAX_CHARS = 2000
+CHAT_RETENCION_DIAS = int(os.environ.get("CHAT_RETENCION_DIAS", "90"))     # 0 = no borrar nunca
+CHAT_MAX_POR_MIN = int(os.environ.get("CHAT_MAX_POR_MIN", "30"))
+
+
+def _chat_llave():
+    k = (os.environ.get("CHAT_KEY") or "").strip()
+    if k:
+        try:
+            raw = base64.urlsafe_b64decode(k + "=" * (-len(k) % 4))
+            if len(raw) == 32:
+                return raw
+        except Exception:
+            pass
+        raise RuntimeError("CHAT_KEY debe ser 32 bytes en base64 urlsafe (python -c \"import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())\").")
+    return hashlib.sha256(("chat:" + app.config['SECRET_KEY']).encode()).digest()
+
+
+def _chat_cifrar(texto, sala, uid):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    nonce = secrets.token_bytes(12)
+    ct = AESGCM(_chat_llave()).encrypt(nonce, texto.encode(), f"{sala}|{uid}".encode())
+    return base64.b64encode(nonce).decode(), base64.b64encode(ct).decode()
+
+
+def _chat_descifrar(m):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    try:
+        pt = AESGCM(_chat_llave()).decrypt(base64.b64decode(m.nonce), base64.b64decode(m.cifrado), f"{m.sala}|{m.usuario_id}".encode())
+        return pt.decode()
+    except Exception:
+        return "[mensaje ilegible: llave distinta o dato alterado]"
+
+
+def _chat_sala_valida(sala):
+    """General: todos. Directo: solo sus dos participantes."""
+    if sala == "general":
+        return True
+    m = re.fullmatch(r"dm:(\d+):(\d+)", sala or "")
+    if not m:
+        return False
+    a, b = int(m.group(1)), int(m.group(2))
+    return a < b and current_user.id in (a, b) and Usuario.query.filter(Usuario.id.in_([a, b]), Usuario.activo.is_(True)).count() == 2
+
+
 # Respaldos del panel (modelo + rutas). Va ANTES de la inicialización porque aplicar_fichas lo usa.
 respaldos.iniciar(app, db, registrar, lambda *a, **k: crear_notificacion(*a, **k))
 
@@ -3283,6 +3342,52 @@ def iniciar_vigilante():
 if int(os.environ.get("WEB_CONCURRENCY", "1") or 1) > 1:
     app.logger.warning("WEB_CONCURRENCY>1: el monitor HTTP guarda su estado en memoria por worker. "
                        "Usa 'gunicorn app:app --workers 1 --threads 4' para que el panel muestre datos coherentes.")
+
+
+# --- CHAT INTERNO: rutas -----------------------------------------------------------------------
+@app.route('/chat')
+def chat():
+    return render_template('chat.html')
+
+
+@app.route('/api/chat/contactos')
+def chat_contactos():
+    otros = Usuario.query.filter(Usuario.activo.is_(True), Usuario.id != current_user.id).order_by(Usuario.nombre).all()
+    return {"contactos": [{"nombre": u.nombre or u.username, "cargo": cargo_de(u),
+                           "sala": f"dm:{min(u.id, current_user.id)}:{max(u.id, current_user.id)}"} for u in otros]}
+
+
+@app.route('/api/chat/mensajes')
+def chat_mensajes():
+    sala = request.args.get('sala', 'general')
+    if not _chat_sala_valida(sala):
+        abort(403)
+    desde = request.args.get('desde', 0, type=int) or 0
+    q = ChatMensaje.query.filter(ChatMensaje.sala == sala, ChatMensaje.id > desde)
+    filas = q.order_by(ChatMensaje.id.desc()).limit(100).all() if desde == 0 else q.order_by(ChatMensaje.id).limit(200).all()
+    filas.sort(key=lambda m: m.id)
+    return {"mensajes": [{"id": m.id, "yo": m.usuario_id == current_user.id, "nombre": m.usuario.nombre or m.usuario.username,
+                          "texto": _chat_descifrar(m), "creado": m.creado.strftime("%Y-%m-%dT%H:%M:%S")} for m in filas]}
+
+
+@app.route('/api/chat/enviar', methods=['POST'])
+def chat_enviar():
+    d = request.get_json(silent=True) or {}
+    sala, texto = str(d.get('sala') or ''), str(d.get('texto') or '').strip()
+    if not _chat_sala_valida(sala):
+        abort(403)
+    if not texto:
+        return {"ok": False, "error": "Mensaje vacío."}, 400
+    if len(texto) > CHAT_MAX_CHARS:
+        return {"ok": False, "error": f"Máximo {CHAT_MAX_CHARS} caracteres."}, 400
+    if not limitar(f"chat:{current_user.id}", CHAT_MAX_POR_MIN, 60):
+        return {"ok": False, "error": "Vas muy rápido. Espera un momento."}, 429
+    nonce, cifrado = _chat_cifrar(texto, sala, current_user.id)
+    db.session.add(ChatMensaje(sala=sala, usuario_id=current_user.id, nonce=nonce, cifrado=cifrado))
+    if CHAT_RETENCION_DIAS > 0 and limitar("chat:purga", 1, 86400):      # una limpieza al día
+        ChatMensaje.query.filter(ChatMensaje.creado < datetime.utcnow() - timedelta(days=CHAT_RETENCION_DIAS)).delete()
+    db.session.commit()
+    return {"ok": True}
 
 
 # --- AUDITORÍA (solo admin): consulta con filtros y exportación ------------------------------
