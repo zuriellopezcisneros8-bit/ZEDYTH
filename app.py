@@ -1969,7 +1969,7 @@ def alertas_plataforma(p):
         if k.proxima_fecha_pago and k.proxima_fecha_pago <= _limite():
             d = (k.proxima_fecha_pago - hoy).days
             lista.append({"tipo": "Pago", "detalle": f"{k.proveedor}{' · ' + k.concepto if k.concepto else ''} · {dinero(k.monto_periodo or k.monto_mensual)}",
-                          "fecha": k.proxima_fecha_pago, "dias": d, "grave": d <= 3, "tab": "finanzas"})
+                          "fecha": k.proxima_fecha_pago, "dias": d, "grave": d <= 3, "tab": "finanzas", "costo_id": k.id})
     for i in p.incidentes:
         if i.estado == "Abierto":
             lista.append({"tipo": "Incidente", "detalle": f"{i.gravedad}: {i.titulo}", "fecha": i.fecha, "dias": -9000,

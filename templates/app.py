@@ -1,0 +1,3589 @@
+import os
+import json
+import base64
+import secrets
+import shutil
+import calendar
+import re
+import threading
+import time
+import hmac
+import hashlib
+import struct
+import csv
+import io
+import tempfile
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from datetime import date, datetime, timedelta
+from urllib.parse import quote
+from flask import Flask, render_template, request, redirect, url_for, Response, session, abort, has_request_context, g
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event, inspect as sa_inspect
+from sqlalchemy.exc import IntegrityError
+from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+import zedith
+import ajustes
+import notificar
+import monitor
+import llaves
+import servicios
+import operaciones
+import respaldos
+
+app = Flask(__name__)
+EN_RENDER = bool(os.environ.get("RENDER"))   # Render define esta variable en sus servidores
+
+
+def _clave_secreta():
+    """La clave de las sesiones viene de la variable SECRET_KEY (Render). En local, si falta, se genera una al azar."""
+    clave = (os.environ.get("SECRET_KEY") or "").strip()
+    if EN_RENDER and len(clave) < 32:
+        raise RuntimeError("Falta SECRET_KEY en Render (variable de entorno de al menos 32 caracteres).")
+    return clave or secrets.token_hex(32)
+
+
+app.config['SECRET_KEY'] = _clave_secreta()
+# Con SECRET_KEY fija las llaves guardadas desde la pantalla (Conexiones) se pueden volver a leer tras reiniciar.
+app.config['SECRET_KEY_FIJA'] = bool((os.environ.get("SECRET_KEY") or "").strip())
+
+# Cookies de sesión: solo por HTTPS en producción, no legibles por JavaScript y no enviadas desde otros sitios.
+_COOKIES_SEGURAS = EN_RENDER or os.environ.get("COOKIES_SEGURAS") == "1"
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=_COOKIES_SEGURAS,
+    REMEMBER_COOKIE_HTTPONLY=True, REMEMBER_COOKIE_SAMESITE="Lax", REMEMBER_COOKIE_SECURE=_COOKIES_SEGURAS,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    WTF_CSRF_TIME_LIMIT=None,            # el token vale mientras dure la sesión
+)
+
+# IP real del visitante: solo se confía en los saltos de proxy que tú declaras (PROXY_SALTOS).
+# Render solo = 1. Con Cloudflare delante de Render = 2. En local = 0 (no se confía en ninguna cabecera).
+_SALTOS_PROXY = int(os.environ.get("PROXY_SALTOS", "1" if EN_RENDER else "0"))
+if _SALTOS_PROXY > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_SALTOS_PROXY, x_proto=_SALTOS_PROXY)
+
+
+def _url_base_de_datos():
+    """Lee DATABASE_URL (Neon, definida como variable de entorno en Render). Sin ella usa SQLite local."""
+    url = (os.environ.get("DATABASE_URL") or "").strip()
+    if not url:
+        return "sqlite:///zedyth.db"
+    if url.startswith("postgres://"):                     # SQLAlchemy exige "postgresql://"
+        url = "postgresql://" + url[len("postgres://"):]
+    if not url.startswith(("postgresql://", "postgresql+", "sqlite:")):
+        esquema = url.split(":", 1)[0] if ":" in url else "(sin esquema)"
+        raise RuntimeError(f"DATABASE_URL debe ser la cadena de conexión de Neon y empezar con postgresql:// "
+                           f"(la actual empieza con «{esquema}»). Cópiala de Neon: Connect > Connection string.")
+    if url.startswith("postgresql://"):                   # driver explícito: psycopg 3 (el que instala requirements.txt)
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    if "neon.tech" in url and "sslmode=" not in url:       # Neon solo acepta conexiones cifradas
+        url += ("&" if "?" in url else "?") + "sslmode=require"
+    return url
+
+
+app.config['SQLALCHEMY_DATABASE_URI'] = _url_base_de_datos()
+if not app.config['SQLALCHEMY_DATABASE_URI'].startswith("sqlite"):
+    # Neon suspende el cómputo cuando no hay uso y cierra las conexiones inactivas: se verifican antes de usarlas.
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True, "pool_recycle": 280}
+    print("Base de datos: PostgreSQL (DATABASE_URL)", flush=True)
+else:
+    print("Base de datos: SQLite local", flush=True)
+    if EN_RENDER:
+        print("AVISO: en Render sin DATABASE_URL se usa SQLite y los datos se pierden en cada despliegue.", flush=True)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+ajustes.iniciar(app, db)          # llaves y configuración editables desde /conexiones (cifradas en la base)
+csrf = CSRFProtect(app)
+
+# Configuración de Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.session_protection = 'strong'
+
+# Dinero: NUMERIC(14,2) en la base (exacto). En Python sigue llegando como float para no romper el resto del código,
+# pero TODA entrada de usuario pasa por leer_monto(), que valida y redondea con Decimal.
+Dinero = db.Numeric(14, 2, asdecimal=False)
+MONTO_MAX = Decimal("999999999999.99")      # tope de NUMERIC(14,2)
+COBRO_VENTANA_S = int(os.environ.get("COBRO_VENTANA_S", "30"))   # un mismo cobro no se repite dentro de esta ventana
+
+
+# --- MODELOS ---------------------------------------------------------------
+class Usuario(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    nombre = db.Column(db.String(100), nullable=False)
+    rol = db.Column(db.String(20), default="admin")       # admin | operador | lectura
+    activo = db.Column(db.Boolean, default=True)
+    totp_secret = db.Column(db.String(200))               # secreto TOTP cifrado
+    totp_activo = db.Column(db.Boolean, default=False)
+    totp_ultimo = db.Column(db.Integer)                   # último periodo usado (evita reutilizar un código)
+    cargo = db.Column(db.String(80))                      # título que se muestra al entrar: "Chief Executive Officer", "Operador"...
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+
+class Plan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(60), unique=True, nullable=False)
+    precio = db.Column(Dinero, nullable=True)          # None = por definir
+    a_medida = db.Column(db.Boolean, default=False)
+    descripcion = db.Column(db.String(120))
+    incluye = db.Column(db.Text, default="")           # elementos separados por |
+    destacado = db.Column(db.Boolean, default=False)
+    categoria = db.Column(db.String(20), default="tamano")   # tamano | ciber
+    bd_incluida = db.Column(db.String(60))                    # base de datos PostgreSQL (datos de negocio), ej. "5 GB"
+    img_incluida = db.Column(db.String(60))                   # imágenes y archivos (almacenamiento de objetos, ej. R2), ej. "10 GB"
+    nivel = db.Column(db.String(30))                          # etiqueta comercial: Entrada, Profesional, Negocio...
+    cpu = db.Column(db.String(30))                            # CPU de la instancia de aplicación, ej. "0.5 vCPU"
+    ram = db.Column(db.String(30))                            # RAM de la instancia de aplicación, ej. "1 GB"
+    transferencia = db.Column(db.String(40))                  # cuota comercial de transferencia mensual, ej. "25 GB/mes"
+    respaldos = db.Column(db.String(40))                      # retención de respaldos diarios, ej. "7 días"
+    ficha_version = db.Column(db.Integer, default=0)          # versión de la ficha técnica aplicada (ver FICHAS)
+    precio_anual = db.Column(Dinero, nullable=True)           # None = mensual x ANUAL_MESES_PAGADOS
+    activo = db.Column(db.Boolean, default=True)              # False = plan retirado (se conserva por clientes ya suscritos)
+    orden = db.Column(db.Integer, default=0)
+    semilla = db.Column(db.String(40))                        # clave del plan inicial; no cambia aunque lo renombres
+
+
+class Cliente(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre_comercial = db.Column(db.String(200), nullable=False)
+    razon_social = db.Column(db.String(200))
+    rfc = db.Column(db.String(20))
+    direccion_fiscal = db.Column(db.String(300))
+    contacto = db.Column(db.String(100), nullable=False)   # correo principal
+    contacto_nombre = db.Column(db.String(120))
+    telefono = db.Column(db.String(30))
+    membresia_actual = db.Column(db.String(60), default="Ninguna")
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+
+    proyectos = db.relationship('Proyecto', backref='cliente', lazy=True)
+    suscripcion = db.relationship('Suscripcion', backref='cliente', uselist=False)
+    pagos = db.relationship('Pago', backref='cliente', lazy=True)
+
+
+class Proyecto(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
+    nombre = db.Column(db.String(150), nullable=False)
+    estado = db.Column(db.String(20), default="Desarrollo")  # Desarrollo, Activo, Mantenido, Suspendido
+    estado_previo = db.Column(db.String(20))                  # estado antes de una suspensión automática por falta de pago
+    repo_url = db.Column(db.String(300))
+    rama_produccion = db.Column(db.String(60), default="main")
+    carpeta_local = db.Column(db.String(300))   # ruta de la carpeta del proyecto en tu equipo
+    boveda_ref = db.Column(db.String(300))      # referencia a tu gestor de contraseñas (NO guardar llaves aquí)
+    stack = db.Column(db.String(200))
+    dominio_registrador = db.Column(db.String(200))
+    frontend_plataforma = db.Column(db.String(100))
+    backend_plataforma = db.Column(db.String(100))
+    bd_storage = db.Column(db.String(200))
+    neon_proyecto = db.Column(db.String(150))      # nombre del proyecto en Neon (tal como aparece en Almacenamiento)
+    r2_buckets = db.Column(db.String(300))         # buckets de R2 de este proyecto, separados por coma
+    cloudinary_prefijo = db.Column(db.String(150)) # carpeta/prefijo de Cloudinary de este proyecto
+    ia_cuentas = db.Column(db.String(300))   # solo nombre de cuenta/ubicación; no guardar llaves en claro
+    tipo = db.Column(db.String(20), default="A medida")      # A medida | Plataforma propia
+    url_produccion = db.Column(db.String(300))
+    version = db.Column(db.String(30))
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+
+    costos = db.relationship('CostoServicio', backref='proyecto', lazy=True)
+    subdominios = db.relationship('Subdominio', backref='proyecto', cascade='all, delete-orphan', lazy=True)
+
+
+class Suscripcion(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), unique=True, nullable=False)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False)
+    tarifa = db.Column(Dinero, default=0)               # lo que se le cobra al cliente
+    fecha_corte = db.Column(db.Date)
+    proxima_fecha_pago = db.Column(db.Date)
+    estado_cobro = db.Column(db.String(20), default="Al corriente")  # Al corriente, Pendiente (en gracia), Atrasado, Suspendido
+    periodicidad = db.Column(db.String(12), default="Mensual")      # Mensual, Trimestral, Anual
+    descuento_pct = db.Column(db.Float, default=0)                  # descuento por pagar por periodo largo
+
+    @property
+    def meses(self):
+        return MESES.get(self.periodicidad, 1)
+
+    @property
+    def monto_periodo(self):
+        """Lo que se cobra en cada periodo (tarifa mensual x meses, menos descuento)."""
+        return round((self.tarifa or 0) * self.meses * (1 - (self.descuento_pct or 0) / 100), 2)
+
+    plan = db.relationship('Plan')
+
+
+class Pago(db.Model):
+    """Dinero que el cliente le paga a ZEDYTH."""
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
+    monto = db.Column(Dinero, nullable=False)
+    fecha = db.Column(db.Date, default=date.today)
+    concepto = db.Column(db.String(200))
+    metodo = db.Column(db.String(50))
+    estado = db.Column(db.String(20), default="Pagado")
+    creado = db.Column(db.DateTime, default=datetime.utcnow)   # anti-doble envío
+    anulado = db.Column(db.Boolean, default=False)             # el original ya tiene su contra-asiento
+    anula_id = db.Column(db.Integer)                           # si es contra-asiento: id del pago que anula
+    motivo = db.Column(db.String(120))
+
+    @property
+    def anulacion(self):                                       # lo que leen las plantillas: "¿ya fue anulado?"
+        return bool(self.anulado)
+
+
+class CostoServicio(db.Model):
+    """Dinero que ZEDYTH le paga a proveedores por los servicios de un proyecto."""
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    proveedor = db.Column(db.String(100), nullable=False)   # Vercel, Render, Cloudinary...
+    concepto = db.Column(db.String(200))
+    monto_mensual = db.Column(Dinero, default=0)           # equivalente mensual (para calcular ganancia)
+    periodicidad = db.Column(db.String(12), default="Mensual")
+    monto_periodo = db.Column(Dinero)                      # lo que realmente pagas en cada periodo
+    ultimo_pago = db.Column(db.Date)
+    proxima_fecha_pago = db.Column(db.Date)
+
+
+class Auditoria(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    usuario = db.Column(db.String(80), default="sistema")   # Ahora guarda al usuario activo
+    accion = db.Column(db.String(50), nullable=False)
+    entidad = db.Column(db.String(50))
+    entidad_id = db.Column(db.Integer)
+    detalle = db.Column(db.String(300))
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    ip = db.Column(db.String(64))
+
+
+class ContadorLimite(db.Model):
+    """Contadores de límites compartidos entre todos los workers y que sobreviven a los despliegues."""
+    clave = db.Column(db.String(200), primary_key=True)
+    inicio = db.Column(db.DateTime, nullable=False)
+    n = db.Column(db.Integer, nullable=False, default=0)
+
+
+class Vencimiento(db.Model):
+    """Dominios, certificados SSL, hosting y otros servicios que caducan."""
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    tipo = db.Column(db.String(20), default="Dominio")      # Dominio, SSL, Hosting, Otro
+    nombre = db.Column(db.String(200), nullable=False)
+    fecha = db.Column(db.Date, nullable=False)
+    notas = db.Column(db.String(300))
+    proyecto = db.relationship('Proyecto', backref='vencimientos')
+
+
+class Respaldo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    fecha = db.Column(db.Date, default=date.today)
+    tipo = db.Column(db.String(30), default="Base de datos")  # Base de datos, Código, Archivos
+    ubicacion = db.Column(db.String(300))
+    resultado = db.Column(db.String(20), default="Correcto")  # Correcto, Falló
+    proyecto = db.relationship('Proyecto', backref='respaldos')
+
+
+class Incidente(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    fecha = db.Column(db.Date, default=date.today)
+    titulo = db.Column(db.String(200), nullable=False)
+    gravedad = db.Column(db.String(10), default="Media")    # Baja, Media, Alta, Crítica
+    descripcion = db.Column(db.Text)
+    resolucion = db.Column(db.Text)
+    estado = db.Column(db.String(12), default="Abierto")    # Abierto, Resuelto
+    proyecto = db.relationship('Proyecto', backref='incidentes')
+
+
+class ChecklistSeg(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    clave = db.Column(db.String(30), nullable=False)
+    cumplido = db.Column(db.Boolean, default=False)
+    revisado = db.Column(db.Date)
+    __table_args__ = (db.UniqueConstraint('proyecto_id', 'clave'),)
+    proyecto = db.relationship('Proyecto', backref='checks')
+
+
+class Lead(db.Model):
+    """Pedido o prospecto capturado por Zedith (la IA de la web pública)."""
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    contacto = db.Column(db.String(150), nullable=False)
+    negocio = db.Column(db.String(200))
+    sistema = db.Column(db.String(200))
+    funciones = db.Column(db.Text)
+    presupuesto = db.Column(db.String(100))
+    plazo = db.Column(db.String(100))
+    resumen = db.Column(db.Text)
+    estado = db.Column(db.String(20), default="Nuevo")     # Nuevo, Contactado, Cerrado, Descartado
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PushDispositivo(db.Model):
+    """Celular o navegador que activó las alertas push."""
+    id = db.Column(db.Integer, primary_key=True)
+    endpoint = db.Column(db.Text, nullable=False, unique=True)
+    p256dh = db.Column(db.String(200), nullable=False)
+    auth = db.Column(db.String(100), nullable=False)
+    usuario = db.Column(db.String(80))
+    agente = db.Column(db.String(300))
+    activo = db.Column(db.Boolean, default=True)
+    fallos = db.Column(db.Integer, default=0)        # fallos seguidos; al llegar a 10 se desactiva
+    ultimo_ok = db.Column(db.DateTime)
+    creado = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Notificacion(db.Model):
+    """Historial de avisos. 'entregada' = al menos un dispositivo aceptó el push."""
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(30), default="Aviso")
+    titulo = db.Column(db.String(200), nullable=False)
+    cuerpo = db.Column(db.String(500))
+    url = db.Column(db.String(300), default="/panel")
+    urgente = db.Column(db.Boolean, default=True)
+    leida = db.Column(db.Boolean, default=False)
+    entregada = db.Column(db.Boolean, default=False)
+    intentos = db.Column(db.Integer, default=0)
+    clave = db.Column(db.String(120), index=True)    # evita avisar dos veces lo mismo
+    hora = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class IntelVinculo(db.Model):
+    """Relación entre dos registros de Inteligencia (p. ej. una empresa con sus patentes)."""
+    id = db.Column(db.Integer, primary_key=True)
+    origen_id = db.Column(db.Integer, db.ForeignKey('inteligencia.id'), nullable=False)
+    destino_id = db.Column(db.Integer, db.ForeignKey('inteligencia.id'), nullable=False)
+    relacion = db.Column(db.String(30), default="Relacionado con")   # se lee: origen <relacion> destino
+    nota = db.Column(db.String(300))
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('origen_id', 'destino_id'),)
+    origen = db.relationship('Inteligencia', foreign_keys=[origen_id],
+                             backref=db.backref('vinculos_salida', cascade='all, delete-orphan'))
+    destino = db.relationship('Inteligencia', foreign_keys=[destino_id],
+                              backref=db.backref('vinculos_entrada', cascade='all, delete-orphan'))
+
+
+class IngresoPlataforma(db.Model):
+    """Dinero que entra a una plataforma propia (suscripciones de sus usuarios, ventas, publicidad...)."""
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    fecha = db.Column(db.Date, default=date.today)
+    monto = db.Column(Dinero, nullable=False)
+    categoria = db.Column(db.String(20), default="Suscripciones")
+    concepto = db.Column(db.String(200))
+    anulado = db.Column(db.Boolean, default=False)          # True = ya tiene su contra-asiento
+    anula_id = db.Column(db.Integer)                        # si es contra-asiento: id del ingreso que anula
+
+    @property
+    def anulacion(self):                                    # lo que leen las plantillas: "¿ya fue anulado?"
+        return bool(self.anulado)
+
+    proyecto = db.relationship('Proyecto', backref=db.backref('ingresos', cascade='all, delete-orphan'))
+
+
+# --- FUNCIONES DE SOPORTE Y CONFIGURACIÓN GLOBAL ---------------------------
+
+class ProyectoPublico(db.Model):
+    """Proyecto que se muestra en la web pública (no expone datos privados del cliente)."""
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(150), nullable=False)
+    categoria = db.Column(db.String(80), nullable=False)
+    descripcion = db.Column(db.Text, nullable=False)
+    tecnologias = db.Column(db.String(200))
+    visible = db.Column(db.Boolean, default=True)
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+    resenas = db.relationship('Resena', backref='proyecto', lazy=True, cascade='all, delete-orphan')
+
+
+class Resena(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto_publico.id'), nullable=False)
+    nombre = db.Column(db.String(80), nullable=False)
+    calificacion = db.Column(db.Integer, nullable=False)   # 1 a 5
+    comentario = db.Column(db.Text, nullable=False)
+    aprobada = db.Column(db.Boolean, default=False)         # nada se publica sin tu aprobación
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Subdominio(db.Model):
+    """Dominios y subdominios de una plataforma (solo infraestructura externa)."""
+    id = db.Column(db.Integer, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey('proyecto.id'), nullable=False)
+    nombre = db.Column(db.String(200), nullable=False)       # api.zmarthket.com
+    proposito = db.Column(db.String(100))                    # Sitio, API, Panel, Correo...
+    destino = db.Column(db.String(200))                      # dónde apunta: Vercel, Render, Cloudflare...
+    estado = db.Column(db.String(12), default="Activo")      # Activo, Inactivo
+    notas = db.Column(db.String(300))
+
+
+class Inteligencia(db.Model):
+    """División de inteligencia: incidentes, empresas, patentes, tecnologías y amenazas investigadas."""
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(20), default="Incidente")        # Incidente, Empresa, Patente, Tecnología, Amenaza, Otro
+    titulo = db.Column(db.String(200), nullable=False)
+    estado = db.Column(db.String(20), default="Abierto")        # Abierto, En investigación, Cerrado
+    prioridad = db.Column(db.String(10), default="Media")       # Baja, Media, Alta, Crítica
+    confidencial = db.Column(db.Boolean, default=False)
+    entidad = db.Column(db.String(200))                         # empresa, titular o persona relacionada
+    referencia = db.Column(db.String(200))                      # n.º de patente, RFC, CVE, URL...
+    jurisdiccion = db.Column(db.String(100))                    # oficina o país (IMPI, USPTO, EPO...)
+    fecha_evento = db.Column(db.Date)
+    fuente = db.Column(db.String(300))
+    resumen = db.Column(db.Text)
+    hallazgos = db.Column(db.Text)
+    plataforma_id = db.Column(db.Integer)                       # plataforma propia relacionada (opcional)
+    creado_en = db.Column(db.DateTime, default=datetime.utcnow)
+    actualizado_en = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    notas = db.relationship('IntelNota', backref='registro', cascade='all, delete-orphan', order_by='IntelNota.id.desc()')
+
+
+class IntelNota(db.Model):
+    """Bitácora de la investigación: cada avance queda con fecha y fuente."""
+    id = db.Column(db.Integer, primary_key=True)
+    registro_id = db.Column(db.Integer, db.ForeignKey('inteligencia.id'), nullable=False)
+    texto = db.Column(db.Text, nullable=False)
+    fuente = db.Column(db.String(300))
+    autor = db.Column(db.String(80))
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DatoInvalido(ValueError):
+    pass
+
+
+# En estos campos un texto largo se RECHAZA (recortar un RFC o una razón social los corrompe en silencio).
+CAMPOS_ESTRICTOS = {("cliente", "rfc"), ("cliente", "razon_social"), ("cliente", "nombre_comercial"),
+                    ("cliente", "direccion_fiscal"), ("cliente", "contacto"), ("cliente", "telefono")}
+
+
+@event.listens_for(db.Model, "before_insert", propagate=True)
+@event.listens_for(db.Model, "before_update", propagate=True)
+def _ajustar_longitudes(mapper, connection, target):
+    """PostgreSQL rechaza textos más largos que su VARCHAR(n). Campos fiscales: se rechazan.
+    Texto libre (bitácora, notas, avisos): se recorta para no perder el registro."""
+    for col in mapper.columns:
+        largo = getattr(col.type, "length", None)
+        valor = getattr(target, col.key, None)
+        if largo and isinstance(valor, str) and len(valor) > largo:
+            if (mapper.local_table.name, col.key) in CAMPOS_ESTRICTOS:
+                raise DatoInvalido(f"«{col.key}» admite máximo {largo} caracteres (tiene {len(valor)}). Corrígelo y vuelve a guardar.")
+            setattr(target, col.key, valor[:largo])
+
+
+def registrar(accion, entidad, entidad_id=None, detalle="", usuario=None):
+    en_peticion = has_request_context()
+    if usuario is None:
+        usuario = current_user.username if en_peticion and current_user.is_authenticated else "sistema"
+    db.session.add(Auditoria(usuario=usuario[:80], accion=accion, entidad=entidad, entidad_id=entidad_id,
+                             detalle=detalle, ip=_ip_cliente() if en_peticion else None))
+
+
+def limitar(clave, maximo, segundos, sumar=True):
+    """Límite por ventana fija guardado en la base (vale con varios workers y tras cada despliegue).
+    True = permitido. sumar=False solo consulta. Si la base falla devuelve False (falla cerrado):
+    estos límites protegen dinero y cuentas."""
+    clave = clave[:200]
+    for _ in range(2):
+        try:
+            ahora = datetime.utcnow()
+            f = db.session.execute(db.select(ContadorLimite).where(ContadorLimite.clave == clave).with_for_update()).scalar_one_or_none()
+            if f is None:
+                if sumar:
+                    db.session.add(ContadorLimite(clave=clave, inicio=ahora, n=1))
+                db.session.commit()
+                return True
+            if (ahora - f.inicio).total_seconds() >= segundos:
+                f.inicio, f.n = ahora, 0
+            if f.n >= maximo:
+                db.session.commit()
+                return False
+            if sumar:
+                f.n += 1
+            db.session.commit()
+            return True
+        except IntegrityError:
+            db.session.rollback()          # otro worker creó la fila al mismo tiempo: se reintenta una vez
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error("Límite %s: %s", clave, e)
+            return False
+    return False
+
+
+def reiniciar_limite(clave):
+    try:
+        ContadorLimite.query.filter_by(clave=clave[:200]).delete()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def dinero(v):
+    return f"${(v or 0):,.0f}"
+
+
+MESES = {"Mensual": 1, "Trimestral": 3, "Anual": 12}
+
+# --- Precios del configurador y de las membresías (edítalos aquí) ---------------
+DESDE_BOUTIQUE = 1500      # MXN, pago único de configuración e ingeniería (más la membresía)
+DESDE_ENTERPRISE = 3000    # MXN, desarrollo desde cero; se paga por hitos
+ANUAL_MESES_PAGADOS = 10   # pago anual = 10 meses (2 gratis), salvo que el plan tenga precio anual propio
+
+
+def precio_anual(p):
+    """Precio por año de un plan: el propio si lo fijaste, o mensual x ANUAL_MESES_PAGADOS."""
+    if p.precio_anual:
+        return float(p.precio_anual)
+    return round(float(p.precio) * ANUAL_MESES_PAGADOS, 2) if p.precio else None
+
+
+def descuento_anual_pct(p):
+    """% de descuento que equivale pagar el año completo frente a 12 mensualidades."""
+    a = precio_anual(p)
+    return round((1 - a / (float(p.precio) * 12)) * 100, 1) if a and p.precio else 0
+DIAS_AVISO = 7   # cuántos días antes de la fecha empieza a avisarte
+
+
+def sumar_meses(d, n):
+    m = d.month - 1 + n
+    y, m = d.year + m // 12, m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def migrar_columnas():
+    """Agrega columnas nuevas a una base existente (SQLite o PostgreSQL) sin perder datos."""
+    pg = db.engine.dialect.name == "postgresql"
+    nuevas = {
+        "inteligencia": [("plataforma_id", "INTEGER")],
+        "plan": [("precio_anual", "NUMERIC(10,2)"), ("categoria", "VARCHAR(20) DEFAULT 'tamano'"), ("bd_incluida", "VARCHAR(60)"), ("img_incluida", "VARCHAR(60)"),
+                 ("activo", "BOOLEAN DEFAULT 1"), ("orden", "INTEGER DEFAULT 0"),
+                 ("semilla", "VARCHAR(40)"),
+                 ("nivel", "VARCHAR(30)"), ("cpu", "VARCHAR(30)"), ("ram", "VARCHAR(30)"),
+                 ("transferencia", "VARCHAR(40)"), ("respaldos", "VARCHAR(40)"),
+                 ("ficha_version", "INTEGER DEFAULT 0")],
+        "proyecto": [("carpeta_local", "VARCHAR(300)"), ("boveda_ref", "VARCHAR(300)"), ("tipo", "VARCHAR(20) DEFAULT 'A medida'"),
+                     ("url_produccion", "VARCHAR(300)"), ("version", "VARCHAR(30)"),
+                     ("neon_proyecto", "VARCHAR(150)"), ("r2_buckets", "VARCHAR(300)"),
+                     ("cloudinary_prefijo", "VARCHAR(150)"), ("estado_previo", "VARCHAR(20)")],
+        "suscripcion": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("descuento_pct", "FLOAT DEFAULT 0")],
+        "costo_servicio": [("periodicidad", "VARCHAR(12) DEFAULT 'Mensual'"), ("monto_periodo", "NUMERIC(10,2)"),
+                           ("ultimo_pago", "DATE")],
+        "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER"),
+                    ("cargo", "VARCHAR(80)")],
+        "auditoria": [("ip", "VARCHAR(64)")],
+        "pago": [("creado", "TIMESTAMP"), ("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER"), ("motivo", "VARCHAR(120)")],
+        "ingreso_plataforma": [("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER")],
+    }
+    insp = sa_inspect(db.engine)
+    for tabla, cols in nuevas.items():
+        if not insp.has_table(tabla):
+            continue
+        existentes = {c["name"] for c in insp.get_columns(tabla)}
+        for nombre, tipo in cols:
+            if nombre not in existentes:
+                if pg:
+                    tipo = tipo.replace("DEFAULT 1", "DEFAULT TRUE").replace("BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT FALSE")
+                db.session.execute(db.text(f'ALTER TABLE "{tabla}" ADD COLUMN {nombre} {tipo}'))
+    db.session.commit()
+    # Importes: ensanchar NUMERIC(10,2) -> NUMERIC(14,2) (solo PostgreSQL; ensanchar no pierde datos y solo corre si hace falta)
+    if pg:
+        for tabla, col in (("plan", "precio"), ("plan", "precio_anual"), ("suscripcion", "tarifa"), ("pago", "monto"),
+                           ("costo_servicio", "monto_mensual"), ("costo_servicio", "monto_periodo"), ("ingreso_plataforma", "monto")):
+            try:
+                if not insp.has_table(tabla):
+                    continue
+                tipo_col = next((c["type"] for c in insp.get_columns(tabla) if c["name"] == col), None)
+                if tipo_col is not None and (getattr(tipo_col, "precision", None) or 99) < 14:
+                    db.session.execute(db.text(f'ALTER TABLE "{tabla}" ALTER COLUMN {col} TYPE NUMERIC(14,2)'))
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
+    # Notificacion.clave debe ser única (dos workers podían crear el mismo aviso). Primero se quitan duplicados.
+    try:
+        if insp.has_table("notificacion"):
+            db.session.execute(db.text("DELETE FROM notificacion WHERE clave IS NOT NULL AND id NOT IN "
+                                       "(SELECT MIN(id) FROM notificacion WHERE clave IS NOT NULL GROUP BY clave)"))
+            db.session.execute(db.text("CREATE UNIQUE INDEX IF NOT EXISTS ux_notificacion_clave ON notificacion (clave)"))
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning("Índice único de Notificacion.clave: %s", e)
+
+
+# (nombre, precio mensual MXN, a_medida, descripción, incluye separado por |, destacado, categoría, BD incluida, orden)
+# Carga INICIAL de planes (solo se usa la primera vez). Después se editan desde el panel: Membresías.
+PLANES_INICIALES = [
+    ("Esencial", 1200, False, "Para aplicaciones de complejidad básica.",
+     "Arquitectura: alojamiento y mantenimiento de ecosistemas ligeros e interfaces operativas|Ciberseguridad base: encriptación estándar de datos, certificados SSL y protección contra inyecciones SQL|Soporte: asistencia técnica 24/7 con nuestra IA, ZEDITH",
+     False, "tamano", "1 GB", 1),
+    ("Ascenso", 2500, False, "Para sistemas de complejidad media.",
+     "Arquitectura: gestión de bases de datos relacionales, automatización de reportes y estructuración de usuarios|Ciberseguridad intermedia: backups programados y monitoreo continuo de tiempo de actividad (uptime)|Soporte: ZEDITH 24/7 y asistencia técnica por WhatsApp en horario hábil",
+     True, "tamano", "5 GB", 2),
+    ("Scales", 4800, False, "Para arquitecturas robustas y escalables.",
+     "Arquitectura: integraciones complejas con APIs de terceros (pasarelas de pago, facturación) y automatización de procesos pesados|Ciberseguridad avanzada: firewall de aplicación web (WAF) y bloqueo automático de intrusiones|Soporte: escalamiento rápido a ingenieros especializados por WhatsApp",
+     False, "tamano", "20 GB", 3),
+    ("Insignia", 8000, False, "Para sistemas de alta demanda transaccional.",
+     "Arquitectura: soporte para alto volumen de tráfico, gestión multi-sucursal y procesamiento de datos en tiempo real|Ciberseguridad avanzada: trazabilidad de accesos y auditoría de logs para detectar riesgos y fraudes internos|Soporte: prioridad en tiempo de respuesta y revisión de métricas de rendimiento",
+     False, "tamano", "50 GB", 4),
+    ("X Prime", 14000, False, "Para ecosistemas críticos interconectados.",
+     "Arquitectura: mantenimiento de infraestructuras complejas con varias aplicaciones trabajando en sincronía|Ciberseguridad proactiva: monitoreo 24/7 de vulnerabilidades y redundancia de datos en múltiples servidores|Soporte: línea directa prioritaria y un ingeniero líder exclusivo",
+     False, "tamano", "100 GB", 5),
+    ("Enterprise", None, True, "El nivel corporativo definitivo. Cotización a la medida.",
+     "Inclusión total: todo el plan X Prime sin límites y todo el esquema de inteligencia y protección de Zenith|Desarrollo a la medida: módulos y funciones construidos exclusivamente para tu corporación, integrados de forma nativa|Infraestructura aislada: servidores dedicados y privados, no compartidos con ningún otro cliente|Ciberseguridad Zero-Trust: protección máxima, cifrado de secretos industriales y auditorías constantes|SLA garantizado: contrato de disponibilidad del 99.99% y equipo de respuesta a incidentes asignado exclusivamente a tu empresa",
+     False, "tamano", "Dedicada", 6),
+    ("Zenith", 6500, True, "Plan exclusivo de ciberseguridad avanzada e inteligencia, para infraestructuras existentes.",
+     "Arquitectura Zero-Trust: ningún usuario ni dispositivo es confiable por defecto; todo se verifica constantemente|Protección de datos sensibles y patentes: cifrado de grado militar para secretos industriales, fórmulas, código fuente y bases de datos de alto valor|Pruebas de penetración (pentesting): ataques simulados y programados para encontrar y parchar vulnerabilidades antes que los atacantes reales|Inteligencia interna: rastreo y auditoría forense de fraudes internos o desvíos de capital, e investigación de comercialización ilegal de productos o bases de datos por parte de empleados|Neutralización de hackeos y recuperación ante desastres|Se contrata aparte: sin hosting, dominio ni base de datos",
+     False, "ciber", None, 7),
+]
+
+# Almacenamiento adicional: se suma a lo que ya incluye el plan. (almacenamiento, extra mensual MXN)
+NIVELES_BD = [("+5 GB", 400), ("+20 GB", 1000), ("+50 GB", 2000)]
+
+
+def planes_visibles(categoria=None):
+    q = Plan.query.filter(Plan.activo.isnot(False))
+    if categoria:
+        q = q.filter(Plan.categoria == categoria)
+    return q.order_by(Plan.orden, Plan.id).all()
+
+
+def sembrar_planes():
+    """Carga inicial de planes. Solo crea los que faltan; nunca sobrescribe lo que edites en el panel.
+    La primera vez (cuando aún no existe ninguno de los planes iniciales) retira los planes anteriores
+    sin borrarlos, para que los clientes que ya los tienen conserven su suscripción."""
+    claves = {n.lower().replace(" ", "-"): t for t in PLANES_INICIALES for n in [t[0]]}
+    existentes = {p.semilla: p for p in Plan.query.filter(Plan.semilla.isnot(None)).all()}
+    primera_vez = not existentes
+    for clave, (n, p, am, d, inc, dest, cat, bd, orden) in claves.items():
+        if clave in existentes:
+            continue
+        plan = Plan.query.filter_by(nombre=n).first() if primera_vez else None
+        if plan is None:
+            if Plan.query.filter_by(nombre=n).first():      # el nombre ya lo usa otro plan: no choques
+                continue
+            plan = Plan(nombre=n)
+        plan.precio, plan.a_medida, plan.descripcion, plan.incluye, plan.destacado = p, am, d, inc, dest
+        plan.categoria, plan.bd_incluida, plan.orden, plan.activo, plan.semilla = cat, bd, orden, True, clave
+        db.session.add(plan)
+    if primera_vez:
+        for viejo in Plan.query.filter(Plan.semilla.is_(None)).all():
+            viejo.activo = False
+    db.session.commit()
+
+# --- FICHAS TÉCNICAS DE LAS 5 MEMBRESÍAS (texto de la auditoría de octubre de 2026) ---------------------
+# Fuente única de recursos, precios y textos de Esencial, Ascenso, Scales, Insignia y X Prime.
+# Se aplican UNA sola vez por plan: al arrancar, todo plan con ficha_version menor a FICHA_VERSION se
+# reescribe con estos datos y queda marcado. Después puedes seguir editando desde el panel sin que se pierda
+# nada. Para publicar un cambio de texto: edita aquí y sube FICHA_VERSION en 1.
+# Enterprise y Zenith no se tocan.
+FICHA_VERSION = 1
+FICHAS = {
+    "esencial": {
+        "nivel": "Entrada", "precio": 1200, "precio_anual": 12000,
+        "cpu": "0.5 vCPU", "ram": "1 GB", "bd": "5 GB", "img": "10 GB",
+        "transferencia": "25 GB/mes", "respaldos": "7 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, monitoreo básico, transferencia mensual limitada a 25 GB como cuota comercial y respaldos diarios con retención de 7 días, una vez configurados.",
+            "Soporte: asistente de IA disponible 24/7 y atención técnica por correo en horario laboral.",
+            "Ideal para pequeños sistemas de reservas, aplicaciones operativas ligeras y proyectos con uso moderado.",
+        ],
+    },
+    "ascenso": {
+        "nivel": "Profesional", "precio": 2500, "precio_anual": 25000,
+        "cpu": "1 vCPU", "ram": "2 GB", "bd": "10 GB", "img": "25 GB",
+        "transferencia": "100 GB/mes", "respaldos": "7 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, monitoreo de disponibilidad, cuota comercial de 100 GB de transferencia al mes y respaldos diarios con retención de 7 días.",
+            "Soporte: asistencia de IA y atención técnica por WhatsApp en horario hábil.",
+            "Ideal para una aplicación de negocio con usuarios, registros, operaciones frecuentes y un volumen moderado de información.",
+        ],
+    },
+    "scales": {
+        "nivel": "Negocio", "precio": 4800, "precio_anual": 48000,
+        "cpu": "1 vCPU", "ram": "4 GB", "bd": "25 GB", "img": "50 GB",
+        "transferencia": "250 GB/mes", "respaldos": "14 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, monitoreo y alertas, cuota comercial de 250 GB de transferencia al mes, respaldos diarios con retención de 14 días y revisión programada de rendimiento.",
+            "Soporte: prioridad frente a los niveles inferiores y atención técnica por WhatsApp en horario hábil.",
+            "Ideal para aplicaciones comerciales, catálogos amplios, reservas con mucha actividad y plataformas con más trabajo de backend.",
+        ],
+    },
+    "insignia": {
+        "nivel": "Avanzado", "precio": 8000, "precio_anual": 80000,
+        "cpu": "2 vCPU", "ram": "4 GB", "bd": "50 GB", "img": "100 GB",
+        "transferencia": "500 GB/mes", "respaldos": "30 días",
+        "incluye": [
+            "También incluye: una aplicación, un dominio personalizado, HTTPS, cuota comercial de 500 GB de transferencia al mes, respaldos diarios con retención de 30 días, entorno de pruebas con recursos limitados y registro de eventos de seguridad.",
+            "Soporte: atención prioritaria y revisión de métricas operativas. Un WAF y otras protecciones avanzadas se incluyen únicamente cuando estén desplegados y configurados.",
+            "Ideal para negocios establecidos con operaciones intensivas o sistemas que requieren mayor capacidad y controles de administración.",
+        ],
+    },
+    "x-prime": {
+        "nivel": "Alta demanda", "precio": 14000, "precio_anual": 140000,
+        "cpu": "2 vCPU", "ram": "8 GB", "bd": "100 GB", "img": "200 GB",
+        "transferencia": "1 TB/mes", "respaldos": "30 días",
+        "incluye": [
+            "También incluye: una aplicación de producción, entorno de pruebas con recursos limitados, un dominio personalizado, HTTPS, cuota comercial de 1 TB de transferencia al mes, respaldos diarios con retención de 30 días, monitoreo reforzado y revisión periódica de capacidad y recuperación.",
+            "Soporte: atención prioritaria con tiempos de respuesta definidos por contrato y escalamiento técnico.",
+            "Ideal para sistemas de demanda alta. La alta disponibilidad real, la redundancia entre servidores y las garantías estrictas de recuperación deben cotizarse y desplegarse expresamente; no quedan garantizadas por tener más RAM.",
+        ],
+    },
+}
+
+
+def _copia_antes_de_fichas():
+    """Copia de la base SQLite antes de reescribir planes (si la base no es SQLite, no hace nada)."""
+    ruta = db.engine.url.database if db.engine.dialect.name == "sqlite" else None
+    if ruta and os.path.exists(ruta):
+        os.makedirs("respaldos_panel", exist_ok=True)
+        shutil.copy2(ruta, os.path.join("respaldos_panel", f"zedyth_antes_fichas_v{FICHA_VERSION}_{date.today().isoformat()}.db"))
+
+
+def aplicar_fichas():
+    """Aplica FICHAS a los planes que aún no tienen esta versión. Es idempotente: si ya se aplicó, no hace nada."""
+    planes = {p.semilla: p for p in Plan.query.filter(Plan.semilla.in_(list(FICHAS))).all()}
+    for p in Plan.query.filter(Plan.semilla.is_(None)).all():          # planes antiguos sin clave de semilla
+        clave = p.nombre.lower().replace(" ", "-")
+        if clave in FICHAS and clave not in planes:
+            planes[clave] = p
+    pendientes = {c: p for c, p in planes.items() if (p.ficha_version or 0) < FICHA_VERSION}
+    if not pendientes:
+        return
+    if db.engine.dialect.name == "sqlite":
+        _copia_antes_de_fichas()
+    else:                                  # Postgres/Neon: sin respaldo previo no se reescriben los planes
+        ok, msg = respaldos.antes_de_cambio("antes_fichas")
+        if not ok and os.environ.get("FICHAS_SIN_RESPALDO") != "1":
+            print(f"AVISO: las fichas de planes NO se aplicaron porque no se pudo respaldar antes ({msg}). "
+                  f"Configura BACKUP_R2_* o define FICHAS_SIN_RESPALDO=1.", flush=True)
+            return
+    for clave, p in pendientes.items():
+        f = FICHAS[clave]
+        p.nivel, p.cpu, p.ram = f["nivel"], f["cpu"], f["ram"]
+        p.bd_incluida, p.img_incluida = f["bd"], f["img"]
+        p.transferencia, p.respaldos = f["transferencia"], f["respaldos"]
+        p.precio, p.precio_anual = f["precio"], f["precio_anual"]
+        p.incluye = "|".join(f["incluye"])
+        p.ficha_version = FICHA_VERSION
+        db.session.add(Auditoria(usuario="sistema", accion="ficha", entidad="Plan", entidad_id=p.id,
+                                 detalle=f"Ficha técnica v{FICHA_VERSION} aplicada · {p.nombre}"))
+    db.session.commit()
+
+
+def sembrar_usuario_admin():
+    """El administrador se crea y se mantiene con las variables ADMIN_USER y ADMIN_PASSWORD (Render).
+    Para cambiar la contraseña: cambia ADMIN_PASSWORD y vuelve a desplegar. Ninguna contraseña vive en el código."""
+    usuario = (os.environ.get("ADMIN_USER") or "admin").strip()
+    clave = os.environ.get("ADMIN_PASSWORD") or ""
+    if not clave:
+        if EN_RENDER:
+            raise RuntimeError("Falta ADMIN_PASSWORD en Render (variable de entorno de al menos 12 caracteres).")
+        if Usuario.query.first():
+            return                                   # local: se conserva el usuario que ya existe
+        clave = secrets.token_urlsafe(12)            # local: contraseña aleatoria, se muestra una sola vez
+        print(f"Usuario local creado: {usuario} / {clave}", flush=True)
+    elif len(clave) < 12:
+        raise RuntimeError("ADMIN_PASSWORD debe tener al menos 12 caracteres.")
+    admin = Usuario.query.filter_by(username=usuario).first()
+    if not admin:
+        admin = Usuario(username=usuario, nombre="Administrador Principal")
+        db.session.add(admin)
+    admin.rol = "admin"
+    # Nombre y cargo que se muestran al entrar. ADMIN_NOMBRE / ADMIN_CARGO (Render) mandan en cada arranque;
+    # sin ellas se ponen valores por defecto solo si el campo está vacío, así lo que edites en /accesos se conserva.
+    nombre_env, cargo_env = (os.environ.get("ADMIN_NOMBRE") or "").strip(), (os.environ.get("ADMIN_CARGO") or "").strip()
+    if nombre_env:
+        admin.nombre = nombre_env[:100]
+    elif not admin.nombre or admin.nombre == "Administrador Principal":
+        admin.nombre = "Zuriel Zmarth"
+    if cargo_env:
+        admin.cargo = cargo_env[:80]
+    elif not (admin.cargo or "").strip():
+        admin.cargo = "Chief Executive Officer"
+    if not admin.password_hash or not admin.check_password(clave):
+        admin.set_password(clave)                    # también reemplaza cualquier contraseña anterior guardada
+    db.session.commit()
+
+# Las opiniones generales sobre ZEDYTH se guardan como reseñas de un proyecto interno
+# (categoría "General", oculto en la vitrina). Así reutilizan la moderación que ya existe.
+CAT_GENERAL = "General"
+
+
+def proyecto_general():
+    p = ProyectoPublico.query.filter_by(categoria=CAT_GENERAL).first()
+    if not p:
+        p = ProyectoPublico(nombre="ZEDYTH Technologies", categoria=CAT_GENERAL,
+                            descripcion="Opiniones generales sobre ZEDYTH Technologies.", visible=False)
+        db.session.add(p)
+        db.session.commit()
+    return p
+
+
+PLAT = "Plataforma propia"
+INTERNO = "ZEDYTH Technologies (interno)"
+
+
+def cliente_interno():
+    """Las plataformas propias cuelgan de este cliente interno (así no cambia el esquema de la base)."""
+    c = Cliente.query.filter_by(nombre_comercial=INTERNO).first()
+    if not c:
+        c = Cliente(nombre_comercial=INTERNO, contacto="interno")
+        db.session.add(c)
+        db.session.commit()
+    return c
+
+
+# --- CHAT INTERNO (personal ZEDYTH) ------------------------------------------------------------
+# Cada mensaje se guarda cifrado con AES-256-GCM (nonce único por mensaje; sala y remitente van como datos
+# autenticados: si alguien mueve o altera una fila en la base, el mensaje deja de descifrar).
+# Llave: CHAT_KEY (32 bytes en base64 urlsafe). Sin ella se deriva de SECRET_KEY (que en Render ya es fija).
+class ChatMensaje(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sala = db.Column(db.String(40), nullable=False, index=True)     # "general" o "dm:<idMenor>:<idMayor>"
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+    nonce = db.Column(db.String(24), nullable=False)
+    cifrado = db.Column(db.Text, nullable=False)                    # base64 del texto cifrado + etiqueta GCM
+    creado = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    usuario = db.relationship('Usuario')
+
+
+CHAT_MAX_CHARS = 2000
+CHAT_RETENCION_DIAS = int(os.environ.get("CHAT_RETENCION_DIAS", "90"))     # 0 = no borrar nunca
+CHAT_MAX_POR_MIN = int(os.environ.get("CHAT_MAX_POR_MIN", "30"))
+
+
+def _chat_llave():
+    k = (os.environ.get("CHAT_KEY") or "").strip()
+    if k:
+        try:
+            raw = base64.urlsafe_b64decode(k + "=" * (-len(k) % 4))
+            if len(raw) == 32:
+                return raw
+        except Exception:
+            pass
+        raise RuntimeError("CHAT_KEY debe ser 32 bytes en base64 urlsafe (python -c \"import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())\").")
+    return hashlib.sha256(("chat:" + app.config['SECRET_KEY']).encode()).digest()
+
+
+def _chat_cifrar(texto, sala, uid):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    nonce = secrets.token_bytes(12)
+    ct = AESGCM(_chat_llave()).encrypt(nonce, texto.encode(), f"{sala}|{uid}".encode())
+    return base64.b64encode(nonce).decode(), base64.b64encode(ct).decode()
+
+
+def _chat_descifrar(m):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    try:
+        pt = AESGCM(_chat_llave()).decrypt(base64.b64decode(m.nonce), base64.b64decode(m.cifrado), f"{m.sala}|{m.usuario_id}".encode())
+        return pt.decode()
+    except Exception:
+        return "[mensaje ilegible: llave distinta o dato alterado]"
+
+
+def _chat_sala_valida(sala):
+    """General: todos. Directo: solo sus dos participantes."""
+    if sala == "general":
+        return True
+    m = re.fullmatch(r"dm:(\d+):(\d+)", sala or "")
+    if not m:
+        return False
+    a, b = int(m.group(1)), int(m.group(2))
+    return a < b and current_user.id in (a, b) and Usuario.query.filter(Usuario.id.in_([a, b]), Usuario.activo.is_(True)).count() == 2
+
+
+# Respaldos del panel (modelo + rutas). Va ANTES de la inicialización porque aplicar_fichas lo usa.
+respaldos.iniciar(app, db, registrar, lambda *a, **k: crear_notificacion(*a, **k))
+
+# Inicialización de la DB
+with app.app_context():
+    db.create_all()
+    migrar_columnas()
+    sembrar_planes()
+    aplicar_fichas()
+    sembrar_usuario_admin()
+    proyecto_general()
+    cliente_interno()
+
+# --- SEGURIDAD Y PROTECCIÓN DE RUTAS ---------------------------------------
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(Usuario, int(user_id))
+
+def respaldo_automatico_db():
+    if db.engine.dialect.name != "sqlite":   # con Neon el respaldo lo hace el módulo respaldos.py (R2), no esta función
+        return
+    db_path = db.engine.url.database          # ruta real del archivo (puede estar en instance/)
+    backup_dir = 'respaldos_panel'
+    
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+        
+    hoy = date.today().isoformat()
+    backup_file = os.path.join(backup_dir, f"zedyth_{hoy}.db")
+    
+    if not os.path.exists(backup_file) and os.path.exists(db_path):
+        shutil.copy2(db_path, backup_file)
+
+# --- TOTP (MFA) ------------------------------------------------------------
+REQUIERE_MFA = os.environ.get("REQUIERE_MFA") == "1"     # 1 = nadie usa el panel sin activar TOTP
+
+
+def _fernet():
+    from cryptography.fernet import Fernet
+    k = (os.environ.get("TOTP_KEY") or "").strip()
+    if not k:
+        k = base64.urlsafe_b64encode(hashlib.sha256(("totp:" + app.config['SECRET_KEY']).encode()).digest()).decode()
+    return Fernet(k)
+
+
+def _totp_codigo(secreto_b32, paso):
+    clave = base64.b32decode(secreto_b32 + "=" * (-len(secreto_b32) % 8), casefold=True)
+    h = hmac.new(clave, struct.pack(">Q", paso), hashlib.sha1).digest()
+    o = h[-1] & 0x0F
+    return f"{(struct.unpack('>I', h[o:o + 4])[0] & 0x7FFFFFFF) % 1000000:06d}"
+
+
+def totp_verificar(secreto, codigo, ultimo=0, ahora=None):
+    """Devuelve el periodo aceptado o None. Tolera ±30 s de desfase y no deja reutilizar un código."""
+    codigo = re.sub(r"\s", "", codigo or "")
+    if not re.fullmatch(r"\d{6}", codigo):
+        return None
+    actual = int((time.time() if ahora is None else ahora) // 30)
+    for paso in (actual - 1, actual, actual + 1):
+        if paso > (ultimo or 0) and hmac.compare_digest(_totp_codigo(secreto, paso), codigo):
+            return paso
+    return None
+
+
+def _secreto_usuario(u):
+    try:
+        return _fernet().decrypt(u.totp_secret.encode()).decode()
+    except Exception:
+        return None
+
+
+# --- ROLES -----------------------------------------------------------------
+# admin: todo. operador: opera el día a día, pero no borra ni cambia precios. lectura: solo consulta (GET).
+ENDPOINTS_ADMIN = {'pago_anular', 'ingreso_plataforma_eliminar', 'subdominio_eliminar', 'plan_nuevo', 'plan_editar', 'plan_activo',
+                   'resena_moderar', 'proyecto_publico_toggle', 'inteligencia_desvincular', 'auditoria', 'auditoria_exportar',
+                   'accesos', 'acceso_nuevo', 'acceso_editar', 'acceso_clave', 'acceso_mfa_reset'}
+ENDPOINTS_SIN_MFA = {'seguridad', 'logout', 'static', 'service_worker', 'manifest_admin', 'manifest_publico', 'healthz', 'pwa_offline'}
+
+
+def rol_actual():
+    return (current_user.rol or "").lower() if current_user.is_authenticated else ""
+
+
+def es_admin():
+    return rol_actual() == "admin"
+
+
+def solo_admin(f):
+    """Decorador para rutas nuevas: solo rol admin."""
+    from functools import wraps
+
+    @wraps(f)
+    def interior(*a, **k):
+        if not es_admin():
+            abort(403)
+        return f(*a, **k)
+    return interior
+
+
+ROLES = ("admin", "operador", "lectura")
+CARGO_POR_ROL = {"admin": "Administrador", "operador": "Operador", "lectura": "Consulta"}
+
+
+def cargo_de(u):
+    """Título que ve la persona al entrar: su cargo, o uno por defecto según su rol."""
+    return (u.cargo or "").strip() or CARGO_POR_ROL.get((u.rol or "").lower(), "Acceso restringido")
+
+
+def nombre_corto(u):
+    partes = (u.nombre or u.username or "").split()
+    return (partes[0] if partes else (u.username or "")).upper()
+
+
+def saludo_de(u):
+    return f"Bienvenido, {cargo_de(u)} {nombre_corto(u)}"
+
+
+def _next_seguro(destino):
+    """Acepta solo rutas internas ("/algo"); rechaza "//host", "/\\host" y URLs completas (redirección abierta)."""
+    d = destino or ""
+    if d.startswith("/") and not d.startswith("//") and "\\" not in d and not re.search(r"[\r\n]", d):
+        return d
+    return None
+
+
+@app.before_request
+def inicializacion_y_seguridad():
+    # 1. Respaldo automático diario
+    if not hasattr(app, 'respaldo_hoy') or app.respaldo_hoy != date.today():
+        respaldo_automatico_db()
+        app.respaldo_hoy = date.today()
+
+    iniciar_vigilante()
+    monitor.iniciar()          # monitor de disponibilidad HTTP(S): carga los sitios y arranca su hilo (una sola vez)
+
+    # 2. Proteger todo el panel, excepto el login y los estáticos
+    if not current_user.is_authenticated:
+        if request.endpoint not in RUTAS_PUBLICAS:
+            destino = request.full_path if request.query_string else request.path
+            return redirect(url_for('login', next=destino))
+        return None
+
+    # 3. Cuenta desactivada = sesión cerrada, aunque ya hubiera iniciado
+    if not current_user.activo:
+        logout_user()
+        return redirect(url_for('login'))
+
+    # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
+    rol = rol_actual()
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios.", "ajustes."))) and rol != "admin":
+        abort(403)
+    if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
+            and request.endpoint not in ('logout', 'seguridad', 'vault.vault_desbloquear', 'vault.vault_bloquear', 'vault.vault_latido'):
+        abort(403)
+
+    # 5. MFA obligatorio (si REQUIERE_MFA=1)
+    if REQUIERE_MFA and not current_user.totp_activo and request.endpoint not in ENDPOINTS_SIN_MFA:
+        return redirect(url_for('seguridad'))
+    return None
+
+
+# --- CSRF, CABECERAS Y CACHÉ ------------------------------------------------
+_RE_FORM_POST = re.compile(r'<form\b[^>]*\bmethod\s*=\s*["\']?post["\']?[^>]*>', re.I)
+_JS_CSRF = ('<meta name="csrf-token" content="%s"><script>(function(){var m=document.querySelector(\'meta[name="csrf-token"]\');'
+            'if(!m||!window.fetch)return;var t=m.content,f=window.fetch;window.fetch=function(u,o){o=o||{};'
+            'var me=(o.method||(u&&u.method)||"GET").toUpperCase();if(me!=="GET"&&me!=="HEAD"){var s=typeof u==="string"?u:(u&&u.url)||"";'
+            'if(s.charAt(0)==="/"&&s.charAt(1)!=="/"||s.indexOf(location.origin)===0){o.headers=new Headers(o.headers||(u&&u.headers)||{});'
+            'o.headers.set("X-CSRFToken",t);}}return f.call(this,u,o);};})();</script>')
+
+
+def _inyectar_csrf(resp):
+    """Pone el token CSRF en cada formulario POST del panel y en los fetch() de la misma web, sin editar las plantillas."""
+    if resp.mimetype != 'text/html' or resp.direct_passthrough or resp.status_code >= 400:
+        return resp
+    if not (current_user.is_authenticated or request.endpoint == 'login'):
+        return resp
+    token = generate_csrf()
+    html = resp.get_data(as_text=True)
+    campo_token = f'<input type="hidden" name="csrf_token" value="{token}">'
+
+    def _form(m):
+        etiqueta = m.group(0)
+        if re.search(r'\baction\s*=\s*["\']?(https?:)?//', etiqueta, re.I):   # nunca se manda el token a otro sitio
+            return etiqueta
+        return etiqueta + campo_token
+    html = _RE_FORM_POST.sub(_form, html)
+    html = html.replace("</head>", (_JS_CSRF % token) + "</head>", 1)
+    resp.set_data(html)
+    return resp
+
+
+CSP = ("default-src 'self'; "
+       "script-src 'self' 'unsafe-inline' https://unpkg.com https://www.googletagmanager.com; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
+       "font-src 'self' data: https://fonts.gstatic.com https://unpkg.com; "
+       "img-src 'self' data: blob: https:; "
+       "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; "
+       "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+CSP_ENFORZAR = os.environ.get("CSP_MODO") == "enforce"      # por defecto solo reporta (consola del navegador)
+
+
+@app.after_request
+def cabeceras_seguridad(resp):
+    try:
+        resp = _inyectar_csrf(resp)
+    except Exception as e:
+        app.logger.error("Inyección CSRF: %s", e)
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
+    h.setdefault("Content-Security-Policy" if CSP_ENFORZAR else "Content-Security-Policy-Report-Only", CSP)
+    if request.is_secure:
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.endpoint not in ('static', 'service_worker', 'manifest_publico', 'manifest_admin', 'healthz') \
+            and (current_user.is_authenticated or request.endpoint == 'login'):
+        h["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.errorhandler(CSRFError)
+def csrf_fallo(e):
+    app.logger.warning("CSRF rechazado en %s desde %s: %s", request.path, _ip_cliente(), e.description)
+    if request.path.startswith('/api/') or request.is_json:
+        return {"ok": False, "error": "csrf"}, 400
+    return "La página caducó o la solicitud no es válida. Recarga la página e inténtalo de nuevo.", 400
+
+
+@app.errorhandler(DatoInvalido)
+def dato_invalido(e):
+    db.session.rollback()
+    return f"Dato no válido: {e}", 400
+
+
+# --- RUTAS DE AUTENTICACIÓN ------------------------------------------------
+LOGIN_MAX_PAR = int(os.environ.get("LOGIN_MAX_PAR", "5"))      # fallos por usuario+IP
+LOGIN_MAX_IP = int(os.environ.get("LOGIN_MAX_IP", "20"))       # fallos por IP
+LOGIN_VENTANA = 15 * 60                                        # segundos
+_HASH_FALSO = generate_password_hash("sin-usuario")            # iguala el tiempo de respuesta si el usuario no existe
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    siguiente = _next_seguro(request.args.get('next') or request.form.get('next'))
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()[:50]
+        password = request.form.get('password') or ''
+        codigo = request.form.get('codigo') or ''
+        ip = _ip_cliente()
+        k_par, k_ip = f"login:par:{ip}:{username.lower()}", f"login:ip:{ip}"
+        if not (limitar(k_par, LOGIN_MAX_PAR, LOGIN_VENTANA, sumar=False) and limitar(k_ip, LOGIN_MAX_IP, LOGIN_VENTANA, sumar=False)):
+            registrar("login_bloqueado", "Usuario", None, "Demasiados intentos fallidos", usuario=f"(bloqueado) {username}")
+            db.session.commit()
+            return render_template('login.html', error="Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.", next=siguiente), 429
+
+        user = Usuario.query.filter_by(username=username).first()
+        ok = user.check_password(password) if user else (check_password_hash(_HASH_FALSO, password) and False)
+        ok = bool(ok and user.activo)
+        if ok and user.totp_activo:
+            secreto = _secreto_usuario(user)
+            paso = totp_verificar(secreto, codigo, user.totp_ultimo) if secreto else None
+            if paso is None:
+                ok = False
+            else:
+                user.totp_ultimo = paso
+        if not ok:
+            limitar(k_par, LOGIN_MAX_PAR, LOGIN_VENTANA)
+            limitar(k_ip, LOGIN_MAX_IP, LOGIN_VENTANA)
+            registrar("login_fallido", "Usuario", user.id if user else None, "Credenciales o código inválidos", usuario=f"(fallido) {username}")
+            db.session.commit()
+            return render_template('login.html', error="Credenciales inválidas.", next=siguiente), 401
+
+        reiniciar_limite(k_par)
+        session.clear()                                  # evita fijación de sesión
+        login_user(user)
+        session.permanent = True
+        session["bienvenida"] = saludo_de(user)          # se muestra una vez en la primera página del panel
+        registrar("login", "Usuario", user.id, "Inicio de sesión exitoso")
+        db.session.commit()
+        return redirect(siguiente or url_for('index'))
+    return render_template('login.html', error=None, next=siguiente)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    registrar("logout", "Usuario", current_user.id, "Cierre de sesión")
+    db.session.commit()
+    logout_user()
+    session.clear()
+    return redirect(url_for('login'))
+
+
+@app.route('/cuenta/seguridad', methods=['GET', 'POST'])
+@login_required
+def seguridad():
+    """Activar o desactivar la verificación en dos pasos (TOTP) de la cuenta actual."""
+    mensaje = error = None
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+        codigo = request.form.get('codigo') or ''
+        if accion == 'activar':
+            secreto = session.get('totp_pendiente')
+            paso = totp_verificar(secreto, codigo) if secreto else None
+            if paso is None:
+                error = "Código incorrecto. Revisa la hora de tu teléfono e inténtalo de nuevo."
+            else:
+                current_user.totp_secret = _fernet().encrypt(secreto.encode()).decode()
+                current_user.totp_activo, current_user.totp_ultimo = True, paso
+                session.pop('totp_pendiente', None)
+                registrar("mfa_activar", "Usuario", current_user.id, "TOTP activado")
+                db.session.commit()
+                mensaje = "Verificación en dos pasos activada."
+        elif accion == 'desactivar':
+            secreto = _secreto_usuario(current_user) if current_user.totp_activo else None
+            if not current_user.check_password(request.form.get('password') or '') or not secreto \
+                    or totp_verificar(secreto, codigo, current_user.totp_ultimo) is None:
+                error = "Contraseña o código incorrectos."
+            else:
+                current_user.totp_secret, current_user.totp_activo, current_user.totp_ultimo = None, False, None
+                registrar("mfa_desactivar", "Usuario", current_user.id, "TOTP desactivado")
+                db.session.commit()
+                mensaje = "Verificación en dos pasos desactivada."
+    uri = secreto_nuevo = None
+    if not current_user.totp_activo:
+        secreto_nuevo = session.get('totp_pendiente') or base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+        session['totp_pendiente'] = secreto_nuevo
+        uri = f"otpauth://totp/ZEDYTH:{quote(current_user.username)}?secret={secreto_nuevo}&issuer=ZEDYTH&digits=6&period=30"
+    return render_template('seguridad.html', activo=bool(current_user.totp_activo), secreto=secreto_nuevo, uri=uri,
+                           mensaje=mensaje, error=error, obligatorio=REQUIERE_MFA)
+
+
+# --- ACCESOS AUTORIZADOS (solo admin): quién entra, con qué cargo y con qué rol ---------------------
+CLAVE_MIN = 12
+_RE_USUARIO = re.compile(r"^[A-Za-z0-9._-]{3,50}$")
+
+
+def _admin_env():
+    return (os.environ.get("ADMIN_USER") or "admin").strip()
+
+
+def _admins_activos_sin(uid):
+    return Usuario.query.filter(Usuario.rol == "admin", Usuario.activo.is_(True), Usuario.id != uid).count()
+
+
+@app.route('/accesos')
+def accesos():
+    usuarios = Usuario.query.order_by(Usuario.id).all()
+    return render_template('accesos.html', usuarios=usuarios, roles=ROLES, cargo_de=cargo_de, admin_env=_admin_env(),
+                           clave_min=CLAVE_MIN)
+
+
+@app.route('/accesos/nuevo', methods=['POST'])
+def acceso_nuevo():
+    username, nombre, cargo, rol = campo('username'), campo('nombre'), campo('cargo'), campo('rol') or "lectura"
+    clave = request.form.get('password') or ""
+    if not _RE_USUARIO.match(username):
+        raise DatoInvalido("El usuario debe tener de 3 a 50 caracteres: letras, números, punto, guion o guion bajo.")
+    if len(nombre) < 2 or len(nombre) > 100:
+        raise DatoInvalido("Escribe el nombre completo (2 a 100 caracteres).")
+    if len(cargo) > 80:
+        raise DatoInvalido("El cargo admite máximo 80 caracteres.")
+    if rol not in ROLES:
+        raise DatoInvalido("Rol no válido.")
+    if len(clave) < CLAVE_MIN:
+        raise DatoInvalido(f"La contraseña debe tener al menos {CLAVE_MIN} caracteres.")
+    if Usuario.query.filter(db.func.lower(Usuario.username) == username.lower()).first():
+        raise DatoInvalido("Ya existe un acceso con ese usuario.")
+    u = Usuario(username=username, nombre=nombre, cargo=cargo or None, rol=rol, activo=True)
+    u.set_password(clave)
+    db.session.add(u)
+    db.session.flush()
+    registrar("crear", "Usuario", u.id, f"{username} · {cargo_de(u)} · rol {rol}")
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.route('/accesos/<int:uid>/editar', methods=['POST'])
+def acceso_editar(uid):
+    u = db.get_or_404(Usuario, uid)
+    nombre, cargo, rol = campo('nombre'), campo('cargo'), campo('rol') or (u.rol or "lectura")
+    activo = request.form.get('activo') == "1"
+    if len(nombre) < 2 or len(nombre) > 100:
+        raise DatoInvalido("Escribe el nombre completo (2 a 100 caracteres).")
+    if len(cargo) > 80:
+        raise DatoInvalido("El cargo admite máximo 80 caracteres.")
+    if rol not in ROLES:
+        raise DatoInvalido("Rol no válido.")
+    if u.username == _admin_env() and (rol != "admin" or not activo):
+        raise DatoInvalido("Este es el administrador principal (ADMIN_USER): siempre es admin y siempre está activo.")
+    if u.id == current_user.id and (rol != u.rol or not activo):
+        raise DatoInvalido("No puedes quitarte a ti mismo el rol de administrador ni desactivarte.")
+    if u.rol == "admin" and (rol != "admin" or not activo) and _admins_activos_sin(u.id) == 0:
+        raise DatoInvalido("Debe quedar al menos un administrador activo.")
+    cambios = []
+    for etiqueta, antes, despues in (("nombre", u.nombre, nombre), ("cargo", u.cargo or "", cargo),
+                                     ("rol", u.rol, rol), ("activo", bool(u.activo), activo)):
+        if antes != despues:
+            cambios.append(f"{etiqueta}: {antes} → {despues}")
+    u.nombre, u.cargo, u.rol, u.activo = nombre, cargo or None, rol, activo
+    if cambios:
+        registrar("editar", "Usuario", u.id, f"{u.username} · " + "; ".join(cambios))
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.route('/accesos/<int:uid>/clave', methods=['POST'])
+def acceso_clave(uid):
+    u = db.get_or_404(Usuario, uid)
+    if u.username == _admin_env():
+        raise DatoInvalido("La contraseña del administrador principal se cambia con ADMIN_PASSWORD en Render.")
+    clave = request.form.get('password') or ""
+    if len(clave) < CLAVE_MIN:
+        raise DatoInvalido(f"La contraseña debe tener al menos {CLAVE_MIN} caracteres.")
+    u.set_password(clave)
+    registrar("clave_cambiada", "Usuario", u.id, f"{u.username}: contraseña restablecida por un administrador")
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.route('/accesos/<int:uid>/mfa-reset', methods=['POST'])
+def acceso_mfa_reset(uid):
+    """Quita la verificación en dos pasos de alguien que perdió su teléfono; al entrar podrá activarla de nuevo."""
+    u = db.get_or_404(Usuario, uid)
+    u.totp_secret, u.totp_activo, u.totp_ultimo = None, False, None
+    registrar("mfa_reset", "Usuario", u.id, f"{u.username}: TOTP restablecido por un administrador")
+    db.session.commit()
+    return redirect(url_for('accesos'))
+
+
+@app.context_processor
+def inyectar_identidad():
+    """Quién está dentro: cargo y nombre para el encabezado, y el saludo de bienvenida (una sola vez)."""
+    if not current_user.is_authenticated:
+        return {}
+    datos = {"cargo_actual": cargo_de(current_user), "nombre_actual": current_user.nombre or current_user.username,
+             "nombre_pila": nombre_corto(current_user).title()}
+    if request.endpoint not in RUTAS_PUBLICAS:               # en la web pública no se gasta: se muestra en el panel
+        datos["saludo"] = session.pop("bienvenida", None)
+    return datos
+
+
+# --- RUTAS PRINCIPALES -----------------------------------------------------
+@app.route('/panel')
+def index():
+    """Tablero Global: primero las plataformas SaaS (lo que da dinero y lo que se puede romper), después los clientes especiales."""
+    hoy = date.today()
+    plats = Proyecto.query.filter_by(tipo=PLAT).order_by(Proyecto.nombre).all()
+    alertas = alertas_cacheadas()
+    por_proyecto = {}
+    for a in alertas:
+        if a.get("proyecto") is not None:
+            por_proyecto[a["proyecto"].id] = por_proyecto.get(a["proyecto"].id, 0) + 1
+    for p in plats:
+        p.fin = finanzas_plataforma(p)
+        p.ult_resp = ultimo_respaldo(p)
+        p.n_alertas = por_proyecto.get(p.id, 0)
+        p.resp_mal = p.estado in ("Activo", "Mantenido") and (p.ult_resp is None or (hoy - p.ult_resp).days > DIAS_RESPALDO)
+    ingreso = sum(p.fin["ingreso_30d"] for p in plats)
+    gasto = sum(p.fin["costo_mes"] for p in plats)
+
+    clientes = Cliente.query.filter(Cliente.nombre_comercial != INTERNO).order_by(Cliente.id.desc()).all()
+    subs = Suscripcion.query.filter(Suscripcion.cliente_id.in_([c.id for c in clientes])).all() if clientes else []
+    stats = {
+        "plataformas": len(plats),
+        "activas": sum(1 for p in plats if p.estado in ("Activo", "Mantenido")),
+        "desarrollo": sum(1 for p in plats if p.estado == "Desarrollo"),
+        "ingreso_30d": ingreso, "gasto": gasto, "ganancia": ingreso - gasto,
+        "alertas": len(alertas),
+        "clientes": len(clientes),
+        "ingresos_clientes": sum(x.monto_periodo / x.meses for x in subs),
+    }
+    return render_template('admin_index.html', stats=stats, plataformas=plats, clientes=clientes,
+                           planes=planes_visibles(), hoy=hoy, dias_respaldo=DIAS_RESPALDO)
+
+
+@app.route('/nuevo_cliente', methods=['POST'])
+def nuevo_cliente():
+    membresia = request.form.get('membresia')
+    nuevo = Cliente(
+        nombre_comercial=request.form.get('nombre_comercial'),
+        contacto=request.form.get('contacto'),
+        membresia_actual=membresia or "Ninguna",
+    )
+    db.session.add(nuevo)
+    db.session.flush()  # para obtener nuevo.id
+
+    plan = Plan.query.filter_by(nombre=membresia).first()
+    if plan:
+        db.session.add(Suscripcion(cliente_id=nuevo.id, plan_id=plan.id, tarifa=plan.precio or 0))
+    registrar("crear", "Cliente", nuevo.id, f"{nuevo.nombre_comercial} · {membresia}")
+    db.session.commit()
+    return redirect(url_for('index'))
+
+
+CAMPOS_RECURSOS = ("nivel", "cpu", "ram", "transferencia", "respaldos")
+
+
+def _valores_plan(plan=None):
+    """Valores para mostrar en el formulario de un plan (nuevo si plan es None)."""
+    if plan is None:
+        return {"nombre": "", "precio": "", "a_medida": False, "descripcion": "", "incluye": "",
+                "destacado": False, "categoria": "tamano", "bd_incluida": "", "img_incluida": "", "orden": 0, "activo": True, "precio_anual": "",
+                "nivel": "", "cpu": "", "ram": "", "transferencia": "", "respaldos": ""}
+    return {"nombre": plan.nombre, "precio": "" if plan.precio is None else f"{plan.precio:g}",
+            "a_medida": bool(plan.a_medida), "descripcion": plan.descripcion or "",
+            "incluye": (plan.incluye or "").replace("|", "\n"), "destacado": bool(plan.destacado),
+            "categoria": plan.categoria or "tamano", "bd_incluida": plan.bd_incluida or "", "img_incluida": plan.img_incluida or "",
+            "orden": plan.orden or 0, "activo": plan.activo is not False,
+            "precio_anual": "" if plan.precio_anual is None else f"{plan.precio_anual:g}",
+            "nivel": plan.nivel or "", "cpu": plan.cpu or "", "ram": plan.ram or "",
+            "transferencia": plan.transferencia or "", "respaldos": plan.respaldos or ""}
+
+
+def _leer_form_plan(plan):
+    """Valida el formulario y lo aplica a `plan`. Devuelve (error, valores_para_remostrar)."""
+    v = {"nombre": campo("nombre"), "precio": campo("precio"), "a_medida": "a_medida" in request.form,
+         "descripcion": campo("descripcion"), "incluye": request.form.get("incluye") or "",
+         "destacado": "destacado" in request.form, "categoria": campo("categoria"),
+         "bd_incluida": campo("bd_incluida"), "img_incluida": campo("img_incluida"), "orden": campo("orden") or "0", "activo": "activo" in request.form,
+         "precio_anual": campo("precio_anual"),
+         "nivel": campo("nivel"), "cpu": campo("cpu"), "ram": campo("ram"),
+         "transferencia": campo("transferencia"), "respaldos": campo("respaldos")}
+    if not v["nombre"]:
+        return "Escribe un nombre para el plan.", v
+    if len(v["nombre"]) > 60:
+        return "El nombre admite hasta 60 caracteres.", v
+    if Plan.query.filter(Plan.nombre == v["nombre"], Plan.id != (plan.id or 0)).first():
+        return "Ya existe un plan con ese nombre.", v
+    if len(v["descripcion"]) > 120:
+        return f"La descripción admite hasta 120 caracteres (llevas {len(v['descripcion'])}).", v
+    crudo = v["precio"].replace("$", "").replace(",", "").replace("MXN", "").strip()
+    try:
+        precio = leer_monto(crudo, "precio") if crudo else None
+    except ValueError:
+        return "El precio debe ser un número, por ejemplo 2500. Déjalo vacío si se cotiza a la medida.", v
+    if precio is not None and precio < 0:
+        return "El precio no puede ser negativo.", v
+    crudo_a = v["precio_anual"].replace("$", "").replace(",", "").replace("MXN", "").strip()
+    try:
+        anual = leer_monto(crudo_a, "precio anual") if crudo_a else None
+    except ValueError:
+        return "El precio anual debe ser un número. Déjalo vacío para cobrar 10 de 12 meses.", v
+    if anual is not None and anual < 0:
+        return "El precio anual no puede ser negativo.", v
+    try:
+        orden = int(v["orden"])
+    except ValueError:
+        return "El orden debe ser un número entero.", v
+    if v["categoria"] not in ("tamano", "ciber"):
+        v["categoria"] = "tamano"
+    lineas = [l.strip().replace("|", "/") for l in v["incluye"].splitlines() if l.strip()]
+    plan.nombre, plan.precio, plan.a_medida, plan.descripcion = v["nombre"], precio, v["a_medida"], v["descripcion"]
+    plan.incluye, plan.destacado, plan.categoria = "|".join(lineas), v["destacado"], v["categoria"]
+    plan.bd_incluida, plan.orden, plan.activo = v["bd_incluida"] or None, orden, v["activo"]
+    if "img_incluida" in request.form:        # si el formulario aún no trae el campo, se conserva el valor actual
+        plan.img_incluida = v["img_incluida"] or None
+    if "precio_anual" in request.form:        # si el formulario aún no trae el campo, se conserva el valor actual
+        plan.precio_anual = anual
+    for k in CAMPOS_RECURSOS:                 # nivel, cpu, ram, transferencia, respaldos (mismo criterio)
+        if k in request.form:
+            setattr(plan, k, v[k][:30] or None)
+    return None, v
+
+
+@app.route('/membresias')
+def membresias():
+    """Administración de membresías: lista de todos los planes, vigentes y retirados."""
+    planes = Plan.query.order_by(Plan.categoria, Plan.orden, Plan.id).all()
+    suscritos = {p.id: Suscripcion.query.filter_by(plan_id=p.id).count() for p in planes}
+    return render_template('planes_admin.html', planes=planes, suscritos=suscritos, dinero=dinero,
+                           anual=precio_anual, meses_anual=ANUAL_MESES_PAGADOS,
+                           msg=request.args.get('msg'))
+
+
+@app.route('/membresias/nuevo', methods=['GET', 'POST'])
+def plan_nuevo():
+    error, valores = None, _valores_plan()
+    if request.method == 'POST':
+        plan = Plan()
+        error, valores = _leer_form_plan(plan)
+        if not error:
+            db.session.add(plan)
+            db.session.flush()
+            registrar("crear", "Plan", plan.id, f"{plan.nombre} · {dinero(plan.precio)}")
+            db.session.commit()
+            return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» creado."))
+        db.session.rollback()
+    return render_template('plan_form.html', f=valores, plan=None, error=error, suscritos=0,
+                           meses_anual=ANUAL_MESES_PAGADOS)
+
+
+@app.route('/membresias/<int:plan_id>/editar', methods=['GET', 'POST'])
+def plan_editar(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+    error, valores = None, _valores_plan(plan)
+    if request.method == 'POST':
+        error, valores = _leer_form_plan(plan)
+        if not error:
+            registrar("editar", "Plan", plan.id, f"{plan.nombre} · {dinero(plan.precio)}")
+            db.session.commit()
+            return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» actualizado."))
+        db.session.rollback()
+    suscritos = Suscripcion.query.filter_by(plan_id=plan.id).count()
+    return render_template('plan_form.html', f=valores, plan=plan, error=error, suscritos=suscritos,
+                           meses_anual=ANUAL_MESES_PAGADOS)
+
+
+@app.route('/membresias/<int:plan_id>/activo', methods=['POST'])
+def plan_activo(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+    plan.activo = plan.activo is False          # retirado -> vigente; vigente -> retirado
+    registrar("activar" if plan.activo else "retirar", "Plan", plan.id, plan.nombre)
+    db.session.commit()
+    return redirect(url_for('membresias', msg=f"Plan «{plan.nombre}» " + ("vigente de nuevo." if plan.activo else "retirado de la web.")))
+
+
+@app.route('/membresias/vista')
+def membresias_vista():
+    """Vista de tarjetas (la anterior)."""
+    planes = []
+    for p in planes_visibles():
+        if p.destacado:
+            color, btn = "var(--accent-purple)", "var(--accent-purple)"
+        elif p.a_medida:
+            color, btn = "var(--border-color)", "var(--text-primary)"
+        else:
+            color, btn = "var(--border-color)", "var(--card-bg)"
+        planes.append({
+            "nombre": p.nombre,
+            "precio": (f"Desde {dinero(p.precio)}" if p.a_medida and p.precio else "A medida" if p.a_medida
+                       else dinero(p.precio) if p.precio else "Por definir"),
+            "anual": (f"Desde {dinero(precio_anual(p))}" if p.a_medida and precio_anual(p) else "A medida" if p.a_medida
+                      else dinero(precio_anual(p)) if precio_anual(p) else "Por definir"),
+            "ahorro": (dinero(p.precio * 12 - precio_anual(p)) if p.precio and not p.a_medida and precio_anual(p)
+                       and p.precio * 12 > precio_anual(p) else ""),
+            "bd": p.bd_incluida or "", "img": p.img_incluida or "",
+            "nivel": p.nivel or "", "cpu": p.cpu or "", "ram": p.ram or "",
+            "transferencia": p.transferencia or "", "respaldos": p.respaldos or "",
+            "desc": p.descripcion,
+            "incluye": [i for i in (p.incluye or "").split("|") if i],
+            "color": color,
+            "btn": btn,
+        })
+    return render_template('membresias.html', planes=planes)
+
+
+# --- CLIENTES --------------------------------------------------------------
+CAMPOS_CLIENTE = ["nombre_comercial", "razon_social", "rfc", "direccion_fiscal",
+                  "contacto", "contacto_nombre", "telefono"]
+CAMPOS_PROYECTO = ["nombre", "estado", "repo_url", "rama_produccion", "stack", "dominio_registrador",
+                   "frontend_plataforma", "backend_plataforma", "bd_storage", "neon_proyecto", "r2_buckets", "cloudinary_prefijo", "ia_cuentas", "carpeta_local", "boveda_ref",
+                   "url_produccion", "version"]
+
+
+def _destino(por_defecto):
+    """Si el formulario viene del maestro de una plataforma, vuelve a esa misma pestaña."""
+    v = request.form.get('volver') or ""
+    if v.startswith('/plataformas/') and '//' not in v and '\\' not in v:
+        return v
+    return por_defecto
+
+
+def campo(nombre):
+    return (request.form.get(nombre) or "").strip()
+
+
+def leer_monto(texto, nombre="monto", positivo=False):
+    """Texto -> importe validado (Decimal -> float con 2 decimales). Rechaza basura, NaN, negativos y excesos."""
+    t = str(texto if texto is not None else "").replace("$", "").replace(",", "").replace("MXN", "").strip() or "0"
+    try:
+        d = Decimal(t)
+    except InvalidOperation:
+        raise DatoInvalido(f"«{nombre}» debe ser un número, por ejemplo 2500 o 2500.50.")
+    if not d.is_finite():
+        raise DatoInvalido(f"«{nombre}» no es un número válido.")
+    if d > MONTO_MAX:
+        raise DatoInvalido(f"«{nombre}» excede el máximo permitido.")
+    d = d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if d < 0:
+        raise DatoInvalido(f"«{nombre}» no puede ser negativo.")
+    if positivo and d == 0:
+        raise DatoInvalido(f"«{nombre}» debe ser mayor que cero.")
+    if d > MONTO_MAX:
+        raise DatoInvalido(f"«{nombre}» excede el máximo permitido.")
+    return float(d)
+
+
+def campo_fecha(nombre):
+    v = campo(nombre)
+    return date.fromisoformat(v) if v else None
+
+
+@app.route('/clientes')
+def clientes():
+    q = (request.args.get('q') or "").strip()
+    consulta = Cliente.query.filter(Cliente.nombre_comercial != INTERNO)
+    if q:
+        like = f"%{q}%"
+        consulta = consulta.filter(db.or_(Cliente.nombre_comercial.ilike(like),
+                                          Cliente.contacto.ilike(like), Cliente.rfc.ilike(like)))
+    return render_template('clientes.html', clientes=consulta.order_by(Cliente.nombre_comercial).all(), q=q)
+
+
+@app.route('/clientes/nuevo', methods=['GET', 'POST'])
+@app.route('/clientes/<int:cid>/editar', methods=['GET', 'POST'])
+def cliente_form(cid=None):
+    cliente = db.get_or_404(Cliente, cid) if cid else None
+    if request.method == 'POST':
+        nuevo = cliente is None
+        if nuevo:
+            cliente = Cliente()
+            db.session.add(cliente)
+        for c in CAMPOS_CLIENTE:
+            setattr(cliente, c, campo(c))
+        plan = db.session.get(Plan, int(campo('plan_id'))) if campo('plan_id') else None
+        cliente.membresia_actual = plan.nombre if plan else "Ninguna"
+        db.session.flush()
+        if plan:
+            sus = cliente.suscripcion or Suscripcion(cliente_id=cliente.id)
+            sus.plan_id = plan.id
+            sus.tarifa = leer_monto(campo('tarifa') or plan.precio or 0, "tarifa")
+            sus.fecha_corte = campo_fecha('fecha_corte')
+            sus.proxima_fecha_pago = campo_fecha('proxima_fecha_pago')
+            sus.estado_cobro = campo('estado_cobro') or "Al corriente"
+            sus.periodicidad = campo('periodicidad') or "Mensual"
+            # Si eligen pago anual y no capturan descuento, se aplica el del plan (precio anual vs 12 mensualidades)
+            d = campo('descuento_pct')
+            desc = leer_monto(d, "descuento") if d else 0
+            if desc > 100:
+                raise DatoInvalido("El descuento no puede pasar de 100%.")
+            sus.descuento_pct = desc if desc else (descuento_anual_pct(plan) if sus.periodicidad == "Anual" else 0)
+            db.session.add(sus)
+        registrar("crear" if nuevo else "editar", "Cliente", cliente.id, cliente.nombre_comercial)
+        db.session.commit()
+        return redirect(url_for('cliente_detalle', cid=cliente.id))
+    # solo planes vigentes, más el que el cliente ya tenga (aunque sea un plan retirado)
+    planes = [p for p in Plan.query.order_by(Plan.orden, Plan.id).all()
+              if p.activo is not False or (cliente and p.nombre == cliente.membresia_actual)]
+    return render_template('cliente_form.html', cliente=cliente, planes=planes)
+
+
+@app.route('/clientes/<int:cid>')
+def cliente_detalle(cid):
+    c = db.get_or_404(Cliente, cid)
+    pagos = sorted(c.pagos, key=lambda p: (p.fecha or date.min, p.id), reverse=True)
+    costos = sum(k.monto_mensual or 0 for p in c.proyectos for k in p.costos)
+    tarifa = c.suscripcion.tarifa if c.suscripcion else 0
+    resumen = {"tarifa": dinero(tarifa), "costos": dinero(costos), "ganancia": dinero(tarifa - costos),
+               "pagado": dinero(sum(p.monto for p in pagos if p.estado == "Pagado"))}
+    return render_template('cliente_detalle.html', c=c, pagos=pagos, resumen=resumen, hoy=date.today().isoformat())
+
+
+@app.route('/clientes/<int:cid>/proyecto', methods=['POST'])
+def proyecto_nuevo(cid):
+    c = db.get_or_404(Cliente, cid)
+    p = Proyecto(cliente_id=c.id, **{k: campo(k) for k in CAMPOS_PROYECTO})
+    p.estado = p.estado or "Desarrollo"
+    p.rama_produccion = p.rama_produccion or "main"
+    db.session.add(p)
+    db.session.flush()
+    registrar("crear", "Proyecto", p.id, f"{p.nombre} · cliente {c.nombre_comercial}")
+    db.session.commit()
+    return redirect(url_for('cliente_detalle', cid=c.id))
+
+
+@app.route('/proyectos/<int:pid>/costo', methods=['POST'])
+def costo_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    per = campo('periodicidad') if campo('periodicidad') in MESES else "Mensual"
+    monto = leer_monto(campo('monto'), "monto")
+    k = CostoServicio(proyecto_id=p.id, proveedor=campo('proveedor'), concepto=campo('concepto'),
+                      periodicidad=per, monto_periodo=monto, monto_mensual=round(monto / MESES[per], 2),
+                      proxima_fecha_pago=campo_fecha('proxima_fecha_pago'))
+    db.session.add(k)
+    db.session.flush()
+    registrar("crear", "CostoServicio", k.id, f"{k.proveedor} · proyecto {p.nombre}")
+    db.session.commit()
+    if p.tipo == PLAT:
+        return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
+    return redirect(url_for('cliente_detalle', cid=p.cliente_id))
+
+
+@app.route('/clientes/<int:cid>/pago', methods=['POST'])
+def pago_nuevo(cid):
+    c = db.get_or_404(Cliente, cid)
+    pago = Pago(cliente_id=c.id, monto=leer_monto(campo('monto'), "monto", positivo=True), fecha=campo_fecha('fecha') or date.today(),
+                concepto=campo('concepto'), metodo=campo('metodo'), estado=campo('estado') or "Pagado")
+    db.session.add(pago)
+    db.session.flush()
+    registrar("crear", "Pago", pago.id, f"{dinero(pago.monto)} · {c.nombre_comercial}")
+    db.session.commit()
+    if pago.estado == "Pagado":
+        crear_notificacion("Pago", f"Pago recibido: {dinero(pago.monto)}", c.nombre_comercial, f"/clientes/{c.id}",
+                           urgente=False, clave=f"pago-{pago.id}", externo=False)
+    return redirect(url_for('cliente_detalle', cid=c.id))
+
+
+# --- COBROS, PAGOS Y AVISOS ---------------------------------------------------
+@app.route('/pagos/<int:pid>/anular', methods=['POST'])
+def pago_anular(pid):
+    """Anula un pago con un contra-asiento negativo (solo admin). El original no se borra ni se edita."""
+    motivo = (request.form.get('motivo') or '').strip()
+    if not 3 <= len(motivo) <= 120:
+        raise DatoInvalido("El motivo de la anulación debe tener entre 3 y 120 caracteres.")
+    pg = db.session.execute(db.select(Pago).where(Pago.id == pid).with_for_update()).scalar_one_or_none()
+    if pg is None:
+        abort(404)
+    cid = pg.cliente_id
+    if pg.anulado or pg.anula_id or (pg.monto or 0) <= 0:      # ya anulado, o es un contra-asiento: no se anula dos veces
+        db.session.rollback()
+        return redirect(url_for('cliente_detalle', cid=cid))
+    pg.anulado = True
+    contra = Pago(cliente_id=cid, monto=-(pg.monto or 0), fecha=date.today(), metodo=pg.metodo,
+                  concepto=f"ANULACIÓN del pago #{pg.id}: {motivo}", estado="Pagado", anula_id=pg.id, anulado=True,
+                  motivo=motivo, creado=datetime.utcnow())
+    db.session.add(contra)
+    db.session.flush()
+    registrar("anular", "Pago", pg.id, f"{dinero(pg.monto)} · cliente #{cid} · contra-asiento #{contra.id} · {motivo}")
+    db.session.commit()
+    return redirect(url_for('cliente_detalle', cid=cid))
+
+
+@app.route('/clientes/<int:cid>/cobrar', methods=['POST'])
+def cobrar(cid):
+    c = db.get_or_404(Cliente, cid)
+    # Bloqueo de fila: dos clics/pestañas simultáneas se ponen en fila en vez de cobrar dos veces.
+    s = db.session.execute(db.select(Suscripcion).where(Suscripcion.cliente_id == c.id).with_for_update()).scalar_one_or_none()
+    if s:
+        concepto = f"Cobro {s.periodicidad.lower()} · {s.plan.nombre}"
+        reciente = datetime.utcnow() - timedelta(seconds=COBRO_VENTANA_S)
+        repetido = Pago.query.filter(Pago.cliente_id == c.id, Pago.concepto == concepto, Pago.creado >= reciente,
+                                     Pago.anulado.isnot(True)).first()
+        if repetido:
+            db.session.rollback()          # suelta el bloqueo: es un doble envío, no se cobra otra vez
+            return redirect(request.referrer or url_for('cliente_detalle', cid=c.id))
+        pago = Pago(cliente_id=c.id, monto=s.monto_periodo, fecha=date.today(), metodo=campo('metodo'),
+                    concepto=concepto, estado="Pagado", creado=datetime.utcnow())
+        db.session.add(pago)
+        s.proxima_fecha_pago = sumar_meses(s.proxima_fecha_pago or date.today(), s.meses)
+        db.session.flush()
+        fijar_estado_cobro(s, estado_cobro_para(s) if s.proxima_fecha_pago else "Al corriente", "cobro registrado", usuario=current_user.username)
+        registrar("cobro", "Pago", pago.id, f"{dinero(pago.monto)} · {c.nombre_comercial}")
+        db.session.commit()
+        crear_notificacion("Pago", f"Cobro registrado: {dinero(pago.monto)}", c.nombre_comercial, f"/clientes/{c.id}",
+                           urgente=False, clave=f"pago-{pago.id}", externo=False)
+    return redirect(request.referrer or url_for('cliente_detalle', cid=c.id))
+
+
+@app.route('/costos/<int:kid>/pagar', methods=['POST'])
+def pagar_costo(kid):
+    k = db.session.execute(db.select(CostoServicio).where(CostoServicio.id == kid).with_for_update()).scalar_one_or_none()
+    if k is None:
+        abort(404)
+    if k.ultimo_pago == date.today():      # ya se marcó hoy: un segundo clic no avanza otra vez la fecha
+        db.session.rollback()
+        return redirect(_destino(request.referrer or url_for('cliente_detalle', cid=k.proyecto.cliente_id)))
+    k.ultimo_pago = date.today()
+    k.proxima_fecha_pago = sumar_meses(k.proxima_fecha_pago or date.today(), MESES.get(k.periodicidad, 1))
+    registrar("pago_proveedor", "CostoServicio", k.id, f"{k.proveedor} · {dinero(k.monto_periodo or k.monto_mensual)}")
+    db.session.commit()
+    return redirect(_destino(request.referrer or url_for('cliente_detalle', cid=k.proyecto.cliente_id)))
+
+
+def _limite():
+    return date.today() + timedelta(days=DIAS_AVISO)
+
+
+def texto_cobro(a):
+    c = a["cliente"]
+    nombre = c.contacto_nombre or c.nombre_comercial
+    if a["dias"] < 0:
+        cuando = f"venció el {a['fecha']:%d/%m/%Y}"
+    elif a["dias"] == 0:
+        cuando = "vence hoy"
+    else:
+        cuando = f"vence el {a['fecha']:%d/%m/%Y} (en {a['dias']} días)"
+    return (f"Hola {nombre}, te escribimos de ZEDYTH. El pago {a['periodicidad'].lower()} de tu plan "
+            f"{a['plan']} por {dinero(a['monto'])} {cuando}. ¿Nos confirmas cuando lo realices? Gracias.")
+
+
+def calcular_avisos():
+    hoy = date.today()
+    por_cobrar, por_pagar = [], []
+    for s in Suscripcion.query.filter(Suscripcion.proxima_fecha_pago.isnot(None),
+                                      Suscripcion.proxima_fecha_pago <= _limite()).all():
+        a = {"cliente": s.cliente, "plan": s.plan.nombre, "fecha": s.proxima_fecha_pago, "monto": s.monto_periodo,
+             "periodicidad": s.periodicidad, "dias": (s.proxima_fecha_pago - hoy).days}
+        txt = texto_cobro(a)
+        tel = re.sub(r"\D", "", s.cliente.telefono or "")
+        tel = "52" + tel if len(tel) == 10 else tel
+        a["wa"] = f"https://wa.me/{tel}?text={quote(txt)}" if tel else None
+        a["mail"] = f"mailto:{s.cliente.contacto}?subject={quote('Recordatorio de pago ZEDYTH')}&body={quote(txt)}"
+        por_cobrar.append(a)
+    for k in CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.isnot(None),
+                                        CostoServicio.proxima_fecha_pago <= _limite()).all():
+        por_pagar.append({"id": k.id, "proveedor": k.proveedor, "concepto": k.concepto, "proyecto": k.proyecto,
+                          "fecha": k.proxima_fecha_pago, "monto": k.monto_periodo or k.monto_mensual,
+                          "periodicidad": k.periodicidad, "dias": (k.proxima_fecha_pago - hoy).days})
+    por_cobrar.sort(key=lambda a: a["fecha"])
+    por_pagar.sort(key=lambda a: a["fecha"])
+    return por_cobrar, por_pagar
+
+
+# --- COBRANZA AUTOMÁTICA --------------------------------------------------------------------------
+COBRANZA_GRACIA_DIAS = int(os.environ.get("COBRANZA_GRACIA_DIAS", "5"))          # días tras vencer en que sigue "Pendiente"
+COBRANZA_SUSPENDER_DIAS = int(os.environ.get("COBRANZA_SUSPENDER_DIAS", "0"))    # días de atraso para "Suspendido"; 0 = nunca solo
+COBRANZA_SUSPENDE_PROYECTOS = os.environ.get("COBRANZA_SUSPENDE_PROYECTOS") == "1"   # además pasa sus proyectos a "Suspendido"
+
+
+def estado_cobro_para(s, hoy=None):
+    """Estado que le toca a una suscripción según su fecha de pago. Sin fecha o con tarifa 0 no se toca."""
+    hoy = hoy or date.today()
+    if not s.proxima_fecha_pago or (s.tarifa or 0) <= 0 or s.cliente.nombre_comercial == INTERNO:
+        return s.estado_cobro
+    atraso = (hoy - s.proxima_fecha_pago).days
+    if atraso <= 0:
+        return "Al corriente"
+    if COBRANZA_SUSPENDER_DIAS and atraso > COBRANZA_SUSPENDER_DIAS:
+        return "Suspendido"
+    if atraso > COBRANZA_GRACIA_DIAS:
+        return "Atrasado"
+    return "Pendiente"
+
+
+def _suspender_proyectos(cliente):
+    n = 0
+    for pr in cliente.proyectos:
+        if pr.estado in ("Activo", "Mantenido"):
+            pr.estado_previo, pr.estado = pr.estado, "Suspendido"
+            n += 1
+    return n
+
+
+def _reactivar_proyectos(cliente):
+    n = 0
+    for pr in cliente.proyectos:
+        if pr.estado == "Suspendido" and pr.estado_previo:        # solo los que suspendió la cobranza, no los manuales
+            pr.estado, pr.estado_previo = pr.estado_previo, None
+            n += 1
+    return n
+
+
+def fijar_estado_cobro(s, nuevo, motivo="", usuario="sistema"):
+    """Cambia el estado de cobro de una suscripción, deja rastro y suspende o reactiva proyectos si corresponde.
+    No hace commit: lo hace quien la llama. Devuelve el texto del cambio, o None si no hubo cambio."""
+    viejo = s.estado_cobro
+    if nuevo == viejo:
+        return None
+    s.estado_cobro = nuevo
+    extra = ""
+    if COBRANZA_SUSPENDE_PROYECTOS:
+        if nuevo == "Suspendido":
+            extra = f" · {_suspender_proyectos(s.cliente)} proyecto(s) suspendidos"
+        elif viejo == "Suspendido":
+            extra = f" · {_reactivar_proyectos(s.cliente)} proyecto(s) reactivados"
+    texto = f"{s.cliente.nombre_comercial}: {viejo} → {nuevo}{(' · ' + motivo) if motivo else ''}{extra}"
+    registrar("cobranza_estado", "Suscripcion", s.id, texto, usuario=usuario)
+    return texto
+
+
+def actualizar_cobranza():
+    """Recorre las suscripciones y pasa a Pendiente / Atrasado / Suspendido (o de vuelta a Al corriente) según la fecha.
+    Se llama desde el vigilante; solo escribe cuando algo cambia."""
+    hoy = date.today()
+    cambios = []
+    try:
+        for s in Suscripcion.query.filter(Suscripcion.proxima_fecha_pago.isnot(None)).all():
+            nuevo = estado_cobro_para(s, hoy)
+            atraso = (hoy - s.proxima_fecha_pago).days
+            texto = fijar_estado_cobro(s, nuevo, f"vencía el {s.proxima_fecha_pago:%d/%m/%Y}, {max(atraso, 0)} día(s) de atraso")
+            if texto:
+                cambios.append((s, nuevo, atraso, texto))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    for s, nuevo, atraso, texto in cambios:
+        if nuevo in ("Atrasado", "Suspendido"):
+            crear_notificacion("Cobranza", f"{s.cliente.nombre_comercial}: {'SUSPENDIDO' if nuevo == 'Suspendido' else 'atrasado'} ({atraso} días)",
+                               f"Debe {dinero(s.monto_periodo)} de {s.plan.nombre}. Vencía el {s.proxima_fecha_pago:%d/%m/%Y}.",
+                               f"/clientes/{s.cliente_id}", urgente=True, clave=f"cobranza-{nuevo}-{s.id}-{s.proxima_fecha_pago}")
+    return len(cambios)
+
+
+@app.context_processor
+def inyectar_avisos():
+    n = (Suscripcion.query.filter(Suscripcion.proxima_fecha_pago.isnot(None),
+                                  Suscripcion.proxima_fecha_pago <= _limite()).count()
+         + CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.isnot(None),
+                                      CostoServicio.proxima_fecha_pago <= _limite()).count()
+         + len(alertas_cacheadas()))
+    return {"n_avisos": n, "n_leads": Lead.query.filter_by(estado="Nuevo").count(),
+            "n_notif": Notificacion.query.filter_by(leida=False).count(), "vapid_public": _vapid()[0],
+            "es_admin": es_admin()}
+
+
+@app.route('/avisos')
+def avisos():
+    por_cobrar, por_pagar = calcular_avisos()
+    return render_template('avisos.html', por_cobrar=por_cobrar, por_pagar=por_pagar, dias_aviso=DIAS_AVISO,
+                           seguridad=alertas_seguridad())
+
+
+# --- REPOSITORIOS ------------------------------------------------------------
+@app.route('/plataformas')
+def plataformas():
+    filas = Proyecto.query.filter_by(tipo=PLAT).order_by(Proyecto.nombre).all()
+    for p in filas:
+        p.gasto = sum(float(k.monto_mensual or 0) for k in p.costos)
+        venc = [v.fecha for v in p.vencimientos if v.fecha]
+        p.prox_venc = min(venc) if venc else None
+        p.ult_resp = ultimo_respaldo(p)
+        p.fin = finanzas_plataforma(p)
+    ing = sum(p.fin["ingreso_30d"] for p in filas)
+    try:
+        serv = servicios.resumen_plataformas([p.id for p in filas])   # estado y costo de servicios por plataforma
+    except Exception as e:
+        app.logger.warning("Plataformas: no se pudo leer Servicios: %s", e)
+        serv = None
+    return render_template('plataformas.html', plataformas=filas, total=sum(p.gasto for p in filas), hoy=date.today(),
+                           ingresos=ing, ganancia=ing - sum(p.gasto for p in filas), serv=serv)
+
+
+@app.route('/plataformas/nueva', methods=['GET', 'POST'])
+def plataforma_nueva():
+    if request.method == 'POST':
+        if not campo('nombre'):
+            return redirect(request.url)
+        p = Proyecto(cliente_id=cliente_interno().id, tipo=PLAT, **{k: campo(k) for k in CAMPOS_PROYECTO})
+        p.estado = p.estado or "Desarrollo"
+        p.rama_produccion = p.rama_produccion or "main"
+        db.session.add(p)
+        db.session.flush()
+        registrar("crear", "Plataforma", p.id, p.nombre)
+        db.session.commit()
+        return redirect(url_for('plataforma_detalle', pid=p.id))
+    return render_template('plataforma_form.html')
+
+
+TABS_PLATAFORMA = ["resumen", "finanzas", "servicios", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "inteligencia"]
+
+
+def alertas_plataforma(p):
+    """Todo lo que requiere atención en UNA plataforma (misma lógica que /avisos y /ciberseguridad)."""
+    hoy = date.today()
+    lista = []
+    for v in p.vencimientos:
+        if v.fecha and v.fecha <= hoy + timedelta(days=DIAS_VENCIMIENTO):
+            d = (v.fecha - hoy).days
+            lista.append({"tipo": "Vencimiento", "detalle": f"{v.tipo}: {v.nombre}", "fecha": v.fecha, "dias": d,
+                          "grave": d <= 7, "tab": "seguridad"})
+    if p.estado in ("Activo", "Mantenido"):
+        ult = ultimo_respaldo(p)
+        if ult is None:
+            lista.append({"tipo": "Respaldo", "detalle": "Sin respaldos registrados", "fecha": None, "dias": -9999,
+                          "grave": True, "tab": "seguridad"})
+        elif (hoy - ult).days > DIAS_RESPALDO:
+            lista.append({"tipo": "Respaldo", "detalle": f"Último respaldo hace {(hoy - ult).days} días", "fecha": ult,
+                          "dias": -(hoy - ult).days, "grave": True, "tab": "seguridad"})
+    for k in p.costos:
+        if k.proxima_fecha_pago and k.proxima_fecha_pago <= _limite():
+            d = (k.proxima_fecha_pago - hoy).days
+            lista.append({"tipo": "Pago", "detalle": f"{k.proveedor}{' · ' + k.concepto if k.concepto else ''} · {dinero(k.monto_periodo or k.monto_mensual)}",
+                          "fecha": k.proxima_fecha_pago, "dias": d, "grave": d <= 3, "tab": "finanzas", "costo_id": k.id})
+    for i in p.incidentes:
+        if i.estado == "Abierto":
+            lista.append({"tipo": "Incidente", "detalle": f"{i.gravedad}: {i.titulo}", "fecha": i.fecha, "dias": -9000,
+                          "grave": i.gravedad in ("Alta", "Crítica"), "tab": "seguridad"})
+    lista.sort(key=lambda a: a["dias"])
+    return lista
+
+
+def _render_de(p):
+    """Servicios de Render ligados a la plataforma (solo caché: jamás retrasa la pantalla)."""
+    try:
+        import render_panel
+        return render_panel.por_proyecto(p)
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudo leer Render: %s", p.id, e)
+        return None
+
+
+@app.route('/plataformas/<int:pid>')
+def plataforma_detalle(pid):
+    """Sistema maestro de control: todo lo de una plataforma propia en una sola pantalla con pestañas."""
+    p = db.get_or_404(Proyecto, pid)
+    if p.tipo != PLAT:
+        return redirect(url_for('cliente_detalle', cid=p.cliente_id))
+    tab = request.args.get('tab') if request.args.get('tab') in TABS_PLATAFORMA else "resumen"
+    try:
+        serv = servicios.resumen_plataformas([p.id])
+        serv_p, serv_tc = serv["por_plat"].get(p.id), serv["tc"]
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudo leer Servicios: %s", p.id, e)
+        serv_p, serv_tc = None, None
+    venc = sorted(p.vencimientos, key=lambda v: v.fecha or date.max)
+    notifs = (Notificacion.query.filter(db.or_(Notificacion.url.like(f"/proyectos/{p.id}/%"),
+                                                Notificacion.url.like(f"/plataformas/{p.id}%")))
+              .order_by(Notificacion.id.desc()).limit(15).all())
+    return render_template(
+        'plataforma_detalle.html', p=p, hoy=date.today(), hoy_iso=date.today().isoformat(), tab=tab,
+        serv_p=serv_p, serv_tc=serv_tc, es_admin=(rol_actual() == "admin"),
+        gasto=sum(float(k.monto_mensual or 0) for k in p.costos),
+        subdominios=sorted(p.subdominios, key=lambda x: x.nombre),
+        costos=sorted(p.costos, key=lambda k: k.proxima_fecha_pago or date.max),
+        vencimientos=venc, ultimo=ultimo_respaldo(p), fin=finanzas_plataforma(p), categorias=INGRESO_CATEGORIAS,
+        ingresos=sorted(p.ingresos, key=lambda i: (i.fecha or date.min, i.id), reverse=True)[:20],
+        checklist=CHECKLIST, marcados={c.clave: c for c in p.checks}, tipos_venc=list(RENOVACION),
+        respaldos=sorted(p.respaldos, key=lambda r: (r.fecha or date.min, r.id), reverse=True)[:10],
+        incidentes=sorted(p.incidentes, key=lambda i: (i.estado != "Abierto", -(i.fecha or date.min).toordinal())),
+        abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
+        cumplidos=sum(1 for c in p.checks if c.cumplido),
+        alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
+        intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
+        intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
+        intel_estados=INTEL_ESTADOS)
+
+
+@app.route('/plataformas/<int:pid>/vinculo', methods=['POST'])
+def plataforma_vinculo(pid):
+    """Asigna (o quita) a esta plataforma un registro de inteligencia."""
+    p = db.get_or_404(Proyecto, pid)
+    modelos = {"inteligencia": Inteligencia}
+    tipo = campo('tipo')
+    modelo = modelos.get(tipo)
+    try:
+        r = db.session.get(modelo, int(campo('registro_id'))) if modelo else None
+    except (TypeError, ValueError):
+        r = None
+    if r is not None:
+        if campo('accion') == 'quitar':
+            if r.plataforma_id == p.id:
+                r.plataforma_id = None
+                registrar("desvincular", modelo.__name__, r.id, p.nombre)
+        else:
+            r.plataforma_id = p.id
+            registrar("vincular", modelo.__name__, r.id, p.nombre)
+        db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab=tipo if tipo in TABS_PLATAFORMA else None)))
+
+
+@app.route('/plataformas/<int:pid>/subdominio', methods=['POST'])
+def subdominio_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    if campo('nombre'):
+        s = Subdominio(proyecto_id=p.id, nombre=campo('nombre'), proposito=campo('proposito') or None,
+                       destino=campo('destino') or None, estado=campo('estado') if campo('estado') in ("Activo", "Inactivo") else "Activo",
+                       notas=campo('notas') or None)
+        db.session.add(s)
+        db.session.flush()
+        registrar("crear", "Subdominio", s.id, f"{s.nombre} · {p.nombre}")
+        db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='infra')))
+
+
+@app.route('/subdominios/<int:sid>/eliminar', methods=['POST'])
+def subdominio_eliminar(sid):
+    s = db.get_or_404(Subdominio, sid)
+    pid = s.proyecto_id
+    registrar("eliminar", "Subdominio", s.id, s.nombre)
+    db.session.delete(s)
+    db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='infra')))
+
+
+@app.route('/repositorios')
+def repositorios():
+    q = (request.args.get('q') or "").strip()
+    estado = request.args.get('estado') or ""
+    consulta = Proyecto.query.join(Cliente)
+    if estado:
+        consulta = consulta.filter(Proyecto.estado == estado)
+    if q:
+        like = f"%{q}%"
+        consulta = consulta.filter(db.or_(Proyecto.nombre.ilike(like), Cliente.nombre_comercial.ilike(like),
+                                          Proyecto.stack.ilike(like)))
+    return render_template('repositorios.html', proyectos=consulta.order_by(Proyecto.nombre).all(), q=q, estado=estado)
+
+
+@app.route('/proyectos/<int:pid>/editar', methods=['GET', 'POST'])
+def proyecto_form(pid):
+    p = db.get_or_404(Proyecto, pid)
+    if request.method == 'POST':
+        for k in CAMPOS_PROYECTO:
+            setattr(p, k, campo(k))
+        p.estado = p.estado or "Desarrollo"
+        registrar("editar", "Proyecto", p.id, p.nombre)
+        db.session.commit()
+        if p.tipo == PLAT:
+            return redirect(url_for('plataforma_detalle', pid=p.id))
+        return redirect(url_for('cliente_detalle', cid=p.cliente_id))
+    return render_template('proyecto_form.html', p=p)
+
+
+# --- CIBERSEGURIDAD ----------------------------------------------------------
+DIAS_VENCIMIENTO = 30   # avisar de dominios/SSL que caducan en este plazo
+DIAS_RESPALDO = 7       # avisar si un proyecto activo lleva más días sin respaldo correcto
+CHECKLIST = [
+    ("2fa", "Verificación en dos pasos en GitHub, hosting y correo"),
+    ("deps", "Dependencias actualizadas"),
+    ("llaves", "Llaves y tokens rotados en el último año"),
+    ("env", "Secretos fuera del código (variables de entorno)"),
+    ("https", "HTTPS activo en el dominio"),
+    ("restore", "Restauración de un respaldo probada"),
+]
+RENOVACION = {"Dominio": 12, "SSL": 3, "Hosting": 12, "Otro": 12}   # meses que suma "Renovado"
+
+
+def ultimo_respaldo(p):
+    return max((r.fecha for r in p.respaldos if r.resultado == "Correcto" and r.fecha), default=None)
+
+
+def alertas_cacheadas():
+    """alertas_seguridad() una sola vez por petición: la barra de avisos y el tablero la usan en la misma página."""
+    if not hasattr(g, "_alertas"):
+        g._alertas = alertas_seguridad()
+    return g._alertas
+
+
+def alertas_seguridad():
+    hoy = date.today()
+    alertas = []
+    for v in Vencimiento.query.filter(Vencimiento.fecha <= hoy + timedelta(days=DIAS_VENCIMIENTO)).all():
+        alertas.append({"proyecto": v.proyecto, "tipo": "Vencimiento", "detalle": f"{v.tipo}: {v.nombre}",
+                        "fecha": v.fecha, "dias": (v.fecha - hoy).days, "vid": v.id})
+    for p in Proyecto.query.filter(Proyecto.estado.in_(["Activo", "Mantenido"])).all():
+        ult = ultimo_respaldo(p)
+        if ult is None:
+            alertas.append({"proyecto": p, "tipo": "Respaldo", "detalle": "Sin respaldos registrados", "fecha": None, "dias": -9999})
+        elif (hoy - ult).days > DIAS_RESPALDO:
+            alertas.append({"proyecto": p, "tipo": "Respaldo", "detalle": f"Último respaldo hace {(hoy - ult).days} días",
+                            "fecha": ult, "dias": -(hoy - ult).days})
+    faltan = [k for k, v in LEGAL.items() if "[COMPLETAR" in str(v)]
+    if faltan:
+        alertas.append({"proyecto": None, "tipo": "Legal", "fecha": None, "dias": -10000,
+                        "detalle": "El aviso de privacidad público muestra datos sin completar (" + ", ".join(faltan)
+                                   + "). Define LEGAL_RAZON, LEGAL_DOMICILIO y LEGAL_JURISDICCION."})
+    alertas.sort(key=lambda a: (a["tipo"] not in ("Vencimiento", "Legal"), a["dias"]))
+    return alertas
+
+
+@app.route('/ciberseguridad')
+def ciberseguridad():
+    hoy = date.today()
+    filas = []
+    for p in Proyecto.query.order_by(Proyecto.nombre).all():
+        ult = ultimo_respaldo(p)
+        filas.append({"p": p, "ult": ult, "dias": (hoy - ult).days if ult else None,
+                      "hechos": sum(1 for c in p.checks if c.cumplido),
+                      "abiertos": sum(1 for i in p.incidentes if i.estado == "Abierto"),
+                      "prox": min(p.vencimientos, key=lambda v: v.fecha, default=None)})
+    alertas = alertas_seguridad()
+    total = len(filas) * len(CHECKLIST)
+    stats = {"vencimientos": sum(1 for a in alertas if a["tipo"] == "Vencimiento"),
+             "sin_respaldo": sum(1 for a in alertas if a["tipo"] == "Respaldo"),
+             "incidentes": sum(f["abiertos"] for f in filas),
+             "cumplimiento": f"{round(100 * sum(f['hechos'] for f in filas) / total)}%" if total else "—"}
+    return render_template('ciberseguridad.html', filas=filas, stats=stats, total_items=len(CHECKLIST),
+                           dias_respaldo=DIAS_RESPALDO)
+
+
+@app.route('/proyectos/<int:pid>/seguridad')
+def proyecto_seguridad(pid):
+    p = db.get_or_404(Proyecto, pid)
+    if p.tipo == PLAT:
+        return redirect(url_for('plataforma_detalle', pid=pid, tab='seguridad'))
+    marcados = {c.clave: c for c in p.checks}
+    return render_template('proyecto_seguridad.html', p=p, checklist=CHECKLIST, marcados=marcados,
+                           vencimientos=sorted(p.vencimientos, key=lambda v: v.fecha),
+                           respaldos=sorted(p.respaldos, key=lambda r: (r.fecha or date.min, r.id), reverse=True)[:10],
+                           incidentes=sorted(p.incidentes, key=lambda i: (i.estado != "Abierto", -(i.fecha or date.min).toordinal())),
+                           hoy=date.today().isoformat(), tipos=list(RENOVACION))
+
+
+def _volver(pid):
+    p = db.session.get(Proyecto, pid)
+    if p is not None and p.tipo == PLAT:
+        return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='seguridad')))
+    return redirect(url_for('proyecto_seguridad', pid=pid))
+
+
+@app.route('/proyectos/<int:pid>/checklist', methods=['POST'])
+def guardar_checklist(pid):
+    p = db.get_or_404(Proyecto, pid)
+    existentes = {c.clave: c for c in p.checks}
+    for clave, _ in CHECKLIST:
+        c = existentes.get(clave) or ChecklistSeg(proyecto_id=p.id, clave=clave)
+        c.cumplido = ("c_" + clave) in request.form
+        c.revisado = date.today()
+        db.session.add(c)
+    registrar("revisar", "Checklist", p.id, p.nombre)
+    db.session.commit()
+    return _volver(pid)
+
+
+@app.route('/proyectos/<int:pid>/vencimiento', methods=['POST'])
+def vencimiento_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    tipo = campo('tipo') if campo('tipo') in RENOVACION else "Otro"
+    v = Vencimiento(proyecto_id=p.id, tipo=tipo, nombre=campo('nombre'), fecha=campo_fecha('fecha'), notas=campo('notas'))
+    db.session.add(v)
+    db.session.flush()
+    registrar("crear", "Vencimiento", v.id, f"{v.tipo} {v.nombre} · {p.nombre}")
+    db.session.commit()
+    return _volver(pid)
+
+
+@app.route('/vencimientos/<int:vid>/renovar', methods=['POST'])
+def vencimiento_renovar(vid):
+    v = db.get_or_404(Vencimiento, vid)
+    v.fecha = sumar_meses(max(v.fecha, date.today()), RENOVACION.get(v.tipo, 12))
+    registrar("renovar", "Vencimiento", v.id, f"{v.tipo} {v.nombre} → {v.fecha}")
+    db.session.commit()
+    return redirect(_destino(request.referrer or url_for('proyecto_seguridad', pid=v.proyecto_id)))
+
+
+@app.route('/proyectos/<int:pid>/respaldo', methods=['POST'])
+def respaldo_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    r = Respaldo(proyecto_id=p.id, fecha=campo_fecha('fecha') or date.today(), tipo=campo('tipo') or "Base de datos",
+                 ubicacion=campo('ubicacion'), resultado=campo('resultado') or "Correcto")
+    db.session.add(r)
+    db.session.flush()
+    registrar("crear", "Respaldo", r.id, f"{r.tipo} · {r.resultado} · {p.nombre}")
+    db.session.commit()
+    return _volver(pid)
+
+
+@app.route('/proyectos/<int:pid>/incidente', methods=['POST'])
+def incidente_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    i = Incidente(proyecto_id=p.id, fecha=campo_fecha('fecha') or date.today(), titulo=campo('titulo'),
+                  gravedad=campo('gravedad') or "Media", descripcion=campo('descripcion'))
+    db.session.add(i)
+    db.session.flush()
+    registrar("crear", "Incidente", i.id, f"{i.gravedad} · {i.titulo} · {p.nombre}")
+    db.session.commit()
+    if i.gravedad in ("Alta", "Crítica"):
+        crear_notificacion("Incidente", f"Incidente {i.gravedad.lower()}: {i.titulo}", f"Proyecto: {p.nombre}",
+                           f"/proyectos/{p.id}/seguridad", clave=f"inc-{i.id}")
+    return _volver(pid)
+
+
+@app.route('/incidentes/<int:iid>/resolver', methods=['POST'])
+def incidente_resolver(iid):
+    i = db.get_or_404(Incidente, iid)
+    i.estado, i.resolucion = "Resuelto", campo('resolucion')
+    registrar("resolver", "Incidente", i.id, i.titulo)
+    db.session.commit()
+    return _volver(i.proyecto_id)
+
+
+# --- FINANZAS ----------------------------------------------------------------
+MES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def proyectar(items, inicio):
+    fin = sumar_meses(inicio, 12)
+    totales = [0.0] * 12
+    for fecha, paso, monto in items:
+        d = fecha
+        if d < inicio:
+            totales[0] += monto
+            while d < inicio:
+                d = sumar_meses(d, paso)
+        while d < fin:
+            totales[(d.year - inicio.year) * 12 + d.month - inicio.month] += monto
+            d = sumar_meses(d, paso)
+    return totales
+
+
+@app.route('/finanzas')
+def finanzas():
+    hoy = date.today()
+    inicio = date(hoy.year, hoy.month, 1)
+    filas = []
+    for c in Cliente.query.order_by(Cliente.nombre_comercial).all():
+        s = c.suscripcion
+        ingreso = (s.monto_periodo / s.meses) if s else 0
+        costo = sum(k.monto_mensual or 0 for p in c.proyectos for k in p.costos)
+        ingreso += sum(finanzas_plataforma(p)["ingreso_30d"] for p in c.proyectos if p.tipo == PLAT)
+        vencido = s.monto_periodo if s and s.proxima_fecha_pago and s.proxima_fecha_pago < hoy else 0
+        filas.append({"c": c, "s": s, "ingreso": ingreso, "costo": costo, "ganancia": ingreso - costo, "vencido": vencido,
+                      "margen": round(100 * (ingreso - costo) / ingreso) if ingreso else None})
+    filas.sort(key=lambda f: f["ganancia"], reverse=True)
+
+    ingresos = sum(f["ingreso"] for f in filas)
+    costos = sum(f["costo"] for f in filas)
+    vencido = sum(f["vencido"] for f in filas)
+    cobrado = db.session.query(db.func.coalesce(db.func.sum(Pago.monto), 0)).filter(
+        Pago.estado == "Pagado", Pago.fecha >= inicio).scalar()
+    cobrado += db.session.query(db.func.coalesce(db.func.sum(IngresoPlataforma.monto), 0)).filter(
+        IngresoPlataforma.fecha >= inicio).scalar()
+    plat_filas = []
+    for p in Proyecto.query.filter_by(tipo=PLAT).order_by(Proyecto.nombre).all():
+        plat_filas.append({"p": p, **finanzas_plataforma(p)})
+    plat_filas.sort(key=lambda f: f["ganancia"], reverse=True)
+
+    entradas = [(x.proxima_fecha_pago, x.meses, x.monto_periodo) for x in Suscripcion.query.all()
+                if x.proxima_fecha_pago and x.monto_periodo]
+    salidas = [(k.proxima_fecha_pago, MESES.get(k.periodicidad, 1), k.monto_periodo or k.monto_mensual or 0)
+               for k in CostoServicio.query.all() if k.proxima_fecha_pago]
+    compartido = None
+    try:
+        compartido = servicios.costo_mensual()                 # servicios fijos + IA + almacenamiento estimado (MXN)
+        salidas += servicios.salidas_proyeccion()              # renovaciones del catálogo de Servicios
+    except Exception as e:
+        app.logger.warning("Finanzas: no se pudieron leer los costos de Servicios: %s", e)
+    ent, sal = proyectar(entradas, inicio), proyectar(salidas, inicio)
+    proy = []
+    for i in range(12):
+        m = sumar_meses(inicio, i)
+        proy.append({"mes": f"{MES_ES[m.month - 1]} {m.year}", "ent": ent[i], "sal": sal[i], "neto": ent[i] - sal[i]})
+    maximo = max([p["ent"] for p in proy] + [p["sal"] for p in proy] + [1])
+    sin_fecha = (Suscripcion.query.filter(Suscripcion.proxima_fecha_pago.is_(None)).count()
+                 + CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.is_(None)).count())
+
+    stats = {"ingresos": dinero(ingresos), "costos": dinero(costos), "ganancia": dinero(ingresos - costos),
+             "margen": f"{round(100 * (ingresos - costos) / ingresos)}%" if ingresos else "—",
+             "vencido": dinero(vencido), "cobrado": dinero(cobrado)}
+    neta = dinero(ingresos - costos - compartido["total"]) if compartido else None
+    return render_template('finanzas.html', stats=stats, filas=filas, plat_filas=plat_filas, proy=proy, maximo=maximo,
+                           totales={"ent": sum(ent), "sal": sum(sal)}, sin_fecha=sin_fecha,
+                           compartido=compartido, neta=neta)
+
+
+
+# --- FINANZAS POR PLATAFORMA ---------------------------------------------------
+INGRESO_CATEGORIAS = ("Suscripciones", "Ventas", "Publicidad", "Servicios", "Otro")
+
+
+def finanzas_plataforma(p):
+    """Ingresos contra costos de una plataforma propia.
+    Ingreso mensual = lo que entró en los últimos 30 días; costo mensual = equivalente mensual de sus servicios."""
+    hoy = date.today()
+    inicio = date(hoy.year, hoy.month, 1)
+    costo = sum(float(k.monto_mensual or 0) for k in p.costos)
+    ing30 = sum(float(i.monto or 0) for i in p.ingresos if i.fecha and hoy - timedelta(days=30) < i.fecha <= hoy)
+    meses = []
+    for n in range(5, -1, -1):
+        m = sumar_meses(inicio, -n)
+        ing = sum(float(i.monto or 0) for i in p.ingresos if i.fecha and (i.fecha.year, i.fecha.month) == (m.year, m.month))
+        meses.append({"mes": f"{MES_ES[m.month - 1]} {m.year}", "ing": ing, "costo": costo, "neto": ing - costo})
+    por_cat = {}
+    for i in p.ingresos:
+        por_cat[i.categoria or "Otro"] = por_cat.get(i.categoria or "Otro", 0) + float(i.monto or 0)
+    return {"ingreso_30d": ing30, "costo_mes": costo, "ganancia": ing30 - costo,
+            "margen": round(100 * (ing30 - costo) / ing30) if ing30 else None,
+            "total": sum(float(i.monto or 0) for i in p.ingresos), "meses": meses,
+            "max_mes": max([m["ing"] for m in meses] + [costo, 1]), "por_cat": sorted(por_cat.items(), key=lambda x: -x[1])}
+
+
+@app.route('/plataformas/<int:pid>/ingreso', methods=['POST'])
+def ingreso_plataforma_nuevo(pid):
+    p = db.get_or_404(Proyecto, pid)
+    try:
+        monto, fecha = leer_monto(campo('monto'), "monto"), campo_fecha('fecha') or date.today()
+    except ValueError:
+        return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
+    if monto > 0:
+        cat = campo('categoria') if campo('categoria') in INGRESO_CATEGORIAS else "Otro"
+        i = IngresoPlataforma(proyecto_id=p.id, fecha=fecha, monto=monto, categoria=cat, concepto=campo('concepto') or None)
+        db.session.add(i)
+        db.session.flush()
+        registrar("crear", "IngresoPlataforma", i.id, f"{dinero(monto)} · {cat} · {p.nombre}")
+        db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='finanzas')))
+
+
+@app.route('/ingresos-plataforma/<int:iid>/eliminar', methods=['POST'])
+def ingreso_plataforma_eliminar(iid):
+    """No borra: anula con un contra-asiento (monto negativo) para que el historial y la auditoría queden íntegros."""
+    i = db.session.execute(db.select(IngresoPlataforma).where(IngresoPlataforma.id == iid).with_for_update()).scalar_one_or_none()
+    if i is None:
+        abort(404)
+    pid = i.proyecto_id
+    if i.anulado or i.anula_id:            # ya anulado, o es un contra-asiento: no se anula dos veces
+        db.session.rollback()
+        return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='finanzas')))
+    i.anulado = True
+    contra = IngresoPlataforma(proyecto_id=pid, fecha=date.today(), monto=-(i.monto or 0), categoria=i.categoria,
+                               concepto=f"ANULACIÓN del ingreso #{i.id}", anula_id=i.id, anulado=True)
+    db.session.add(contra)
+    db.session.flush()
+    registrar("anular", "IngresoPlataforma", i.id, f"{dinero(i.monto)} · {i.proyecto.nombre} · contra-asiento #{contra.id}")
+    db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='finanzas')))
+
+
+# --- VÍNCULOS ENTRE REGISTROS DE INTELIGENCIA ----------------------------------
+# relación vista desde el origen -> cómo se lee desde el destino
+INTEL_RELACIONES = {"Relacionado con": "Relacionado con", "Titular de": "Propiedad de", "Filial de": "Matriz de",
+                    "Proveedor de": "Cliente de", "Competidor de": "Competidor de", "Origen de": "Originado por",
+                    "Usa": "Usado por"}
+
+
+def intel_visibles(q):
+    """Los registros confidenciales solo los ve el rol admin."""
+    return q if es_admin() else q.filter(Inteligencia.confidencial.isnot(True))
+
+
+def _intel_o_404(iid):
+    r = _intel_o_404(iid)
+    if r.confidencial and not es_admin():
+        abort(404)
+    return r
+
+
+def intel_vinculos(r):
+    """Todos los vínculos del registro, leídos desde su punto de vista."""
+    out = [{"id": v.id, "otro": v.destino, "etiqueta": v.relacion, "nota": v.nota} for v in r.vinculos_salida]
+    out += [{"id": v.id, "otro": v.origen, "etiqueta": INTEL_RELACIONES.get(v.relacion, v.relacion), "nota": v.nota}
+            for v in r.vinculos_entrada]
+    out = [x for x in out if es_admin() or not x["otro"].confidencial]
+    out.sort(key=lambda x: (x["otro"].tipo, (x["otro"].titulo or "").lower()))
+    return out
+
+
+def _relacion_sugerida(r, otro):
+    """Devuelve (relacion, sentido): sentido 'sale' = r es el origen, 'entra' = el otro es el origen."""
+    if r.tipo == "Empresa" and otro.tipo != "Empresa":
+        return "Titular de", "sale"
+    if otro.tipo == "Empresa" and r.tipo != "Empresa":
+        return "Titular de", "entra"
+    return "Relacionado con", "sale"
+
+
+def intel_sugeridos(r, ya):
+    """Registros que comparten el nombre de empresa/titular con este, aún sin vincular."""
+    nombres = {x.strip().lower() for x in (r.entidad, r.titulo if r.tipo == "Empresa" else None) if x and x.strip()}
+    if not nombres:
+        return []
+    cond = [db.func.lower(Inteligencia.entidad).in_(nombres)]
+    if r.tipo == "Empresa":
+        cond.append(db.func.lower(Inteligencia.titulo).in_({r.titulo.strip().lower()}))
+    elif r.entidad:
+        cond.append(db.and_(Inteligencia.tipo == "Empresa", db.func.lower(Inteligencia.titulo) == r.entidad.strip().lower()))
+    otros = intel_visibles(Inteligencia.query).filter(db.or_(*cond), ~Inteligencia.id.in_(ya)).limit(20).all()
+    return [{"r": o, "relacion": _relacion_sugerida(r, o)[0], "sentido": _relacion_sugerida(r, o)[1]} for o in otros]
+
+
+@app.route('/inteligencia/<int:iid>/vincular', methods=['POST'])
+def inteligencia_vincular(iid):
+    r = _intel_o_404(iid)
+    try:
+        otro = db.session.get(Inteligencia, int(campo('otro_id')))
+    except ValueError:
+        otro = None
+    if otro and otro.confidencial and not es_admin():
+        otro = None
+    relacion = campo('relacion') if campo('relacion') in INTEL_RELACIONES else "Relacionado con"
+    if otro and otro.id != r.id:
+        origen, destino = (otro, r) if campo('sentido') == 'entra' else (r, otro)
+        ya = IntelVinculo.query.filter(db.or_(db.and_(IntelVinculo.origen_id == r.id, IntelVinculo.destino_id == otro.id),
+                                              db.and_(IntelVinculo.origen_id == otro.id, IntelVinculo.destino_id == r.id))).first()
+        if not ya:
+            db.session.add(IntelVinculo(origen_id=origen.id, destino_id=destino.id, relacion=relacion, nota=campo('nota') or None))
+            r.actualizado_en = otro.actualizado_en = datetime.utcnow()
+            registrar("vincular", "Inteligencia", r.id, f"{origen.titulo} · {relacion} · {destino.titulo}")
+            db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=r.id))
+
+
+@app.route('/inteligencia/vinculo/<int:vid>/eliminar', methods=['POST'])
+def inteligencia_desvincular(vid):
+    v = db.get_or_404(IntelVinculo, vid)
+    volver = request.form.get('volver', type=int) or v.origen_id
+    registrar("desvincular", "Inteligencia", v.origen_id, f"{v.origen.titulo} · {v.relacion} · {v.destino.titulo}")
+    db.session.delete(v)
+    db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=volver))
+
+
+# --- WEB PÚBLICA -----------------------------------------------------------
+# Únicas rutas que se pueden abrir sin iniciar sesión.
+RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
+                  'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis',
+                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar', 'healthz'}
+# Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
+CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
+            "email": "zedythtechnologies@gmail.com"}
+# Datos de la empresa que usa la web pública (SEO, encabezado y pie). Cámbialos aquí y se actualizan en toda la página.
+EMPRESA = {"ceo": "Zuriel Zmarth", "cargo": "Director General",
+           "grupo": "THE ZMARTH ORGANIZATION",
+           "zmarthket": "https://zmarthket.onrender.com",
+           "app_escritura": "App de escritura ZEDYTH"}   # nombre provisional: cámbialo cuando lo definas
+# Datos del responsable para el aviso de privacidad y los términos. Complétalos con variables de entorno
+# (LEGAL_RAZON, LEGAL_DOMICILIO, LEGAL_JURISDICCION) o editando estos valores.
+LEGAL = {"razon_social": os.environ.get("LEGAL_RAZON", "[COMPLETAR: razón social]"),
+         "domicilio": os.environ.get("LEGAL_DOMICILIO", "[COMPLETAR: domicilio fiscal]"),
+         "jurisdiccion": os.environ.get("LEGAL_JURISDICCION", "[COMPLETAR: ciudad y estado]"),
+         "actualizado": "octubre de 2026"}
+
+
+def _site_url():
+    """URL pública del sitio (define SITE_URL en producción, p. ej. https://tudominio.com)."""
+    base = (ajustes.valor('SITE_URL') or request.url_root).rstrip('/')
+    if base.startswith('http://') and not re.match(r'http://(localhost|127\.|192\.168\.)', base):
+        base = 'https://' + base[7:]
+    return base
+
+
+def _ajustes_publicos():
+    """Opcionales (se ponen en Conexiones): Google Analytics (GA_ID) y agenda de llamadas (AGENDA_URL)."""
+    ga = ajustes.valor('GA_ID')
+    agenda = ajustes.valor('AGENDA_URL')
+    return {"ga_id": ga if re.fullmatch(r'[A-Za-z0-9-]{4,30}', ga) else None,
+            "agenda_url": agenda if agenda.startswith('https://') else None,
+            "site_url": _site_url()}
+
+
+@app.route('/')
+def inicio():
+    vitrina = []
+    for p in ProyectoPublico.query.filter_by(visible=True).filter(ProyectoPublico.categoria != CAT_GENERAL)\
+            .order_by(ProyectoPublico.id.desc()).all():
+        ok = sorted((r for r in p.resenas if r.aprobada), key=lambda r: r.id, reverse=True)
+        prom = round(sum(r.calificacion for r in ok) / len(ok), 1) if ok else None
+        vitrina.append({"p": p, "prom": prom, "n": len(ok), "recientes": ok[:3]})
+    # Opiniones generales sobre ZEDYTH (solo las aprobadas)
+    ok_gen = sorted((r for r in proyecto_general().resenas if r.aprobada), key=lambda r: r.id, reverse=True)
+    op_n = len(ok_gen)
+    op_prom = round(sum(r.calificacion for r in ok_gen) / op_n, 1) if op_n else None
+    op_dist = {n: sum(1 for r in ok_gen if r.calificacion == n) for n in (5, 4, 3, 2, 1)}
+    return render_template('public.html', anual_de=precio_anual, planes=planes_visibles('tamano'), plan_ciber=planes_visibles('ciber'),
+                           niveles_bd=NIVELES_BD, vitrina=vitrina,
+                           opiniones=ok_gen[:9], op_n=op_n, op_prom=op_prom, op_dist=op_dist,
+                           gracias_op=request.args.get('gracias_op'), op_error=request.args.get('op_error'),
+                           contacto=CONTACTO, empresa=EMPRESA, gracias=request.args.get('gracias'), año=date.today().year,
+                           **_ajustes_publicos())
+
+
+@app.route('/demo-pos')
+def demo_pos():
+    """Punto de venta de prueba: corre 100% en el navegador, no toca tu base de datos."""
+    return render_template('demo_pos.html', contacto=CONTACTO)
+
+@app.route('/api/equipo/yo')
+def equipo_yo():
+    """Simula el endpoint de sesión para el demo_pos."""
+    if current_user.is_authenticated:
+        return {"ok": True, "logueado": True, "nombre": current_user.nombre}
+    return {"ok": True, "logueado": False, "nombre": "Cajero Demo"}
+
+@app.route('/salir-equipo')
+def salir_equipo():
+    """Simula la salida del equipo en el demo_pos."""
+    if current_user.is_authenticated:
+        logout_user()
+    return redirect(url_for('demo_pos'))
+
+def _guardar_resena(proyecto):
+    """Valida y guarda una reseña pendiente de aprobación. Devuelve True si se guardó."""
+    ahora = datetime.utcnow()
+    ip = _ip_cliente()
+    nombre = request.form.get('nombre', '').strip()[:80]
+    comentario = request.form.get('comentario', '').strip()[:600]
+    try:
+        cal = int(request.form.get('calificacion', 0))
+    except ValueError:
+        cal = 0
+    # "web" es un campo trampa para bots; deben llenarse los datos y respetarse el límite por hora
+    if request.form.get('web') or not nombre or not 1 <= cal <= 5 or len(comentario) < 5:
+        return False
+    if not limitar(f"resena:{ip}", 3, 3600):
+        return False
+    r = Resena(proyecto_id=proyecto.id, nombre=nombre, calificacion=cal, comentario=comentario)
+    db.session.add(r)
+    db.session.commit()
+    crear_notificacion("Reseña", f"Nueva reseña de {cal} ★ de {nombre}", comentario[:200], "/resenas",
+                       urgente=False, clave=f"resena-{r.id}", externo=False)
+    return True
+
+
+@app.route('/proyectos-publicos/<int:pid>/resena', methods=['POST'])
+def resena_enviar(pid):
+    p = db.get_or_404(ProyectoPublico, pid)
+    if _guardar_resena(p):
+        return redirect(url_for('inicio', gracias=1) + '#proyectos')
+    return redirect(url_for('inicio') + '#proyectos')
+
+
+@app.route('/opiniones', methods=['POST'])
+def opinion_enviar():
+    """Opinión general sobre ZEDYTH (de 1 a 5 estrellas). Queda pendiente hasta que la apruebes en /resenas."""
+    if _guardar_resena(proyecto_general()):
+        return redirect(url_for('inicio', gracias_op=1) + '#opiniones')
+    return redirect(url_for('inicio', op_error=1) + '#opiniones')
+
+
+@app.route('/privacidad')
+def privacidad():
+    return render_template('legal.html', doc='privacidad', contacto=CONTACTO, legal=LEGAL, año=date.today().year)
+
+
+@app.route('/terminos')
+def terminos():
+    return render_template('legal.html', doc='terminos', contacto=CONTACTO, legal=LEGAL, año=date.today().year)
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    base = _site_url()
+    filas = ''.join(f"<url><loc>{base}{ruta}</loc></url>" for ruta in ('/', '/configurador', '/demo-pos', '/privacidad', '/terminos'))
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{filas}</urlset>'
+    return app.response_class(xml, mimetype='application/xml')
+
+
+@app.route('/robots.txt')
+def robots():
+    txt = f"User-agent: *\nAllow: /\nDisallow: /panel\nDisallow: /login\n\nSitemap: {_site_url()}/sitemap.xml\n"
+    return app.response_class(txt, mimetype='text/plain')
+
+
+@app.route('/resenas', methods=['GET', 'POST'])
+def resenas_admin():
+    if request.method == 'POST' and request.form.get('nombre'):
+        p = ProyectoPublico(nombre=request.form['nombre'].strip(), categoria=request.form['categoria'].strip(),
+                            descripcion=request.form['descripcion'].strip(),
+                            tecnologias=request.form.get('tecnologias', '').strip() or None)
+        db.session.add(p)
+        db.session.flush()
+        registrar("crear", "ProyectoPublico", p.id, p.nombre)
+        db.session.commit()
+        return redirect(url_for('resenas_admin'))
+    return render_template('resenas_admin.html',
+                           pendientes=Resena.query.filter_by(aprobada=False).order_by(Resena.id).all(),
+                           proyectos=ProyectoPublico.query.filter(ProyectoPublico.categoria != CAT_GENERAL)
+                           .order_by(ProyectoPublico.id.desc()).all())
+
+
+@app.route('/resenas/<int:rid>/<accion>', methods=['POST'])
+def resena_moderar(rid, accion):
+    r = db.get_or_404(Resena, rid)
+    if accion == 'aprobar':
+        r.aprobada = True
+    elif accion == 'borrar':
+        db.session.delete(r)
+    registrar(accion, "Resena", rid, "Moderación de reseña")
+    db.session.commit()
+    return redirect(_destino(url_for('resenas_admin')))
+
+
+@app.route('/proyectos-publicos/<int:pid>/visibilidad', methods=['POST'])
+def proyecto_publico_toggle(pid):
+    p = db.get_or_404(ProyectoPublico, pid)
+    p.visible = not p.visible
+    db.session.commit()
+    return redirect(_destino(url_for('resenas_admin')))
+
+# --- ZEDITH (IA de la web pública) -----------------------------------------
+def _zedith_permitido():
+    """Límite por IP (10 min) y tope global diario de IA, ambos en la base: valen con varios workers y tras cada despliegue."""
+    return (limitar(f"zed:ip:{_ip_cliente()}", ZED_MAX_IP, 600)
+            and limitar(f"zed:dia:{date.today().isoformat()}", ZED_MAX_DIA, 90000))
+ZED_MAX_IP = int(os.environ.get("ZEDITH_MAX_IP", "20"))      # mensajes por IP cada 10 min
+ZED_MAX_DIA = int(os.environ.get("ZEDITH_MAX_DIA", "1500"))  # mensajes por día (por proceso)
+
+
+def _ip_cliente():
+    return request.remote_addr or '-'     # ProxyFix ya dejó aquí la IP real; X-Forwarded-For crudo lo controla el visitante
+
+
+def hechos_zedith():
+    """Datos reales del negocio que Zedith puede citar como prueba social. Nada inventado."""
+    prom = db.session.query(db.func.avg(Resena.calificacion)).filter(Resena.aprobada.is_(True)).scalar()
+    return {
+        "planes": [(p.nombre, p.precio, p.a_medida,
+                    (p.descripcion or "") + (f" · base de datos de texto {p.bd_incluida}" if p.bd_incluida else "")
+                    + (f" · almacenamiento de imágenes {p.img_incluida}" if p.img_incluida else "")
+                    + (f" · aplicación {p.cpu} y {p.ram} de RAM" if p.cpu and p.ram else "")
+                    + (f" · transferencia {p.transferencia}" if p.transferencia else "")
+                    + (f" · respaldos diarios con retención de {p.respaldos}" if p.respaldos else "") + (f" · pago anual {dinero(precio_anual(p))}" if p.precio and not p.a_medida else ""))
+                   for p in planes_visibles()],
+        "niveles_bd": NIVELES_BD,
+        "resenas": Resena.query.filter_by(aprobada=True).count(),
+        "promedio": round(prom, 1) if prom else None,
+        "proyectos": ProyectoPublico.query.filter_by(visible=True).filter(ProyectoPublico.categoria != CAT_GENERAL).count(),
+        "cupo": ajustes.valor("ZEDITH_CUPO_MES") or None,
+        "promo": ajustes.valor("ZEDITH_PROMO") or None,
+        "promo_hasta": ajustes.valor("ZEDITH_PROMO_HASTA") or None,
+    }
+
+
+def guardar_pedido(p):
+    """Guarda (o actualiza, si es el mismo contacto en la última hora) el pedido que armó Zedith.
+    Devuelve (lead, es_nuevo)."""
+    recorte = lambda k, n: (p.get(k) or "").strip()[:n] or None
+    contacto = recorte("contacto", 150)
+    lead = Lead.query.filter(Lead.contacto == contacto,
+                             Lead.creado_en >= datetime.utcnow() - timedelta(hours=1)).first()
+    es_nuevo = lead is None
+    lead = lead or Lead(contacto=contacto)
+    lead.nombre = recorte("nombre", 120) or "Sin nombre"
+    lead.negocio, lead.sistema = recorte("negocio", 200), recorte("sistema", 200)
+    lead.funciones, lead.presupuesto = recorte("funciones", 1000), recorte("presupuesto", 100)
+    lead.plazo, lead.resumen = recorte("plazo", 100), recorte("resumen", 1500)
+    db.session.add(lead)
+    db.session.flush()
+    registrar("pedido", "Lead", lead.id, f"{lead.nombre} · {lead.sistema or lead.negocio or ''}")
+    db.session.commit()
+    return lead, es_nuevo
+
+
+@app.route('/api/zedith', methods=['POST'])
+def zedith_chat():
+    datos = request.get_json(silent=True) or {}
+    mensajes = datos.get('mensajes')
+    if not isinstance(mensajes, list) or not mensajes:
+        return {"error": "mensajes requeridos"}, 400
+
+    if not _zedith_permitido():
+        return {"error": "límite alcanzado"}, 429
+
+    try:
+        r = zedith.responder(mensajes, hechos_zedith())
+    except zedith.ZedithError as e:
+        app.logger.warning("Zedith no respondió: %s", e)
+        return {"error": "no disponible"}, 503
+
+    wa = None
+    if r["pedido"]:
+        lead, es_nuevo = guardar_pedido(r["pedido"])
+        if es_nuevo:   # un solo aviso por pedido, aunque la conversación siga
+            _push_pedido(lead)
+            notificar.avisar(
+                f"Nuevo pedido en ZEDYTH: {lead.nombre}",
+                f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
+                f"Sistema: {lead.sistema or '-'}\nFunciones: {lead.funciones or '-'}\n"
+                f"Presupuesto: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n\n"
+                f"{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
+        texto = (f"Hola, soy {lead.nombre}. Armé mi pedido con Zedith:\n{lead.resumen or lead.sistema or lead.negocio or ''}"
+                 f"\nContacto: {lead.contacto}")
+        wa = f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"
+    return {"reply": r["reply"], "wa": wa}
+
+
+@app.route('/api/zedith/analisis', methods=['POST'])
+def zedith_analisis():
+    """Zedith revisa la configuración del configurador y recomienda mejoras. NUNCA crea prospectos."""
+    cfg = str((request.get_json(silent=True) or {}).get('resumen') or '').strip()[:1000]
+    if len(cfg) < 20:
+        return {"error": "datos"}, 400
+    if not _zedith_permitido():
+        return {"error": "límite alcanzado"}, 429
+    texto = ("[ANÁLISIS DEL CONFIGURADOR. No captures pedido ni pidas datos: pedido_listo=false. Revisa esta configuración "
+             "como ingeniero y responde en máximo 5 viñetas cortas: incoherencias, riesgos (infraestructura crítica, pagos, "
+             "reservas, cancelaciones) y mejoras concretas. Sin precios.]\n" + cfg)
+    try:
+        r = zedith.responder([{"role": "user", "text": texto}], hechos_zedith())
+    except zedith.ZedithError as e:
+        app.logger.warning("Zedith (análisis) no respondió: %s", e)
+        return {"error": "no disponible"}, 503
+    return {"reply": r["reply"]}   # se ignora r["pedido"] a propósito
+
+
+@app.route('/configurador')
+def configurador():
+    """Configurador de software: el cliente arma su sistema y recibe un estimado aproximado.
+    Los planes salen de tu base de datos, así que los precios siempre son los vigentes."""
+    planes = [{"nombre": p.nombre, "precio": float(p.precio), "anual": precio_anual(p), "bd": p.bd_incluida or "", "img": p.img_incluida or "",
+               "cpu": p.cpu or "", "ram": p.ram or "", "transferencia": p.transferencia or "", "respaldos": p.respaldos or ""}
+              for p in planes_visibles('tamano') if p.precio and not p.a_medida]
+    return render_template('configurador.html', planes=planes, niveles_bd=NIVELES_BD, contacto=CONTACTO,
+                           desde={"boutique": DESDE_BOUTIQUE, "enterprise": DESDE_ENTERPRISE},
+                           año=date.today().year, **_ajustes_publicos())
+
+
+@app.route('/configurador/enviar', methods=['POST'])
+def configurador_enviar():
+    """Guarda la configuración como prospecto (Lead) y avisa. Devuelve el enlace de WhatsApp con el resumen."""
+    d = request.get_json(silent=True) or {}
+    ahora = datetime.utcnow()
+    ip = _ip_cliente()
+    if d.get('web'):                      # campo trampa para bots
+        return {"ok": False}, 400
+    if not limitar(f"config:{ip}", 5, 3600, sumar=False):
+        return {"ok": False, "error": "limite"}, 429
+    nombre = str(d.get('nombre') or '').strip()[:120]
+    contacto = str(d.get('contacto') or '').strip()[:150]
+    valido_contacto = ('@' in contacto and '.' in contacto) or len(re.sub(r'\D', '', contacto)) >= 8
+    cfg = d.get('config') if isinstance(d.get('config'), dict) else {}
+    if len(nombre) < 2 or not valido_contacto or not cfg:
+        return {"ok": False, "error": "datos"}, 400
+    limitar(f"config:{ip}", 5, 3600)
+    txt = lambda k, n: str(cfg.get(k) or '').strip()[:n]
+    lead, es_nuevo = guardar_pedido({
+        "nombre": nombre, "contacto": contacto,
+        "negocio": txt('negocio', 200), "sistema": "Configurador · " + (txt('modelo', 40) or "sin modelo"),
+        "funciones": txt('funciones', 1000), "presupuesto": txt('estimado', 100),
+        "plazo": txt('plazo', 100), "resumen": txt('resumen', 1500)})
+    if es_nuevo:
+        _push_pedido(lead)
+        try:
+            notificar.avisar(
+                f"Nueva configuración en ZEDYTH: {lead.nombre}",
+                f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
+                f"Modelo: {lead.sistema or '-'}\nEstimado: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n"
+                f"Funciones: {lead.funciones or '-'}\n\n{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
+        except Exception as e:   # un fallo de aviso no debe perder el prospecto
+            app.logger.warning("No se pudo avisar de la configuración: %s", e)
+    texto = (f"Hola, soy {lead.nombre}. Armé mi sistema en el configurador de ZEDYTH:\n"
+             f"{lead.resumen or lead.negocio or ''}\nContacto: {lead.contacto}")
+    return {"ok": True, "wa": f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"}
+
+
+INTEL_TIPOS = ("Incidente", "Empresa", "Patente", "Tecnología", "Amenaza", "Otro")
+INTEL_ESTADOS = ("Abierto", "En investigación", "Cerrado")
+INTEL_PRIORIDADES = ("Baja", "Media", "Alta", "Crítica")
+
+
+@app.route('/inteligencia')
+def inteligencia():
+    q = intel_visibles(Inteligencia.query)
+    tipo, estado, texto = request.args.get('tipo', ''), request.args.get('estado', ''), request.args.get('q', '').strip()
+    if tipo in INTEL_TIPOS:
+        q = q.filter_by(tipo=tipo)
+    if estado in INTEL_ESTADOS:
+        q = q.filter_by(estado=estado)
+    if texto:
+        like = f"%{texto}%"
+        q = q.filter(db.or_(Inteligencia.titulo.ilike(like), Inteligencia.entidad.ilike(like), Inteligencia.referencia.ilike(like)))
+    filas = q.order_by(Inteligencia.actualizado_en.desc()).limit(300).all()
+    abiertos = intel_visibles(Inteligencia.query).filter(Inteligencia.estado != "Cerrado").count()
+    return render_template('inteligencia.html', filas=filas, tipos=INTEL_TIPOS, estados=INTEL_ESTADOS,
+                           f_tipo=tipo, f_estado=estado, f_q=texto, abiertos=abiertos)
+
+
+@app.route('/inteligencia/nuevo', methods=['GET', 'POST'])
+@app.route('/inteligencia/<int:iid>/editar', methods=['GET', 'POST'])
+def inteligencia_form(iid=None):
+    r = _intel_o_404(iid) if iid else None
+    if request.method == 'POST':
+        titulo = campo('titulo')
+        if not titulo:
+            return redirect(request.url)
+        nuevo = r is None
+        if nuevo:
+            r = Inteligencia()
+            db.session.add(r)
+        r.titulo = titulo
+        r.tipo = campo('tipo') if campo('tipo') in INTEL_TIPOS else "Otro"
+        r.estado = campo('estado') if campo('estado') in INTEL_ESTADOS else "Abierto"
+        r.prioridad = campo('prioridad') if campo('prioridad') in INTEL_PRIORIDADES else "Media"
+        r.confidencial = bool(request.form.get('confidencial')) if es_admin() else bool(r.confidencial)
+        for k in ('entidad', 'referencia', 'jurisdiccion', 'fuente', 'resumen', 'hallazgos'):
+            setattr(r, k, campo(k) or None)
+        try:
+            r.fecha_evento = campo_fecha('fecha_evento')
+        except ValueError:
+            r.fecha_evento = None
+        db.session.flush()
+        registrar("crear" if nuevo else "editar", "Inteligencia", r.id, f"{r.tipo}: {r.titulo}")
+        db.session.commit()
+        return redirect(url_for('inteligencia_detalle', iid=r.id))
+    return render_template('inteligencia_form.html', r=r, tipos=INTEL_TIPOS, estados=INTEL_ESTADOS, prioridades=INTEL_PRIORIDADES)
+
+
+@app.route('/inteligencia/<int:iid>')
+def inteligencia_detalle(iid):
+    r = _intel_o_404(iid)
+    vinculos = intel_vinculos(r)
+    ya = {v["otro"].id for v in vinculos} | {r.id}
+    candidatos = (intel_visibles(Inteligencia.query).filter(~Inteligencia.id.in_(ya))
+                  .order_by(Inteligencia.tipo, Inteligencia.titulo).limit(500).all())
+    return render_template('inteligencia_detalle.html', r=r, estados=INTEL_ESTADOS, vinculos=vinculos,
+                           sugeridos=intel_sugeridos(r, ya), candidatos=candidatos, relaciones=list(INTEL_RELACIONES))
+
+
+@app.route('/inteligencia/<int:iid>/nota', methods=['POST'])
+def inteligencia_nota(iid):
+    r = _intel_o_404(iid)
+    if campo('texto'):
+        db.session.add(IntelNota(registro_id=r.id, texto=campo('texto'), fuente=campo('fuente') or None,
+                                 autor=current_user.username))
+        r.actualizado_en = datetime.utcnow()
+        registrar("nota", "Inteligencia", r.id, r.titulo)
+        db.session.commit()
+    return redirect(url_for('inteligencia_detalle', iid=r.id))
+
+
+@app.route('/inteligencia/<int:iid>/estado', methods=['POST'])
+def inteligencia_estado(iid):
+    r = _intel_o_404(iid)
+    if campo('estado') in INTEL_ESTADOS:
+        r.estado = campo('estado')
+        registrar("estado", "Inteligencia", r.id, r.estado)
+        db.session.commit()
+    return redirect(_destino(url_for('inteligencia_detalle', iid=r.id)))
+
+
+@app.route('/leads')
+def leads():
+    filas = Lead.query.order_by(Lead.id.desc()).limit(200).all()
+    for l in filas:
+        l.hora = l.creado_en - timedelta(hours=6)          # hora centro de México
+        if "@" in (l.contacto or ""):
+            l.enlace = f"mailto:{l.contacto}"
+        else:
+            tel = re.sub(r"\D", "", l.contacto or "")
+            tel = "52" + tel if len(tel) == 10 else tel
+            l.enlace = f"https://wa.me/{tel}" if len(tel) >= 10 else None
+    return render_template('leads.html', leads=filas)
+
+
+@app.route('/leads/<int:lid>/estado', methods=['POST'])
+def lead_estado(lid):
+    l = db.get_or_404(Lead, lid)
+    nuevo = campo('estado')
+    if nuevo in ("Nuevo", "Contactado", "Cerrado", "Descartado"):
+        l.estado = nuevo
+        registrar("estado", "Lead", l.id, nuevo)
+        db.session.commit()
+    return redirect(_destino(url_for('leads')))
+
+
+# --- APP INSTALABLE (PWA): sin barra del navegador -------------------------
+# Para que Chrome instale la web como app de verdad (y no como un simple acceso directo que abre
+# una pestaña con el dominio arriba) hacen falta: manifest con display "standalone", íconos PNG de
+# 192 y 512 px, y un service worker con "fetch". Estas rutas son públicas porque el navegador las
+# pide sin sesión.
+_ICONOS_PWA = [
+    {"src": "/static/img/zedyth/favicon.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/img/zedyth/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+]
+
+
+def _respuesta_manifest(datos):
+    r = Response(json.dumps(datos, ensure_ascii=False), mimetype='application/manifest+json')
+    r.headers['Cache-Control'] = 'public, max-age=3600'
+    return r
+
+
+@app.route('/manifest.webmanifest')
+def manifest_publico():
+    """App pública: ZEDYTH Technologies."""
+    return _respuesta_manifest({
+        "id": "/",
+        "name": "ZEDYTH Technologies",
+        "short_name": "ZEDYTH",
+        "description": "Ciberseguridad, software a la medida y SaaS: Zmarthket, Zedith IA y más.",
+        "lang": "es-MX",
+        "dir": "ltr",
+        "start_url": "/?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["standalone", "minimal-ui"],
+        "background_color": "#000000",
+        "theme_color": "#000000",
+        "categories": ["business", "productivity", "security"],
+        "icons": _ICONOS_PWA,
+    })
+
+
+@app.route('/admin.webmanifest')
+def manifest_admin():
+    """App del panel de administración (acceso directo como aplicación)."""
+    return _respuesta_manifest({
+        "id": "/panel",
+        "name": "ZEDYTH Admin",
+        "short_name": "ZEDYTH Admin",
+        "description": "Panel de administración de ZEDYTH Technologies.",
+        "lang": "es-MX",
+        "dir": "ltr",
+        "start_url": "/panel?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["standalone", "minimal-ui"],
+        "background_color": "#000000",
+        "theme_color": "#000000",
+        "categories": ["business", "productivity"],
+        "icons": _ICONOS_PWA,
+        "shortcuts": [
+            {"name": "Clientes", "url": "/clientes", "icons": [_ICONOS_PWA[0]]},
+            {"name": "Pedidos", "url": "/leads", "icons": [_ICONOS_PWA[0]]},
+            {"name": "Avisos de pagos", "url": "/avisos", "icons": [_ICONOS_PWA[0]]},
+        ],
+    })
+
+
+_SW_JS = """/* ZEDYTH service worker: instalable + aviso sin conexión + alertas push. No guarda páginas ni datos privados. */
+const V = 'zedyth-v1', OFFLINE = '/offline';
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(V).then(c => c.add(OFFLINE)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys()
+    .then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k))))
+    .then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', e => {
+  const r = e.request;
+  if (r.method !== 'GET') return;
+  if (r.mode === 'navigate') {
+    e.respondWith(fetch(r).catch(() => caches.match(OFFLINE)));
+    return;
+  }
+  const u = new URL(r.url);
+  if (u.origin === location.origin && u.pathname.startsWith('/static/')) {
+    e.respondWith(fetch(r).then(res => {
+      if (res.ok) { const cp = res.clone(); caches.open(V).then(c => c.put(r, cp)); }
+      return res;
+    }).catch(() => caches.match(r)));
+  }
+});
+/* ALERTAS PUSH: siempre se muestra una notificación; las urgentes no se cierran solas. */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { titulo: 'ZEDYTH', cuerpo: e.data ? e.data.text() : '' }; }
+  const urgente = d.urgente !== false;
+  e.waitUntil(self.registration.showNotification(d.titulo || 'ZEDYTH', {
+    body: d.cuerpo || '',
+    icon: '/static/img/zedyth/favicon.png',
+    badge: '/static/img/zedyth/favicon.png',
+    tag: d.tag || ('zedyth-' + Date.now()),
+    renotify: true,
+    requireInteraction: urgente,
+    vibrate: urgente ? [300, 120, 300, 120, 600] : [150],
+    timestamp: Date.now(),
+    data: { url: d.url || '/panel' }
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || '/panel', self.location.origin).href;
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
+    for (const w of ws) {
+      if (w.url.startsWith(self.location.origin) && 'focus' in w) { w.navigate(url).catch(() => {}); return w.focus(); }
+    }
+    return clients.openWindow(url);
+  }));
+});
+/* Si el navegador renueva la suscripción, se vuelve a registrar sola en el servidor. */
+self.addEventListener('pushsubscriptionchange', e => {
+  e.waitUntil(fetch('/api/push/clave').then(r => r.json()).then(k => {
+    const raw = atob((k.clave + '='.repeat((4 - k.clave.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+    const key = Uint8Array.from(raw, c => c.charCodeAt(0));
+    return self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }).then(sub => fetch('/api/push/suscribir', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON())
+  })).catch(() => {}));
+});
+"""
+
+
+@app.route('/sw.js')
+def service_worker():
+    r = Response(_SW_JS, mimetype='application/javascript')
+    r.headers['Cache-Control'] = 'no-cache'
+    r.headers['Service-Worker-Allowed'] = '/'
+    return r
+
+
+@app.route('/offline')
+def pwa_offline():
+    return Response(
+        '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="theme-color" content="#000000"><title>Sin conexión · ZEDYTH</title>'
+        '<style>html,body{height:100%;margin:0;background:#000;color:#fff;font-family:Inter,system-ui,sans-serif}'
+        'main{min-height:100%;display:grid;place-content:center;gap:14px;text-align:center;padding:24px}'
+        'h1{font-size:22px;font-weight:500;letter-spacing:-.02em;margin:0}p{margin:0;color:#9b9b9b;font-size:15px}'
+        'button{justify-self:center;margin-top:8px;font:500 14px Inter,system-ui,sans-serif;padding:12px 20px;'
+        'border:0;border-radius:8px;background:#fff;color:#000;cursor:pointer}</style></head><body><main>'
+        '<img src="/static/img/zedyth/favicon.png" width="72" height="72" alt="" style="justify-self:center">'
+        '<h1>Sin conexión</h1><p>Revisa tu internet e inténtalo de nuevo.</p>'
+        '<button onclick="location.reload()">Reintentar</button></main></body></html>',
+        mimetype='text/html')
+
+
+# --- ALERTAS PUSH (urgentes) --------------------------------------------------
+# Capas para que no falle: 1) envío con reintentos a cada dispositivo, 2) si ninguno lo recibe, se manda por
+# Telegram/correo (notificar.py), 3) un vigilante reintenta lo no entregado y revisa vencimientos/cobros/
+# respaldos, 4) la página se re-registra sola en cada visita. Llaves: python generar_vapid.py -> Render.
+def _limpiar_llave(v):
+    """Quita comillas, espacios, saltos de línea y el prefijo «NOMBRE=» que a veces se pega por error."""
+    v = (v or "").strip().strip("\"'").strip()
+    for pref in ("VAPID_PRIVATE_KEY=", "VAPID_PUBLIC_KEY="):
+        if v.startswith(pref):
+            v = v[len(pref):].strip().strip("\"'")
+    return "".join(v.split())
+
+
+def _vapid():
+    return (_limpiar_llave(ajustes.valor("VAPID_PUBLIC_KEY")), _limpiar_llave(ajustes.valor("VAPID_PRIVATE_KEY")),
+            ajustes.valor("VAPID_CONTACT") or "mailto:" + CONTACTO["email"])
+
+
+def _b64u(texto):
+    return base64.urlsafe_b64decode(texto + "=" * (-len(texto) % 4))
+
+
+def vapid_diagnostico():
+    """None si las llaves VAPID están bien; si no, un texto que explica qué corregir en Conexiones."""
+    pub, priv, _ = _vapid()
+    if not pub or not priv:
+        return "Faltan las llaves VAPID: genéralas con un botón en Conexiones → Alertas push."
+    try:
+        raw_priv = _b64u(priv)
+    except Exception:
+        return ("VAPID_PRIVATE_KEY no es una llave válida: tiene caracteres de más. Debe ser solo la cadena que imprime "
+                "generar_vapid.py (unos 43 caracteres), sin comillas ni «VAPID_PRIVATE_KEY=».")
+    if len(raw_priv) != 32:
+        return (f"VAPID_PRIVATE_KEY mide {len(raw_priv)} bytes y debe medir 32 (unos 43 caracteres; la tuya tiene {len(priv)}). "
+                "Usa el botón «Generar par de llaves» en Conexiones.")
+    try:
+        raw_pub = _b64u(pub)
+    except Exception:
+        return "VAPID_PUBLIC_KEY no es válida: debe ser solo la cadena que imprime generar_vapid.py (unos 87 caracteres)."
+    if len(raw_pub) != 65 or raw_pub[0] != 4:
+        return (f"VAPID_PUBLIC_KEY mide {len(raw_pub)} bytes y debe medir 65 (unos 87 caracteres; la tuya tiene {len(pub)}). "
+                "Cópiala completa o genera un par nuevo en Conexiones.")
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        llave = ec.derive_private_key(int.from_bytes(raw_priv, "big"), ec.SECP256R1())
+        esperada = llave.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    except Exception:
+        return "VAPID_PRIVATE_KEY no es una llave EC P-256 válida. Genera un par nuevo en Conexiones."
+    if esperada != raw_pub:
+        return ("VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no son pareja (vienen de ejecuciones distintas de generar_vapid.py). "
+                "Pega las dos del mismo par, o genera un par nuevo en Conexiones.")
+    return None
+
+
+def push_configurado():
+    try:
+        import pywebpush  # noqa: F401
+    except ImportError:
+        return False
+    return vapid_diagnostico() is None
+
+
+def _enviar_push(n):
+    """Envía la notificación a todos los dispositivos activos. Devuelve cuántos la aceptaron."""
+    from pywebpush import webpush, WebPushException
+    _, priv, contacto = _vapid()
+    carga = json.dumps({"titulo": n.titulo, "cuerpo": n.cuerpo or "", "url": n.url or "/panel",
+                        "urgente": bool(n.urgente), "tag": f"zedyth-{n.id}"}, ensure_ascii=False)
+    aceptados = 0
+    for d in PushDispositivo.query.filter_by(activo=True).all():
+        info = {"endpoint": d.endpoint, "keys": {"p256dh": d.p256dh, "auth": d.auth}}
+        for intento in range(3):
+            try:
+                webpush(subscription_info=info, data=carga, vapid_private_key=priv, vapid_claims={"sub": contacto},
+                        ttl=86400, headers={"Urgency": "high"}, timeout=10)
+                d.fallos, d.ultimo_ok = 0, datetime.utcnow()
+                aceptados += 1
+                break
+            except WebPushException as e:
+                codigo = getattr(e.response, "status_code", None)
+                if codigo in (404, 410):          # el dispositivo canceló o ya no existe
+                    d.activo = False
+                    break
+                app.logger.warning("Push falló (%s) intento %s: %s", codigo, intento + 1, e)
+            except Exception as e:                # red caída, tiempo agotado, etc.
+                app.logger.warning("Push falló intento %s: %s", intento + 1, e)
+            time.sleep(2 ** intento)
+        else:
+            d.fallos = (d.fallos or 0) + 1
+            if d.fallos >= 10:
+                d.activo = False
+    db.session.commit()
+    return aceptados
+
+
+def _entregar(nid, externo=True):
+    """Corre en segundo plano: push y, si nadie lo recibió y es urgente, Telegram/correo como respaldo."""
+    try:
+        with app.app_context():
+            n = db.session.get(Notificacion, nid)
+            if n is None:
+                return
+            ok = _enviar_push(n) if push_configurado() else 0
+            n.entregada, n.intentos = ok > 0, (n.intentos or 0) + 1
+            db.session.commit()
+            if not ok:
+                _pendientes["hay"] = True        # que el vigilante lo reintente
+            if not ok and externo and n.urgente and n.intentos == 1:
+                notificar.avisar(n.titulo, f"{n.cuerpo or ''}\n\nVer en el panel: {SITE_URL_PUSH()}{n.url or '/panel'}")
+    except Exception as e:
+        app.logger.error("No se pudo entregar la notificación %s: %s", nid, e)
+
+
+def SITE_URL_PUSH():
+    return (ajustes.valor("SITE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
+
+def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clave=None, externo=True):
+    """Guarda el aviso y lo manda al celular. Nunca lanza error: un fallo aquí no debe romper la acción original."""
+    try:
+        if clave and Notificacion.query.filter_by(clave=clave).first():
+            return None
+        if tipo == "Monitor" and titulo.startswith("Caído") and urgente:
+            # Dentro de una ventana de mantenimiento la caída se avisa, pero sin urgencia y con la explicación.
+            v = operaciones.mantenimiento_activo()
+            if v:
+                urgente = False
+                cuerpo = f"{cuerpo or ''} · Hay un mantenimiento de {v['proveedor']} en curso (termina {v['fin_local']:%H:%M}).".strip(" ·")
+        silenciada = operaciones.silenciado(tipo)
+        n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave,
+                         leida=silenciada, intentos=10 if silenciada else 0)    # intentos=10: el vigilante no la reintenta
+        db.session.add(n)
+        db.session.commit()
+        if not silenciada:
+            threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
+        return n
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error("No se pudo crear la notificación: %s", e)
+        return None
+
+
+def _push_pedido(lead):
+    crear_notificacion("Pedido", f"Nuevo pedido: {lead.nombre}",
+                       f"{lead.sistema or lead.negocio or 'Pedido nuevo'} · {lead.contacto}", "/leads",
+                       clave=f"lead-{lead.id}", externo=False)   # notificar.avisar ya lo manda por Telegram/correo
+
+
+_pendientes = {"hay": True}      # True = puede haber avisos sin entregar. Evita consultar la base cada minuto (Neon se duerme)
+
+
+def reintentar_pendientes():
+    """Reintenta los avisos urgentes de las últimas 24 h que ningún dispositivo recibió."""
+    if not push_configurado() or not PushDispositivo.query.filter_by(activo=True).first():
+        return 0
+    desde = datetime.utcnow() - timedelta(hours=24)
+    pend = Notificacion.query.filter(Notificacion.urgente.is_(True), Notificacion.entregada.is_(False),
+                                     Notificacion.intentos < 10, Notificacion.hora >= desde).all()
+    for n in pend:
+        ok = _enviar_push(n)
+        n.entregada, n.intentos = ok > 0, (n.intentos or 0) + 1
+        db.session.commit()
+    return len(pend)
+
+
+def revisar_alertas():
+    """Avisa (una vez al día por cada tema) de cobros, pagos, vencimientos, respaldos e incidentes graves."""
+    hoy = date.today()
+    por_cobrar, por_pagar = calcular_avisos()
+    for a in por_cobrar:
+        if a["dias"] <= 3:
+            crear_notificacion("Cobro", f"Cobro {'vencido' if a['dias'] < 0 else 'próximo'}: {a['cliente'].nombre_comercial}",
+                               f"{dinero(a['monto'])} · {a['plan']} · {a['fecha']:%d/%m/%Y}", f"/clientes/{a['cliente'].id}",
+                               clave=f"cobrar-{a['cliente'].id}-{hoy}")
+    for a in por_pagar:
+        if a["dias"] <= 3:
+            crear_notificacion("Pago", f"Pago {'vencido' if a['dias'] < 0 else 'próximo'}: {a['proveedor']}",
+                               f"{a['concepto'] or ''} · {dinero(a['monto'])} · {a['fecha']:%d/%m/%Y}", "/avisos",
+                               clave=f"pagar-{a['id']}-{hoy}")
+    for a in alertas_seguridad():
+        if a["tipo"] == "Vencimiento" and a["dias"] <= 7:
+            crear_notificacion("Vencimiento", f"{'Venció' if a['dias'] < 0 else 'Vence pronto'}: {a['detalle']}",
+                               a["proyecto"].nombre, f"/proyectos/{a['proyecto'].id}/seguridad", clave=f"venc-{a['vid']}-{hoy}")
+        elif a["tipo"] == "Respaldo":
+            crear_notificacion("Respaldo", f"Respaldo pendiente: {a['proyecto'].nombre}", a["detalle"],
+                               f"/proyectos/{a['proyecto'].id}/seguridad", clave=f"resp-{a['proyecto'].id}-{hoy}")
+    for i in Incidente.query.filter_by(estado="Abierto", gravedad="Crítica").all():
+        crear_notificacion("Incidente", f"Incidente crítico sin resolver: {i.titulo}", i.proyecto.nombre,
+                           f"/proyectos/{i.proyecto_id}/seguridad", clave=f"inc-abierto-{i.id}-{hoy}")
+    for a in almacenamiento.avisos_horas():      # horas de cómputo de Neon agotadas o que no alcanzan (una vez por periodo)
+        crear_notificacion("Almacenamiento", a["titulo"], a["cuerpo"], "/almacenamiento", clave=a["clave"])
+
+
+def _hora_de_avisar():
+    return 8 <= (datetime.utcnow() - timedelta(hours=6)).hour < 22   # hora de México: no te despierta de madrugada
+
+
+INTERVALO_ALERTAS = 2 * 3600     # cada revisión consulta la base y despierta a Neon ~5 min: cada 2 h basta (los avisos son de días)
+
+
+def _vigilante():
+    """Corre en segundo plano. IMPORTANTE: no debe consultar la base en cada vuelta, o Neon nunca se duerme
+    y se gastan las horas de cómputo gratis. Solo toca la base si hay avisos pendientes o toca la revisión periódica."""
+    ultima_revision = 0
+    while True:
+        time.sleep(60)
+        try:
+            with app.app_context():
+                if _pendientes["hay"] and limitar("vigilante:pendientes", 1, 50):
+                    _pendientes["hay"] = reintentar_pendientes() > 0
+                if time.time() - ultima_revision > INTERVALO_ALERTAS and _hora_de_avisar():
+                    ultima_revision = time.time()
+                    if not limitar("vigilante:revision", 1, INTERVALO_ALERTAS - 300):
+                        continue          # otro worker ya hizo esta ronda
+                    ContadorLimite.query.filter(ContadorLimite.inicio < datetime.utcnow() - timedelta(days=2)).delete()
+                    db.session.commit()
+                    revisar_alertas()
+                    almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
+                    monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
+                    llaves.revisar()                         # llaves por vencer, vencidas o con rotación programada
+                    servicios.revisar()                      # renovaciones de servicios y verificación de sus URLs de estado
+                    respaldos.revisar()                      # respaldo diario a R2, verificación y alertas
+                    actualizar_cobranza()                    # Pendiente / Atrasado / Suspendido según la fecha de pago
+        except Exception as e:
+            app.logger.error("Vigilante de alertas: %s", e)
+
+
+_candados = {}
+
+
+def es_lider(nombre):
+    """Candado entre workers del MISMO servidor (flock sobre un archivo temporal): solo uno es 'líder' de cada tarea.
+    Se eligió esto y no pg_try_advisory_lock porque ese candado exige una conexión a Neon abierta todo el tiempo
+    (impide que Neon se duerma, que es justo lo que este código evita) y falla detrás del pooler de Neon.
+    Si el líder muere, el candado se libera solo y otro worker lo toma en su siguiente petición."""
+    try:
+        import fcntl
+    except ImportError:                    # Windows / desarrollo local: un solo proceso, siempre líder
+        return True
+    c = _candados.get(nombre)
+    if c is None:
+        c = _candados[nombre] = {"fh": open(os.path.join(tempfile.gettempdir(), f"zedyth_lider_{nombre}.lock"), "a+"), "lider": False}
+    if c["lider"]:
+        return True
+    try:
+        fcntl.flock(c["fh"], fcntl.LOCK_EX | fcntl.LOCK_NB)
+        c["lider"] = True
+        app.logger.info("Este worker (pid %s) es el líder de «%s».", os.getpid(), nombre)
+    except OSError:
+        pass
+    return c["lider"]
+
+
+def iniciar_vigilante():
+    if getattr(app, "_vigilante_activo", False):
+        return
+    if not es_lider("vigilante"):          # otro worker ya corre el vigilante
+        return
+    app._vigilante_activo = True
+    threading.Thread(target=_vigilante, daemon=True, name="vigilante-alertas").start()
+
+
+if int(os.environ.get("WEB_CONCURRENCY", "1") or 1) > 1:
+    app.logger.warning("WEB_CONCURRENCY>1: el monitor HTTP guarda su estado en memoria por worker. "
+                       "Usa 'gunicorn app:app --workers 1 --threads 4' para que el panel muestre datos coherentes.")
+
+
+# --- CHAT INTERNO: rutas -----------------------------------------------------------------------
+@app.route('/chat')
+def chat():
+    return render_template('chat.html')
+
+
+@app.route('/api/chat/contactos')
+def chat_contactos():
+    otros = Usuario.query.filter(Usuario.activo.is_(True), Usuario.id != current_user.id).order_by(Usuario.nombre).all()
+    return {"contactos": [{"nombre": u.nombre or u.username, "cargo": cargo_de(u),
+                           "sala": f"dm:{min(u.id, current_user.id)}:{max(u.id, current_user.id)}"} for u in otros]}
+
+
+@app.route('/api/chat/mensajes')
+def chat_mensajes():
+    sala = request.args.get('sala', 'general')
+    if not _chat_sala_valida(sala):
+        abort(403)
+    desde = request.args.get('desde', 0, type=int) or 0
+    q = ChatMensaje.query.filter(ChatMensaje.sala == sala, ChatMensaje.id > desde)
+    filas = q.order_by(ChatMensaje.id.desc()).limit(100).all() if desde == 0 else q.order_by(ChatMensaje.id).limit(200).all()
+    filas.sort(key=lambda m: m.id)
+    return {"mensajes": [{"id": m.id, "yo": m.usuario_id == current_user.id, "nombre": m.usuario.nombre or m.usuario.username,
+                          "texto": _chat_descifrar(m), "creado": m.creado.strftime("%Y-%m-%dT%H:%M:%S")} for m in filas]}
+
+
+@app.route('/api/chat/enviar', methods=['POST'])
+def chat_enviar():
+    d = request.get_json(silent=True) or {}
+    sala, texto = str(d.get('sala') or ''), str(d.get('texto') or '').strip()
+    if not _chat_sala_valida(sala):
+        abort(403)
+    if not texto:
+        return {"ok": False, "error": "Mensaje vacío."}, 400
+    if len(texto) > CHAT_MAX_CHARS:
+        return {"ok": False, "error": f"Máximo {CHAT_MAX_CHARS} caracteres."}, 400
+    if not limitar(f"chat:{current_user.id}", CHAT_MAX_POR_MIN, 60):
+        return {"ok": False, "error": "Vas muy rápido. Espera un momento."}, 429
+    nonce, cifrado = _chat_cifrar(texto, sala, current_user.id)
+    db.session.add(ChatMensaje(sala=sala, usuario_id=current_user.id, nonce=nonce, cifrado=cifrado))
+    if CHAT_RETENCION_DIAS > 0 and limitar("chat:purga", 1, 86400):      # una limpieza al día
+        ChatMensaje.query.filter(ChatMensaje.creado < datetime.utcnow() - timedelta(days=CHAT_RETENCION_DIAS)).delete()
+    db.session.commit()
+    return {"ok": True}
+
+
+# --- AUDITORÍA (solo admin): consulta con filtros y exportación ------------------------------
+AUDITORIA_POR_PAGINA = 50
+AUDITORIA_EXPORT_MAX = 20000
+
+
+def _auditoria_filtrada():
+    """Devuelve (consulta, filtros) según los parámetros GET: usuario, accion, entidad, desde, hasta, q."""
+    f = {k: (request.args.get(k) or "").strip()[:80] for k in ("usuario", "accion", "entidad", "desde", "hasta", "q")}
+    cond = []
+    if f["usuario"]:
+        cond.append(Auditoria.usuario.ilike(f"%{f['usuario']}%"))
+    if f["accion"]:
+        cond.append(Auditoria.accion == f["accion"])
+    if f["entidad"]:
+        cond.append(Auditoria.entidad == f["entidad"])
+    if f["q"]:
+        cond.append(db.or_(Auditoria.detalle.ilike(f"%{f['q']}%"), Auditoria.ip.ilike(f"%{f['q']}%")))
+    for clave, op in (("desde", ">="), ("hasta", "<")):
+        try:
+            d = date.fromisoformat(f[clave]) if f[clave] else None
+        except ValueError:
+            d, f[clave] = None, ""
+        if d:
+            cond.append(Auditoria.fecha >= datetime.combine(d, datetime.min.time()) if op == ">="
+                        else Auditoria.fecha < datetime.combine(d + timedelta(days=1), datetime.min.time()))
+    return db.select(Auditoria).where(*cond).order_by(Auditoria.fecha.desc(), Auditoria.id.desc()), f
+
+
+@app.route('/auditoria')
+def auditoria():
+    consulta, f = _auditoria_filtrada()
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+    pag = db.paginate(consulta, page=pagina, per_page=AUDITORIA_POR_PAGINA, error_out=False)
+    desde24 = datetime.utcnow() - timedelta(hours=24)
+    resumen = {
+        "fallos24": db.session.scalar(db.select(db.func.count()).select_from(Auditoria).where(
+            Auditoria.accion == "login_fallido", Auditoria.fecha >= desde24)) or 0,
+        "bloqueos24": db.session.scalar(db.select(db.func.count()).select_from(Auditoria).where(
+            Auditoria.accion == "login_bloqueado", Auditoria.fecha >= desde24)) or 0,
+        "acciones24": db.session.scalar(db.select(db.func.count()).select_from(Auditoria).where(Auditoria.fecha >= desde24)) or 0,
+    }
+    acciones = [r[0] for r in db.session.execute(db.select(Auditoria.accion).distinct().order_by(Auditoria.accion)) if r[0]]
+    entidades = [r[0] for r in db.session.execute(db.select(Auditoria.entidad).distinct().order_by(Auditoria.entidad)) if r[0]]
+    qs = "&".join(f"{k}={quote(v)}" for k, v in f.items() if v)
+    return render_template('auditoria.html', pag=pag, f=f, resumen=resumen, acciones=acciones, entidades=entidades, qs=qs)
+
+
+def _celda_csv(v):
+    """Evita la inyección de fórmulas al abrir el CSV en Excel/Sheets."""
+    t = "" if v is None else str(v)
+    return "'" + t if t[:1] in ("=", "+", "-", "@", "\t", "\r") else t
+
+
+@app.route('/auditoria/exportar')
+def auditoria_exportar():
+    consulta, f = _auditoria_filtrada()
+    filas = db.session.execute(consulta.limit(AUDITORIA_EXPORT_MAX)).scalars().all()
+    registrar("exportar", "Auditoria", None, f"{len(filas)} registros · filtros: " + (", ".join(f"{k}={v}" for k, v in f.items() if v) or "ninguno"))
+    db.session.commit()
+    salida = io.StringIO()
+    w = csv.writer(salida)
+    w.writerow(["id", "fecha_utc", "usuario", "accion", "entidad", "entidad_id", "detalle", "ip"])
+    for a in filas:
+        w.writerow([a.id, a.fecha.strftime("%Y-%m-%d %H:%M:%S") if a.fecha else "", _celda_csv(a.usuario), _celda_csv(a.accion),
+                    _celda_csv(a.entidad), a.entidad_id or "", _celda_csv(a.detalle), _celda_csv(a.ip)])
+    nombre = f"auditoria_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+    return Response("\ufeff" + salida.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename={nombre}", "Cache-Control": "no-store"})
+
+
+@app.route('/notificaciones')
+def notificaciones():
+    vista = request.args.get('v', 'todas')
+    if vista not in ('todas', 'criticas', 'avisos', 'sinleer'):
+        vista = 'todas'
+    q = Notificacion.query
+    if vista == 'criticas':
+        q = q.filter(Notificacion.urgente.is_(True))
+    elif vista == 'avisos':
+        q = q.filter(Notificacion.urgente.is_(False))
+    elif vista == 'sinleer':
+        q = q.filter(Notificacion.leida.is_(False))
+    filas = q.order_by(Notificacion.hora.desc()).limit(200).all()
+    cuentas = {"todas": Notificacion.query.count(),
+               "criticas": Notificacion.query.filter(Notificacion.urgente.is_(True)).count(),
+               "avisos": Notificacion.query.filter(Notificacion.urgente.is_(False)).count(),
+               "sinleer": Notificacion.query.filter(Notificacion.leida.is_(False)).count()}
+    tipos = sorted({t for (t,) in db.session.query(Notificacion.tipo).distinct().all() if t} | {"Monitor", "Render", "Cobro", "Vencimiento"})
+    try:
+        silencios = operaciones._api["silencios_activos"]()
+    except Exception:
+        silencios = []
+    dispositivos = PushDispositivo.query.filter_by(activo=True).order_by(PushDispositivo.creado.desc()).all()
+    return render_template('notificaciones.html', filas=filas, grupos=operaciones.agrupar(filas), vista=vista, cuentas=cuentas,
+                           tipos=tipos, silencios=silencios, dispositivos=dispositivos, configurado=push_configurado(),
+                           problema=vapid_diagnostico())
+
+
+@app.route('/notificaciones/leer', methods=['POST'])
+def notificaciones_leer():
+    Notificacion.query.filter_by(leida=False).update({"leida": True})
+    db.session.commit()
+    return redirect(url_for('notificaciones'))
+
+
+@app.route('/api/push/clave')
+def push_clave():
+    return {"clave": _vapid()[0]}
+
+
+@app.route('/api/push/suscribir', methods=['POST'])
+def push_suscribir():
+    d = request.get_json(silent=True) or {}
+    k = d.get('keys') if isinstance(d.get('keys'), dict) else {}
+    endpoint, p256dh, auth = str(d.get('endpoint') or ''), str(k.get('p256dh') or ''), str(k.get('auth') or '')
+    if not endpoint.startswith('https://') or not p256dh or not auth:
+        return {"ok": False}, 400
+    disp = PushDispositivo.query.filter_by(endpoint=endpoint).first() or PushDispositivo(endpoint=endpoint)
+    disp.p256dh, disp.auth, disp.activo, disp.fallos = p256dh[:200], auth[:100], True, 0
+    disp.usuario = current_user.username if current_user.is_authenticated else None
+    disp.agente = (request.headers.get('User-Agent') or '')[:300]
+    db.session.add(disp)
+    db.session.commit()
+    return {"ok": True}
+
+
+@app.route('/api/push/prueba', methods=['POST'])
+def push_prueba():
+    n = Notificacion(tipo="Prueba", titulo="Prueba de alerta ZEDYTH", cuerpo="Si ves esto, las alertas urgentes funcionan.",
+                     url="/notificaciones", urgente=True)
+    db.session.add(n)
+    db.session.commit()
+    ok = _enviar_push(n) if push_configurado() else 0
+    n.entregada, n.intentos, n.leida = ok > 0, 1, True
+    db.session.commit()
+    return {"dispositivos": ok, "total": PushDispositivo.query.filter_by(activo=True).count(), "configurado": push_configurado(),
+            "problema": vapid_diagnostico()}
+
+
+@app.route('/healthz')
+def healthz():
+    """Para el bot que mantiene despierto a Render (y el Health Check de Render). NO toca la base de datos:
+    así Neon puede dormirse y no gasta horas de cómputo. Apunta ahí tu bot, no a /api/push/revisar ni a la portada."""
+    return "ok", 200, {"Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.route('/api/push/revisar', methods=['GET', 'POST'])
+def push_revisar():
+    """Para un cron externo (p. ej. cron-job.org cada 5 min): despierta el servidor, reintenta y revisa alertas.
+    Requiere el token CRON_TOKEN (se genera en Conexiones): /api/push/revisar?token=..."""
+    token = ajustes.valor("CRON_TOKEN")
+    if not token or not secrets.compare_digest(request.args.get('token', ''), token):
+        return {"ok": False}, 404
+    reintentados = reintentar_pendientes()
+    if _hora_de_avisar():
+        revisar_alertas()
+    almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
+    monitor.volcar()
+    llaves.revisar()
+    servicios.revisar()
+    render_panel.revisar()
+    operaciones.revisar()
+    respaldos.revisar()
+    actualizar_cobranza()
+    return {"ok": True, "reintentados": reintentados}
+
+import almacenamiento
+app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
+app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
+app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
+app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
+import render_panel
+app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
+app.register_blueprint(operaciones.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /mantenimientos, /atajos y centro de alertas
+import vault
+app.register_blueprint(vault.crear_blueprint(app, db, registrar, limitar, Usuario))     # /vault: ZEDYTH OPS VAULT (workspace cifrado; cada elemento se comparte con el personal y el CEO ve todo; VAULT_PERSONAL=0 lo deja solo para administradores)
+
+# ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
+zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]
+zedith.AL_FALLAR = llaves.reportar_fallo
+zedith.AL_USAR = llaves.registrar_uso
+
+
+# Endpoints públicos y anónimos (sin sesión que proteger; ya tienen límite por IP) y el cron con token propio.
+for _nombre in ('zedith_chat', 'zedith_analisis', 'configurador_enviar', 'resena_enviar', 'opinion_enviar', 'push_revisar'):
+    csrf.exempt(app.view_functions[_nombre])
+
+
+if __name__ == '__main__':
+    # host='0.0.0.0' permite que otros dispositivos en tu WiFi accedan a la PC
+    # ssl_context='adhoc' genera un HTTPS temporal (necesario para usar la cámara en móviles)
+    # debug solo si lo pides: FLASK_DEBUG=1 (nunca en producción: el depurador permite ejecutar código)
+    app.run(host='0.0.0.0', port=5000, debug=os.environ.get("FLASK_DEBUG") == "1", ssl_context='adhoc')
