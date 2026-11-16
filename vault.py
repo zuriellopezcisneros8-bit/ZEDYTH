@@ -6,6 +6,9 @@ Qué incluye (todo bajo /vault):
   * Modo misión         Checklists interactivos OWASP Top 10, PTES y MITRE ATT&CK por objetivo.
   * Caja de herramientas (Base64, hex, URL, JWT, hashes, defang, IoCs, generadores): vive en el navegador
                         (static/js/vault_tools.js); lo que pegas ahí NO viaja al servidor.
+  * Escáner de PDFs     Análisis estático (JavaScript, /Launch, archivos incrustados, ofuscación…) + ClamAV y VirusTotal por hash
+                        si están configurados. El PDF NO se guarda: solo se analiza en memoria y se registra su hash.
+  * Biblioteca          Herramientas y aprendizajes: qué hace cada una, cómo se usa y lo que aprendiste (por categoría y nivel).
   * Búsqueda            Texto completo en títulos, etiquetas y contenido.
   * Seguridad           Todo el contenido se guarda CIFRADO (Fernet). Bloqueo por inactividad (5 min) en el servidor y en
                         el navegador: se desbloquea con la contraseña de tu cuenta.
@@ -30,10 +33,14 @@ from flask import Blueprint, Response, abort, jsonify, render_template, request,
 from flask_login import current_user
 from werkzeug.exceptions import HTTPException
 
+import pdf_scan
+
 LADOS = ("OFFENSIVE", "DEFENSIVE")
 CLASIFICACIONES = ("PUBLICABLE", "INTERNO", "CONFIDENCIAL", "ZERO-DAY / CRÍTICO")
-TIPOS_NOTA = ("Nota", "Captura", "Recon", "Finding", "CTF")
+TIPOS_NOTA = ("Nota", "Captura", "Recon", "Finding", "CTF", "Aprendizaje")
 METODOLOGIAS = ("OWASP Top 10", "PTES", "MITRE ATT&CK")
+CATEGORIAS_HERR = ("Malware / virus", "Actividad de personas", "Bots y automatización", "Red y tráfico", "Web y apps", "Forense y logs", "OSINT", "Otra")
+NIVELES_HERR = ("Por probar", "Probando", "La domino")
 LENGUAJES = ("auto", "bash", "python", "powershell", "sql", "cpp", "yara", "regex", "terminal", "javascript", "texto")
 EFIMERAS_HORAS = (1, 24)           # además de «al cerrar»
 BLOQUEO_SEGUNDOS = int(os.environ.get("VAULT_BLOQUEO_S", "300") or 300)
@@ -43,6 +50,9 @@ MAX_VERSIONES = 50
 AL_CERRAR_CADUCA_H = 12            # respaldo del servidor para las notas «al cerrar» que el navegador no alcanzó a borrar
 
 PLANTILLAS = {
+    "Aprendizaje": ("# Lo que aprendí hoy\n\n- **Tema:** \n- **Fuente (curso, video, laboratorio):** \n\n"
+                    "## Idea clave\n\n\n## Cómo lo probé\n\n\n## Herramientas usadas\n\n- [[ ]]\n\n## Dudas / qué sigue\n\n"),
+    "Herramienta": ("## Para qué sirve\n\n\n## Cómo se usa\n\n```\n\n```\n\n## Lo que aprendí\n\n\n## Cuidado / límites\n\n\n## Relacionado\n\n- [[ ]]\n"),
     "Recon": ("# Ficha de reconocimiento\n\n"
               "- **Dominio:** \n- **Subdominios:** \n- **Puertos abiertos:** \n- **Tecnologías detectadas:** \n\n"
               "## Superficie de ataque\n\n\n## Notas\n\n"),
@@ -186,6 +196,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         lenguaje = db.Column(db.String(20), default="auto")
         etiquetas = db.Column(db.String(400), default="")
         cuerpo = db.Column(db.Text, nullable=False)                 # cifrado
+        notas = db.Column(db.Text, default="")                      # cifrado: para qué sirve / qué aprendí
         version = db.Column(db.Integer, default=1)
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -221,13 +232,32 @@ def crear_blueprint(app, db, registrar, limitar=None):
         creado = db.Column(db.DateTime, default=datetime.utcnow)
         actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    class VaultHerramienta(db.Model):
+        __tablename__ = "vault_herramienta"
+        id = db.Column(db.Integer, primary_key=True)
+        nombre = db.Column(db.String(200), nullable=False)
+        categoria = db.Column(db.String(30), default="Otra")
+        nivel = db.Column(db.String(16), default="Por probar")
+        enlace = db.Column(db.String(400), default="")
+        etiquetas = db.Column(db.String(400), default="")
+        cuerpo = db.Column(db.Text, default="")                     # cifrado
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     estado = {"ok": False}
 
     def asegurar():
         if estado["ok"]:
             return
-        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist):
+        for m in (VaultCodigo, VaultVersion, VaultNota, VaultChecklist, VaultHerramienta):
             m.__table__.create(db.engine, checkfirst=True)
+        try:        # base ya existente: agrega la columna «notas» a vault_codigo sin perder nada
+            from sqlalchemy import inspect, text
+            if "notas" not in {c["name"] for c in inspect(db.engine).get_columns("vault_codigo")}:
+                with db.engine.begin() as con:
+                    con.execute(text("ALTER TABLE vault_codigo ADD COLUMN notas TEXT"))
+        except Exception:
+            db.session.rollback()
         estado["ok"] = True
 
     def es_admin():
@@ -299,7 +329,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
         asegurar()
         cfg = {"desbloqueada": desbloqueado(tocar=False), "bloqueo_s": BLOQUEO_SEGUNDOS, "lados": list(LADOS),
                "clasificaciones": list(CLASIFICACIONES), "tipos": list(TIPOS_NOTA), "lenguajes": list(LENGUAJES),
-               "metodologias": list(METODOLOGIAS)}
+               "metodologias": list(METODOLOGIAS), "categorias": list(CATEGORIAS_HERR), "niveles": list(NIVELES_HERR)}
         return render_template("vault.html", cfg=cfg)
 
     @bp.route("/vault/api/desbloquear", methods=["POST"])
@@ -351,6 +381,10 @@ def crear_blueprint(app, db, registrar, limitar=None):
         return {"id": c.id, "objetivo": c.objetivo, "metodologia": c.metodologia, "hechos": hechos,
                 "total": len(claves_checklist(c.metodologia)), "actualizado": c.actualizado.isoformat() + "Z"}
 
+    def resumen_herr(h):
+        return {"id": h.id, "nombre": h.nombre, "categoria": h.categoria, "nivel": h.nivel, "enlace": h.enlace or "",
+                "etiquetas": limpiar_etiquetas(h.etiquetas), "actualizado": h.actualizado.isoformat() + "Z"}
+
     @bp.route("/vault/api/inicio")
     @api
     def vault_datos():
@@ -358,6 +392,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
                        codigo=[resumen_codigo(c) for c in VaultCodigo.query.order_by(VaultCodigo.actualizado.desc()).all()],
                        notas=[resumen_nota(n) for n in VaultNota.query.order_by(VaultNota.actualizado.desc()).all()],
                        checklists=[resumen_check(c) for c in VaultChecklist.query.order_by(VaultChecklist.actualizado.desc()).all()],
+                       herramientas=[resumen_herr(h) for h in VaultHerramienta.query.order_by(VaultHerramienta.actualizado.desc()).all()],
                        catalogo=catalogo_para_cliente(), plantillas=PLANTILLAS)
 
     # ---- Código ---------------------------------------------------------------
@@ -367,7 +402,8 @@ def crear_blueprint(app, db, registrar, limitar=None):
         c = db.session.get(VaultCodigo, cid) or abort(404)
         cuerpo = descifrar(F, c.cuerpo)
         vers = VaultVersion.query.filter_by(codigo_id=cid).order_by(VaultVersion.n.desc()).all()
-        return jsonify(ok=True, item=dict(resumen_codigo(c), cuerpo=cuerpo, ilegible=cuerpo is None),
+        notas = (descifrar(F, c.notas) or "") if c.notas else ""
+        return jsonify(ok=True, item=dict(resumen_codigo(c), cuerpo=cuerpo, notas=notas, ilegible=cuerpo is None),
                        versiones=[{"n": v.n, "nota": v.nota, "fecha": v.fecha.isoformat() + "Z"} for v in vers])
 
     @bp.route("/vault/api/codigo/<int:cid>/version/<int:n>")
@@ -386,6 +422,7 @@ def crear_blueprint(app, db, registrar, limitar=None):
             abort(400, description="Elige OFFENSIVE o DEFENSIVE")
         lenguaje = d.get("lenguaje") if d.get("lenguaje") in LENGUAJES else "auto"
         cuerpo = texto(d, "cuerpo", MAX_CUERPO)
+        notas = texto(d, "notas", MAX_CUERPO)
         nota_version = texto(d, "nota_version", 200).strip()
         etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
         cid = d.get("id")
@@ -399,10 +436,12 @@ def crear_blueprint(app, db, registrar, limitar=None):
                 for v in viejas:
                     db.session.delete(v)
             c.titulo, c.lado, c.lenguaje, c.etiquetas = titulo, lado, lenguaje, etiquetas
+            if "notas" in d:
+                c.notas = cifrar(F, notas)
         else:
             if VaultCodigo.query.count() >= MAX_ELEMENTOS:
                 abort(400, description="Límite de elementos alcanzado")
-            c = VaultCodigo(titulo=titulo, lado=lado, lenguaje=lenguaje, etiquetas=etiquetas, cuerpo=cifrar(F, cuerpo), version=1)
+            c = VaultCodigo(titulo=titulo, lado=lado, lenguaje=lenguaje, etiquetas=etiquetas, cuerpo=cifrar(F, cuerpo), notas=cifrar(F, notas), version=1)
             db.session.add(c)
             db.session.flush()
             db.session.add(VaultVersion(codigo_id=c.id, n=1, nota=nota_version or "Versión inicial", cuerpo=cifrar(F, cuerpo)))
@@ -446,6 +485,9 @@ def crear_blueprint(app, db, registrar, limitar=None):
         for o in VaultCodigo.query.all():
             if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
                 entrantes.append({"tipo": "codigo", "id": o.id, "titulo": o.titulo})
+        for o in VaultHerramienta.query.all():
+            if titulo_l in [t.lower() for t in enlaces_wiki(descifrar(F, o.cuerpo))]:
+                entrantes.append({"tipo": "herramienta", "id": o.id, "titulo": o.nombre})
         return jsonify(ok=True, item=dict(resumen_nota(n), cuerpo=cuerpo, ilegible=cuerpo is None), entrantes=entrantes)
 
     @bp.route("/vault/api/nota", methods=["POST"])
@@ -496,6 +538,49 @@ def crear_blueprint(app, db, registrar, limitar=None):
         return Response(md, mimetype="text/markdown; charset=utf-8",
                         headers={"Content-Disposition": f"attachment; filename={nombre_archivo(n.titulo)}.md", "Cache-Control": "no-store"})
 
+    # ---- Biblioteca de herramientas y aprendizajes -----------------------------
+    @bp.route("/vault/api/herramienta/<int:hid>")
+    @api
+    def vault_herr_ver(hid):
+        h = db.session.get(VaultHerramienta, hid) or abort(404)
+        cuerpo = descifrar(F, h.cuerpo)
+        return jsonify(ok=True, item=dict(resumen_herr(h), cuerpo=cuerpo, ilegible=cuerpo is None))
+
+    @bp.route("/vault/api/herramienta", methods=["POST"])
+    @api
+    def vault_herr_guardar():
+        d = datos()
+        nombre = texto(d, "nombre", 200, True).strip()
+        cat = d.get("categoria") if d.get("categoria") in CATEGORIAS_HERR else "Otra"
+        nivel = d.get("nivel") if d.get("nivel") in NIVELES_HERR else "Por probar"
+        enlace = texto(d, "enlace", 400).strip()
+        if enlace and not re.match(r"^https?://", enlace, re.I):
+            abort(400, description="El enlace debe empezar con http:// o https://")
+        etiquetas = ", ".join(limpiar_etiquetas(texto(d, "etiquetas", 400)))
+        cuerpo = texto(d, "cuerpo", MAX_CUERPO)
+        hid = d.get("id")
+        if hid:
+            h = db.session.get(VaultHerramienta, int(hid)) or abort(404)
+        else:
+            if VaultHerramienta.query.count() >= MAX_ELEMENTOS:
+                abort(400, description="Límite de elementos alcanzado")
+            h = VaultHerramienta()
+            db.session.add(h)
+        h.nombre, h.categoria, h.nivel, h.enlace, h.etiquetas, h.cuerpo = nombre, cat, nivel, enlace, etiquetas, cifrar(F, cuerpo)
+        db.session.flush()
+        registrar("vault_herr", "vault_herramienta", h.id, f"{cat}: {nombre[:80]}")
+        db.session.commit()
+        return jsonify(ok=True, item=resumen_herr(h))
+
+    @bp.route("/vault/api/herramienta/<int:hid>", methods=["DELETE"])
+    @api
+    def vault_herr_borrar(hid):
+        h = db.session.get(VaultHerramienta, hid) or abort(404)
+        registrar("vault_herr_borrar", "vault_herramienta", hid, h.nombre[:80])
+        db.session.delete(h)
+        db.session.commit()
+        return jsonify(ok=True)
+
     # ---- Checklists -----------------------------------------------------------
     @bp.route("/vault/api/checklist", methods=["POST"])
     @api
@@ -529,6 +614,28 @@ def crear_blueprint(app, db, registrar, limitar=None):
         db.session.commit()
         return jsonify(ok=True)
 
+    # ---- Escáner de PDFs ------------------------------------------------------
+    @bp.route("/vault/api/pdf/escanear", methods=["POST"])
+    @api
+    def vault_pdf_escanear():
+        clave = f"vault_pdf:{current_user.id}"
+        if limitar and not limitar(clave, 20, 600):
+            return jsonify(ok=False, error="Demasiados análisis seguidos. Espera unos minutos."), 429
+        f = request.files.get("archivo")
+        if not f:
+            abort(400, description="Elige un archivo PDF")
+        datos = f.stream.read(pdf_scan.MAX_BYTES + 1)
+        if len(datos) > pdf_scan.MAX_BYTES:
+            abort(400, description=f"El archivo supera {pdf_scan.MAX_BYTES // (1024 * 1024)} MB")
+        try:
+            r = pdf_scan.escanear(datos, f.filename or "", usar_vt=request.form.get("vt") != "0")
+        except ValueError as e:
+            abort(400, description=str(e))
+        # Se registra solo el hash y el veredicto: el archivo no se guarda en ningún lado.
+        registrar("vault_pdf_escaneo", "vault", None, f"{r['veredicto']} · sha256 {r['hashes']['sha256'][:16]}…")
+        db.session.commit()
+        return jsonify(ok=True, resultado=r)
+
     # ---- Búsqueda y grafo -----------------------------------------------------
     @bp.route("/vault/api/buscar")
     @api
@@ -539,12 +646,16 @@ def crear_blueprint(app, db, registrar, limitar=None):
         res = []
         for c in VaultCodigo.query.all():
             cuerpo = descifrar(F, c.cuerpo) or ""
-            if coincide(q, c.titulo, c.etiquetas, c.lado, c.lenguaje, cuerpo):
+            if coincide(q, c.titulo, c.etiquetas, c.lado, c.lenguaje, cuerpo, descifrar(F, c.notas) if c.notas else ""):
                 res.append({"tipo": "codigo", "id": c.id, "titulo": c.titulo, "detalle": c.lado, "linea": _linea(cuerpo, q)})
         for n in VaultNota.query.all():
             cuerpo = descifrar(F, n.cuerpo) or ""
             if coincide(q, n.titulo, n.etiquetas, n.clasificacion, n.tipo, cuerpo):
                 res.append({"tipo": "nota", "id": n.id, "titulo": n.titulo, "detalle": n.clasificacion, "linea": _linea(cuerpo, q)})
+        for h in VaultHerramienta.query.all():
+            cuerpo = descifrar(F, h.cuerpo) or ""
+            if coincide(q, h.nombre, h.etiquetas, h.categoria, h.nivel, cuerpo):
+                res.append({"tipo": "herramienta", "id": h.id, "titulo": h.nombre, "detalle": h.categoria, "linea": _linea(cuerpo, q)})
         return jsonify(ok=True, resultados=res[:100])
 
     @bp.route("/vault/api/grafo")
@@ -552,7 +663,8 @@ def crear_blueprint(app, db, registrar, limitar=None):
     def vault_grafo():
         nodos, por_titulo = [], {}
         elementos = [("nota", n.id, n.titulo, n.cuerpo) for n in VaultNota.query.all()] + \
-                    [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all()]
+                    [("codigo", c.id, c.titulo, c.cuerpo) for c in VaultCodigo.query.all()] + \
+                    [("herramienta", h.id, h.nombre, h.cuerpo) for h in VaultHerramienta.query.all()]
         for tipo, i, titulo, _c in elementos:
             nodos.append({"id": f"{tipo}:{i}", "tipo": tipo, "titulo": titulo})
             por_titulo.setdefault(titulo.strip().lower(), f"{tipo}:{i}")
