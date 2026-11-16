@@ -1,0 +1,25 @@
+<!-- templates/_render_proyecto.html · servicios de Render ligados a esta plataforma -->
+{% if render_p %}
+<div class="section-title">Render</div>
+<div class="luxury-card">
+  {% if not render_p.conectado %}
+    <div style="color:var(--text-muted);">Render no está conectado. Pega tu llave en <a href="/conexiones#render" style="text-decoration:underline;">Conexiones</a> para ver aquí el estado y los deploys.</div>
+  {% elif render_p.pendiente %}
+    <div style="color:var(--text-muted);">Leyendo Render… recarga la página en unos segundos.</div>
+  {% elif not render_p.servicios %}
+    <div style="color:var(--text-muted);">No encontré servicios de Render ligados a esta plataforma. Se ligan por el repositorio, la dirección de producción o un nombre idéntico: completa alguno en «Editar datos». <a href="/render" style="text-decoration:underline;">Ver todos los servicios</a></div>
+  {% else %}
+    <div class="table-responsive"><table><thead><tr><th>Servicio</th><th>Cuenta</th><th>Plan</th><th>Estado</th><th>Último deploy</th><th></th></tr></thead><tbody>
+    {% for s in render_p.servicios %}
+      <tr>
+        <td><b>{{ s.nombre }}</b></td><td>{{ s.cuenta }}</td><td>{{ s.plan or '—' }}</td>
+        <td><span style="font-weight:700; color:{{ {'ok':'#4ade80','mal':'#f87171','amb':'#f5b94c'}.get(s.nivel, 'var(--text-muted)') }};">{{ s.estado }}</span></td>
+        <td>{% if s.deploy %}{{ s.deploy.commit or '—' }}<div style="color:var(--text-muted); font-size:12px;">{{ (s.deploy.terminado or s.deploy.creado or '')[:16]|replace('T',' ') }} UTC</div>{% else %}—{% endif %}</td>
+        <td>{% if s.panel %}<a class="btn" href="{{ s.panel }}" target="_blank" rel="noopener">Abrir en Render</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
+    <p style="color:var(--text-muted); font-size:12px; margin:10px 0 0;">Leído {{ (render_p.actualizado or '')[:16]|replace('T',' ') }} UTC · <a href="/render" style="text-decoration:underline;">Ver todas las cuentas</a></p>
+  {% endif %}
+</div>
+{% endif %}

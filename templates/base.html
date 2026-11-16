@@ -258,6 +258,9 @@
             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/accesos" class="nav-item {% if request.path.startswith('/accesos') %}active{% endif %}">
                 <i class="ph ph-identification-badge"></i> Accesos
             </a>{% endif %}
+            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
+                <i class="ph ph-rocket-launch"></i> Render
+            </a>{% endif %}
             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
                 <i class="ph ph-database"></i> Almacenamiento
             </a>

@@ -103,6 +103,17 @@ GRUPOS = [
          _c("BACKUP_DATABASE_URL", "Cadena de conexión para respaldar (opcional)", True,
             "Solo si quieres respaldar con otro usuario distinto al de la app. Empieza con postgresql://", "", validar="url_pg"),
      ]},
+    {"clave": "render", "titulo": "Render (hosting de tus plataformas)", "icono": "ph-rocket-launch", "prueba": "render",
+     "intro": "Con la llave, el panel lee tus servicios de Render: estado, plan y último deploy, y te avisa si un deploy falla o un servicio se suspende. "
+              "Una llave ve todos los workspaces de su usuario; si tus plataformas están en usuarios distintos de Render, usa una llave por usuario (hasta 5).",
+     "donde": ("Render → Account Settings → API Keys → Create API Key. Cópiala al crearla. Es una llave de toda tu cuenta: guárdala solo aquí.",),
+     "campos": [
+         _c("RENDER_API_KEY", "Llave de Render · usuario 1", True, "", "rnd_…", validar="render_key"),
+         _c("RENDER_API_KEY_2", "Llave de Render · usuario 2 (opcional)", True, "", "rnd_…", validar="render_key"),
+         _c("RENDER_API_KEY_3", "Llave de Render · usuario 3 (opcional)", True, "", "rnd_…", validar="render_key"),
+         _c("RENDER_API_KEY_4", "Llave de Render · usuario 4 (opcional)", True, "", "rnd_…", validar="render_key"),
+         _c("RENDER_API_KEY_5", "Llave de Render · usuario 5 (opcional)", True, "", "rnd_…", validar="render_key"),
+     ]},
     {"clave": "sitio", "titulo": "Sitio público y tareas programadas", "icono": "ph-globe", "prueba": None,
      "intro": "Datos opcionales de la página pública y el token del cron externo (por ejemplo cron-job.org).",
      "donde": ("El cron llama a  https://TU-SITIO/api/push/revisar?token=TU_TOKEN  cada 5 minutos para mantener despierto "
@@ -250,6 +261,7 @@ _RE = {
     "bucket": re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"),
     "prefijo": re.compile(r"^[A-Za-z0-9_./-]{0,60}$"),
     "token": re.compile(r"^[A-Za-z0-9_-]{24,100}$"),
+    "render_key": re.compile(r"^[A-Za-z0-9_-]{20,120}$"),
 }
 
 
@@ -391,6 +403,11 @@ def _probar_avisos():
     if not hecho and not errores:
         return False, "Falta configurar Telegram (token y chat id) o el correo (usuario y contraseña)."
     return not errores, " · ".join(hecho + errores)
+
+
+def _probar_render():
+    import render_panel
+    return render_panel.probar()
 
 
 def _probar_r2():
@@ -547,6 +564,8 @@ def crear_blueprint(registrar, vapid_diagnostico=None):
                 ok, msg = _probar_avisos()
             elif clave == "r2":
                 ok, msg = _probar_r2()
+            elif clave == "render":
+                ok, msg = _probar_render()
             elif clave == "vapid":
                 if not (valor("VAPID_PUBLIC_KEY") and valor("VAPID_PRIVATE_KEY")):
                     ok, msg = False, "Faltan las llaves VAPID."

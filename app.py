@@ -1918,6 +1918,16 @@ def alertas_plataforma(p):
     return lista
 
 
+def _render_de(p):
+    """Servicios de Render ligados a la plataforma (solo caché: jamás retrasa la pantalla)."""
+    try:
+        import render_panel
+        return render_panel.por_proyecto(p)
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudo leer Render: %s", p.id, e)
+        return None
+
+
 @app.route('/plataformas/<int:pid>')
 def plataforma_detalle(pid):
     """Sistema maestro de control: todo lo de una plataforma propia en una sola pantalla con pestañas."""
@@ -1948,7 +1958,7 @@ def plataforma_detalle(pid):
         incidentes=sorted(p.incidentes, key=lambda i: (i.estado != "Abierto", -(i.fecha or date.min).toordinal())),
         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
         cumplidos=sum(1 for c in p.checks if c.cumplido),
-        alertas=alertas_plataforma(p), notifs=notifs,
+        alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
         intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
         intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
         intel_estados=INTEL_ESTADOS)
@@ -3408,6 +3418,7 @@ def push_revisar():
     monitor.volcar()
     llaves.revisar()
     servicios.revisar()
+    render_panel.revisar()
     respaldos.revisar()
     actualizar_cobranza()
     return {"ok": True, "reintentados": reintentados}
@@ -3418,6 +3429,8 @@ app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notific
 app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
 app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
 app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
+import render_panel
+app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
 
 # ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
 zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]

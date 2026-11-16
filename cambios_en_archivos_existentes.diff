@@ -1,0 +1,129 @@
+--- a/app.py	2026-11-16 00:33:00.028193239 +0000
++++ b/app.py	2026-11-16 00:33:00.033527776 +0000
+@@ -1918,6 +1918,16 @@
+     return lista
+ 
+ 
++def _render_de(p):
++    """Servicios de Render ligados a la plataforma (solo caché: jamás retrasa la pantalla)."""
++    try:
++        import render_panel
++        return render_panel.por_proyecto(p)
++    except Exception as e:
++        app.logger.warning("Plataforma %s: no se pudo leer Render: %s", p.id, e)
++        return None
++
++
+ @app.route('/plataformas/<int:pid>')
+ def plataforma_detalle(pid):
+     """Sistema maestro de control: todo lo de una plataforma propia en una sola pantalla con pestañas."""
+@@ -1948,7 +1958,7 @@
+         incidentes=sorted(p.incidentes, key=lambda i: (i.estado != "Abierto", -(i.fecha or date.min).toordinal())),
+         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
+         cumplidos=sum(1 for c in p.checks if c.cumplido),
+-        alertas=alertas_plataforma(p), notifs=notifs,
++        alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
+         intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
+         intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
+         intel_estados=INTEL_ESTADOS)
+@@ -3408,6 +3418,7 @@
+     monitor.volcar()
+     llaves.revisar()
+     servicios.revisar()
++    render_panel.revisar()
+     respaldos.revisar()
+     actualizar_cobranza()
+     return {"ok": True, "reintentados": reintentados}
+@@ -3418,6 +3429,8 @@
+ app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+ app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
+ app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
++import render_panel
++app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
+ 
+ # ZEDITH (Gemini) pide sus llaves al pool; si el pool está vacío usa las de Conexiones y, al final, las GEMINI_KEY_* de Render.
+ zedith.PROVEEDOR_LLAVES = lambda: [(k.id, k.secreto) for k in llaves.obtener_llaves("Google (Gemini)")]
+--- a/ajustes.py	2026-11-16 00:33:00.029566071 +0000
++++ b/ajustes.py	2026-11-16 00:33:00.033595594 +0000
+@@ -103,6 +103,17 @@
+          _c("BACKUP_DATABASE_URL", "Cadena de conexión para respaldar (opcional)", True,
+             "Solo si quieres respaldar con otro usuario distinto al de la app. Empieza con postgresql://", "", validar="url_pg"),
+      ]},
++    {"clave": "render", "titulo": "Render (hosting de tus plataformas)", "icono": "ph-rocket-launch", "prueba": "render",
++     "intro": "Con la llave, el panel lee tus servicios de Render: estado, plan y último deploy, y te avisa si un deploy falla o un servicio se suspende. "
++              "Una llave ve todos los workspaces de su usuario; si tus plataformas están en usuarios distintos de Render, usa una llave por usuario (hasta 5).",
++     "donde": ("Render → Account Settings → API Keys → Create API Key. Cópiala al crearla. Es una llave de toda tu cuenta: guárdala solo aquí.",),
++     "campos": [
++         _c("RENDER_API_KEY", "Llave de Render · usuario 1", True, "", "rnd_…", validar="render_key"),
++         _c("RENDER_API_KEY_2", "Llave de Render · usuario 2 (opcional)", True, "", "rnd_…", validar="render_key"),
++         _c("RENDER_API_KEY_3", "Llave de Render · usuario 3 (opcional)", True, "", "rnd_…", validar="render_key"),
++         _c("RENDER_API_KEY_4", "Llave de Render · usuario 4 (opcional)", True, "", "rnd_…", validar="render_key"),
++         _c("RENDER_API_KEY_5", "Llave de Render · usuario 5 (opcional)", True, "", "rnd_…", validar="render_key"),
++     ]},
+     {"clave": "sitio", "titulo": "Sitio público y tareas programadas", "icono": "ph-globe", "prueba": None,
+      "intro": "Datos opcionales de la página pública y el token del cron externo (por ejemplo cron-job.org).",
+      "donde": ("El cron llama a  https://TU-SITIO/api/push/revisar?token=TU_TOKEN  cada 5 minutos para mantener despierto "
+@@ -250,6 +261,7 @@
+     "bucket": re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"),
+     "prefijo": re.compile(r"^[A-Za-z0-9_./-]{0,60}$"),
+     "token": re.compile(r"^[A-Za-z0-9_-]{24,100}$"),
++    "render_key": re.compile(r"^[A-Za-z0-9_-]{20,120}$"),
+ }
+ 
+ 
+@@ -393,6 +405,11 @@
+     return not errores, " · ".join(hecho + errores)
+ 
+ 
++def _probar_render():
++    import render_panel
++    return render_panel.probar()
++
++
+ def _probar_r2():
+     import respaldos
+     c = respaldos._cfg()
+@@ -547,6 +564,8 @@
+                 ok, msg = _probar_avisos()
+             elif clave == "r2":
+                 ok, msg = _probar_r2()
++            elif clave == "render":
++                ok, msg = _probar_render()
+             elif clave == "vapid":
+                 if not (valor("VAPID_PUBLIC_KEY") and valor("VAPID_PRIVATE_KEY")):
+                     ok, msg = False, "Faltan las llaves VAPID."
+--- a/templates/base.html	2026-11-16 00:33:00.031535750 +0000
++++ b/templates/base.html	2026-11-16 00:33:00.034605552 +0000
+@@ -258,6 +258,9 @@
+             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/accesos" class="nav-item {% if request.path.startswith('/accesos') %}active{% endif %}">
+                 <i class="ph ph-identification-badge"></i> Accesos
+             </a>{% endif %}
++            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
++                <i class="ph ph-rocket-launch"></i> Render
++            </a>{% endif %}
+             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
+                 <i class="ph ph-database"></i> Almacenamiento
+             </a>
+--- a/templates/base.html	2026-11-16 00:33:00.031535750 +0000
++++ b/templates/base.html	2026-11-16 00:33:00.034605552 +0000
+@@ -258,6 +258,9 @@
+             {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/accesos" class="nav-item {% if request.path.startswith('/accesos') %}active{% endif %}">
+                 <i class="ph ph-identification-badge"></i> Accesos
+             </a>{% endif %}
++            {% if current_user.is_authenticated and (current_user.rol or '')|lower == 'admin' %}<a href="/render" class="nav-item {% if request.path.startswith('/render') %}active{% endif %}">
++                <i class="ph ph-rocket-launch"></i> Render
++            </a>{% endif %}
+             <a href="/almacenamiento" class="nav-item {% if request.path.startswith('/almacenamiento') %}active{% endif %}">
+                 <i class="ph ph-database"></i> Almacenamiento
+             </a>
+--- a/templates/plataforma_detalle.html	2026-11-16 00:33:00.032551187 +0000
++++ b/templates/plataforma_detalle.html	2026-11-16 00:33:00.034646191 +0000
+@@ -147,6 +147,8 @@
+     </div>
+ </div>
+ 
++{% include "_render_proyecto.html" %}
++
+ <div class="section-title">Dominios y subdominios</div>
+ <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+     <thead><tr><th>Nombre</th><th>Propósito</th><th>Apunta a</th><th>Estado</th><th></th></tr></thead><tbody>

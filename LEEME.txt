@@ -1,0 +1,23 @@
+CONECTOR DE RENDER (varias cuentas) — ZEDYTH
+
+ARCHIVOS NUEVOS (cópialos tal cual a la carpeta del proyecto):
+  render_panel.py
+  test_render_panel.py
+  templates/render.html
+  templates/_render_proyecto.html
+
+ARCHIVOS QUE YA EXISTÍAN Y SE MODIFICARON (cambios pequeños, ver cambios_en_archivos_existentes.diff):
+  app.py                          (+ registrar el módulo, + aviso en push_revisar, + dato en plataforma_detalle)
+  ajustes.py                      (+ grupo «Render» en /conexiones con 5 llaves, + botón Probar conexión)
+  templates/base.html             (+ enlace «Render» en el menú, solo administradores)
+  templates/plataforma_detalle.html (+ bloque Render en la pestaña Repositorio)
+
+Si cambiaste app.py, ajustes.py o las plantillas después de subir el proyecto, NO los sobrescribas:
+aplica el .diff a mano (son 2 a 19 líneas por archivo).
+
+PRUEBAS:  python -m unittest test_render_panel -v     (9 pruebas con una API de Render simulada, sin red)
+
+USO:
+  1) Despliega. 2) /conexiones → grupo «Render» → pega tu llave (hasta 5, una por usuario de Render) → Guardar → Probar conexión.
+  3) Menú → Render. 4) Para ligar un servicio a una plataforma, esa plataforma debe tener el repositorio de GitHub,
+     la dirección de producción o el mismo nombre que el servicio.
