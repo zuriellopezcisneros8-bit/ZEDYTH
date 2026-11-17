@@ -29,6 +29,7 @@ import json
 import os
 import random
 import re
+import secrets
 import threading
 import time
 import urllib.error
@@ -45,7 +46,7 @@ except ImportError:          # Python < 3.9
     ZoneInfo = None
 
 from cryptography.fernet import Fernet, MultiFernet, InvalidToken
-from flask import Blueprint, render_template, request, redirect, url_for, abort, Response, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, abort, Response, jsonify, make_response
 from flask_login import current_user
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -89,6 +90,7 @@ MENSAJES = {
     "revocada": "Llave revocada: el secreto se borró del sistema.",
     "editada": "Datos de la llave actualizados.",
     "movida": "Orden del pool actualizado.",
+    "token_revocado": "Token revocado: esa plataforma ya no puede pedir llaves al panel.",
     "recifrada": "Todas las llaves se volvieron a cifrar con la clave maestra actual.",
 }
 
@@ -312,7 +314,7 @@ def cifrado_listo():
     return _fernet() is not None
 
 
-def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
+def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria, limitar=None):
     bp = Blueprint("llaves", __name__)
     if app.config.get("SECRET_KEY_FIJA", True):          # una SECRET_KEY al azar por arranque no sirve para cifrar lo guardado
         _base_cifrado["secreto"] = str(app.config["SECRET_KEY"])
@@ -362,6 +364,17 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         prueba_detalle = db.Column(db.String(240))
         prueba_ms = db.Column(db.Integer)
 
+    class LlaveToken(db.Model):
+        """Token con el que UNA plataforma pide llaves al panel (API /api/llaves/v1). Solo se guarda su huella SHA-256."""
+        __tablename__ = "llave_token"
+        proyecto_id = db.Column(db.Integer, primary_key=True)
+        huella_token = db.Column(db.String(64), index=True, nullable=False)
+        ultimos4 = db.Column(db.String(4))
+        creado = db.Column(db.DateTime, default=datetime.utcnow)
+        creado_por = db.Column(db.String(80))
+        ultimo_uso = db.Column(db.DateTime)
+        activo = db.Column(db.Boolean, default=True)
+
     class LlavePlat(db.Model):
         """Una llave global (compartida) usada por varias plataformas: una fila por pareja llave–plataforma."""
         __tablename__ = "llave_plat"
@@ -375,7 +388,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     def asegurar():
         if estado_tablas["ok"]:
             return
-        for m in (LlaveApi, UsoIA, LlaveMeta, LlavePlat):
+        for m in (LlaveApi, UsoIA, LlaveMeta, LlavePlat, LlaveToken):
             m.__table__.create(db.engine, checkfirst=True)
         estado_tablas["ok"] = True
 
@@ -920,7 +933,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         return render_template("llaves.html", filas=filas, resumen=resumen, mes=mes, nombres=nombres, proyectos=proyectos, plataformas=plataformas,
                                proveedores=PROVEEDORES, ambientes=AMBIENTES, bitacora=bitacora,
                                cifrado=cifrado_listo(), mfa=mfa_ok(), enfriar=ENFRIAR_MIN, mensaje=mensaje,
-                               act=act, qplat=(f"?plataforma={act.id}" if act else ""), entorno=entorno,
+                               act=act, qplat=(f"?plataforma={act.id}" if act else ""), entorno=entorno, tokens={t.proyecto_id: t for t in LlaveToken.query.all()},
                                probando=dict(estado_prueba), prov_filtro=prov, ver=ver, gemini=GEMINI)
 
     @bp.route("/llaves/nueva", methods=["POST"])
@@ -1236,6 +1249,165 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             n, d, r = n + a, d + b, r + c
         db.session.commit()
         return volver("importada", n=n, d=d, r=r)
+
+    # --- API interna: las plataformas piden sus llaves al panel (token Bearer propio por plataforma) -----------------
+    # Solo Gemini. Cada plataforma recibe únicamente las llaves que tiene asignadas (nunca las demás). Las llaves viajan por
+    # HTTPS en la respuesta, nunca se escriben en la bitácora, y el token se guarda como huella (el valor solo se ve al crearlo).
+    PROV_API = {"gemini": GEMINI}
+    API_MAX_LLAVES = 5
+    _locales = {}
+
+    def _sha_token(t):
+        return hashlib.sha256(("llaves-token|" + t).encode()).hexdigest()
+
+    def _permitir(clave, maximo, segundos, sumar=True):
+        """Límite por ventana: el de app.py (en base, vale con varios workers) y, si no se le pasó, uno en memoria."""
+        if limitar:
+            return limitar(clave, maximo, segundos, sumar)
+        ahora = time.time()
+        ts = [x for x in _locales.get(clave, []) if ahora - x < segundos]
+        ok = len(ts) < maximo
+        if ok and sumar:
+            ts.append(ahora)
+        _locales[clave] = ts
+        return ok
+
+    def _json(datos, codigo=200):
+        r = jsonify(datos)
+        r.status_code = codigo
+        r.headers["Cache-Control"] = "no-store"
+        return r
+
+    def autenticar():
+        """(fila de token, None) o (None, respuesta de error). Pocos fallos por IP; luego un tope por plataforma."""
+        ip = request.remote_addr or "-"
+        if not _permitir(f"llaves-api-fallos-{ip}", 10, 600, sumar=False):
+            return None, _json({"ok": False, "error": "demasiados_intentos"}, 429)
+        h = request.headers.get("Authorization", "")
+        tok = h[7:].strip() if h[:7].lower() == "bearer " else ""
+        fila = None
+        if tok.startswith("zlk_") and len(tok) <= 200:
+            asegurar()
+            fila = LlaveToken.query.filter_by(huella_token=_sha_token(tok), activo=True).first()
+        if fila is None:
+            _permitir(f"llaves-api-fallos-{ip}", 10, 600)             # cuenta un fallo
+            return None, _json({"ok": False, "error": "no_autorizado"}, 401)
+        if not _permitir(f"llaves-api-{fila.proyecto_id}", 240, 60):
+            return None, _json({"ok": False, "error": "demasiadas_peticiones"}, 429)
+        ahora = datetime.utcnow()
+        if fila.ultimo_uso is None or (ahora - fila.ultimo_uso).total_seconds() > 300:   # no escribir en cada llamada (cuida la base)
+            fila.ultimo_uso = ahora
+            db.session.commit()
+        return fila, None
+
+    def _de_la_plataforma(pid, llave_id):
+        """La llave de Gemini si es de esa plataforma o se le asignó; si no, None (un token no toca llaves ajenas)."""
+        k = db.session.get(LlaveApi, llave_id) if isinstance(llave_id, int) and not isinstance(llave_id, bool) else None
+        if k is None or k.proveedor != GEMINI:
+            return None
+        return k if (k.proyecto_id == pid or k.id in ids_asignadas(pid)) else None
+
+    def _entero(v, tope):
+        try:
+            return max(0, min(int(v), tope))
+        except (TypeError, ValueError):
+            return 0
+
+    @bp.route("/api/llaves/v1/<prov>")
+    def api_pedir(prov):
+        """GET con Authorization: Bearer zlk_... → {"ok", "llaves": [{"id", "llave"}], "disponibles"}. ?n=1..5 (al azar)."""
+        tok, err = autenticar()
+        if err:
+            return err
+        proveedor = PROV_API.get(prov.lower())
+        if not proveedor:
+            return _json({"ok": False, "error": "proveedor_no_disponible"}, 404)
+        n = _entero(request.args.get("n", "1"), API_MAX_LLAVES) or 1
+        lista = _disponibles(proveedor, tok.proyecto_id, "Producción", heredar=False, mezclar=True)
+        if not lista:
+            return _json({"ok": False, "error": "sin_llaves"}, 503)
+        return _json({"ok": True, "llaves": [{"id": k.id, "llave": k.secreto} for k in lista[:n]], "disponibles": len(lista)})
+
+    @bp.route("/api/llaves/v1/reportar", methods=["POST"])
+    def api_reportar():
+        """JSON {"llave_id", "codigo": 429|400|401|403, "cuerpo"}. 429: la llave descansa. 400/401/403: el panel la comprueba con
+        Google antes de sacarla del pool (un token comprometido no puede vaciar el pool por su cuenta)."""
+        tok, err = autenticar()
+        if err:
+            return err
+        j = request.get_json(silent=True)
+        j = j if isinstance(j, dict) else {}
+        k, codigo = _de_la_plataforma(tok.proyecto_id, j.get("llave_id")), j.get("codigo")
+        if k is None or codigo not in (400, 401, 403, 429):
+            return _json({"ok": False, "error": "solicitud_no_valida"}, 400)
+        if k.estado != "activa" or not k.secreto:
+            return _json({"ok": True, "accion": "ignorada"})
+        if codigo == 429:
+            _fallo(k.id, 429, str(j.get("cuerpo") or "")[:4000])
+            return _json({"ok": True, "accion": "en_descanso"})
+        if not _permitir(f"llaves-api-verif-{tok.proyecto_id}", 30, 3600):
+            return _json({"ok": False, "error": "demasiadas_peticiones"}, 429)
+        try:
+            secreto = _fernet().decrypt(k.secreto.encode()).decode()
+        except Exception:
+            return _json({"ok": False, "error": "no_se_pudo_verificar"}, 500)
+        if probar_gemini(secreto)["resultado"] in ("invalida", "rechazada"):
+            _fallo(k.id, 403)
+            return _json({"ok": True, "accion": "invalidada"})
+        return _json({"ok": True, "accion": "ignorada"})
+
+    @bp.route("/api/llaves/v1/uso", methods=["POST"])
+    def api_uso():
+        """JSON {"llave_id", "peticiones", "tokens_in", "tokens_out"}: suma el consumo del día (se puede mandar por lotes)."""
+        tok, err = autenticar()
+        if err:
+            return err
+        j = request.get_json(silent=True)
+        j = j if isinstance(j, dict) else {}
+        k = _de_la_plataforma(tok.proyecto_id, j.get("llave_id"))
+        if k is None:
+            return _json({"ok": False, "error": "solicitud_no_valida"}, 400)
+        _uso(k.id, _entero(j.get("peticiones", 1), 100000), _entero(j.get("tokens_in"), 100000000),
+             _entero(j.get("tokens_out"), 100000000), 0.0)
+        return _json({"ok": True})
+
+    csrf_ext = app.extensions.get("csrf")        # las llamadas de otras plataformas no llevan token CSRF: las protege el Bearer
+    if csrf_ext:
+        for _vista in (api_pedir, api_reportar, api_uso):
+            csrf_ext.exempt(_vista)
+
+    @bp.route("/llaves/token/<int:pid>/generar", methods=["POST"])
+    @escribe
+    def token_generar(pid):
+        """Crea o rota el token de una plataforma. El valor se muestra UNA vez, en esta misma respuesta; el anterior muere al instante."""
+        asegurar()
+        p = db.session.get(Proyecto, pid)
+        if p is None or p.tipo != TIPO_PLATAFORMA:
+            abort(404)
+        token = "zlk_" + secrets.token_urlsafe(32)
+        fila = db.session.get(LlaveToken, pid)
+        if fila is None:
+            fila = LlaveToken(proyecto_id=pid)
+            db.session.add(fila)
+        fila.huella_token, fila.ultimos4 = _sha_token(token), token[-4:]
+        fila.creado, fila.creado_por, fila.ultimo_uso, fila.activo = datetime.utcnow(), current_user.username, None, True
+        registrar("token_llaves", "LlaveToken", pid, f"Token de acceso al pool generado para {p.nombre} ····{token[-4:]}")
+        db.session.commit()
+        r = make_response(render_template("llaves_token.html", plataforma=p, token=token,
+                                          url=request.url_root.rstrip("/")))
+        r.headers["Cache-Control"] = "no-store"
+        return r
+
+    @bp.route("/llaves/token/<int:pid>/revocar", methods=["POST"])
+    @escribe
+    def token_revocar(pid):
+        asegurar()
+        fila = db.session.get(LlaveToken, pid)
+        if fila is not None:
+            db.session.delete(fila)
+            registrar("token_llaves", "LlaveToken", pid, "Token de acceso al pool revocado")
+            db.session.commit()
+        return volver("token_revocado")
 
     @bp.route("/llaves/asignar-masivo", methods=["POST"])
     @escribe

@@ -123,6 +123,18 @@
 })();
 </script>
 <div class="luxury-card" style="margin-bottom:20px;">
+    <h3 class="stat-label">Acceso de las plataformas al pool (API interna)</h3>
+    <p style="margin:0 0 10px; font-size:13px; color:var(--text-muted);">Cada plataforma pide sus llaves de Gemini a este panel con su propio token, y solo recibe las que tiene asignadas. Así la rotación, el descanso por 429 y el consumo diario quedan centralizados. El token se muestra una sola vez al generarlo; aquí solo se guarda su huella. Rotarlo o revocarlo lo mata al instante.</p>
+    {% for pr in plataformas %}{% set t = tokens.get(pr.id) %}
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 0; border-top:1px solid rgba(255,255,255,.08);">
+        <strong style="min-width:170px; font-size:13px;">{{ pr.nombre }}</strong>
+        <span style="font-size:13px; color:var(--text-muted); flex:1; min-width:200px;">{% if t %}token <span class="mono">····{{ t.ultimos4 }}</span> · {% if t.ultimo_uso %}último uso {{ t.ultimo_uso.strftime('%d/%m %H:%M') }} UTC{% else %}sin usar todavía{% endif %}{% else %}sin token: no puede pedir llaves{% endif %}</span>
+        <form method="post" action="/llaves/token/{{ pr.id }}/generar" onsubmit="return confirm('{{ 'Rotar el token: el anterior deja de funcionar al instante. Continuar?' if t else 'Generar un token para esta plataforma?' }}')"><button class="btn btn-sm" type="submit">{{ 'Rotar token' if t else 'Generar token' }}</button></form>
+        {% if t %}<form method="post" action="/llaves/token/{{ pr.id }}/revocar" onsubmit="return confirm('Revocar el token: esa plataforma se queda sin acceso al pool. Continuar?')"><button class="btn btn-sm" type="submit">Revocar</button></form>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+<div class="luxury-card" style="margin-bottom:20px;">
     <h3 class="stat-label">Pegar las llaves de otra plataforma</h3>
     <form method="post" action="/llaves/importar-pegadas" autocomplete="off" onsubmit="return confirm('¿Registrar estas llaves y asignarlas a las plataformas marcadas?')">
         <p style="margin:0 0 8px; font-size:13px; color:var(--text-muted);">En Render abre el servicio (por ejemplo Zelecte) → Environment, copia las variables <span class="mono">GEMINI_KEY_N</span> y pégalas aquí: una por línea, o tal cual <span class="mono">GEMINI_KEY_7=AIza…</span>. Marca la plataforma a la que pertenecen. Si una llave ya estaba (porque otra app también la tiene), solo se le suma esa plataforma: así queda «en cuáles se usa». Hazlo una plataforma a la vez.</p>

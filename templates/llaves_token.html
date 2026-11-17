@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>Token de acceso · {{ plataforma.nombre }}</h1>
+    <p>Cópialo ahora: no se vuelve a mostrar. Si lo pierdes, genera otro desde Llaves (el anterior deja de funcionar).</p>
+</section>
+<div class="luxury-card" style="margin-bottom:20px; border-color:#fbbf24;">
+    <h3 class="stat-label">Token</h3>
+    <input class="field mono" id="tk" readonly value="{{ token }}" onclick="this.select()" style="width:100%;">
+    <div class="toolbar" style="margin-top:10px;"><button class="btn btn-primary btn-sm" type="button" onclick="navigator.clipboard.writeText(document.getElementById('tk').value)">Copiar</button></div>
+    <p style="margin:12px 0 0; font-size:13px; color:var(--text-muted);">Trátalo como una contraseña: quien lo tenga puede pedir las llaves de esta plataforma. No lo pegues en el código ni en el repositorio; va solo en las variables de entorno del servicio de {{ plataforma.nombre }} en Render.</p>
+</div>
+<div class="luxury-card" style="margin-bottom:20px;">
+    <h3 class="stat-label">Variables que debe tener {{ plataforma.nombre }} en Render</h3>
+    <p class="mono" style="margin:0; font-size:13px; line-height:1.8; word-break:break-all;">ZEDYTH_PANEL_URL={{ url }}<br>ZEDYTH_PANEL_TOKEN=(el token de arriba)</p>
+    <p style="margin:12px 0 0; font-size:13px; color:var(--text-muted);">Además, deja 2 o 3 llaves <span class="mono">GEMINI_KEY_N</span> propias en ese servicio como respaldo: si este panel no responde, la plataforma sigue funcionando con ellas. Prueba rápida: <span class="mono">curl -H "Authorization: Bearer TOKEN" {{ url }}/api/llaves/v1/gemini</span></p>
+</div>
+<a class="btn" href="/llaves">Volver a Llaves</a>
+{% endblock %}

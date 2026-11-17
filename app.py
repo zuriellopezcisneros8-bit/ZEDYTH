@@ -2584,7 +2584,9 @@ def inteligencia_desvincular(vid):
 # Únicas rutas que se pueden abrir sin iniciar sesión.
 RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar', 'demo_pos', 'equipo_yo', 'salir_equipo',
                   'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis',
-                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar', 'healthz'}
+                  'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar', 'healthz',
+                  # API de llaves para otras plataformas: sin sesión, protegida por su token Bearer propio (llaves.py)
+                  'llaves.api_pedir', 'llaves.api_reportar', 'llaves.api_uso'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -3665,7 +3667,7 @@ def push_revisar():
 import almacenamiento
 app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
-app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria, limitar=limitar))
 app.register_blueprint(conectores.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /conectores: APIs de solo lectura de tus plataformas (Zmarthket, etc.)
 app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
 app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
