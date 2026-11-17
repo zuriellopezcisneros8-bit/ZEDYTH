@@ -5,6 +5,13 @@
     <p>Pega aquí las llaves de todos tus servicios. Se guardan cifradas, se usan al instante y nunca tienes que entrar a Render. Después de guardar, el valor solo se ve como <span class="mono">····1234</span>.</p>
 </section>
 
+<div class="luxury-card" style="margin-bottom:20px;">
+    <h3 class="stat-label">Esto es del sistema, no de una plataforma</h3>
+    <p style="margin:0; font-size:14px; line-height:1.7;">Aquí van las conexiones del panel en sí: avisos a tu celular y correo, alertas push, respaldos del panel, sitio público y cron.
+        La base de datos, el almacenamiento, las llaves de API y Render de <strong>cada plataforma</strong> se administran dentro de su ficha:
+        <a href="/plataformas" style="text-decoration:underline;">Plataformas</a> → elige una → pestaña <strong>Conexiones</strong>. Una plataforma con sus propias llaves no usa estas.</p>
+</div>
+
 {% with mensajes = get_flashed_messages(with_categories=true) %}
 {% for cat, texto in mensajes %}
 <div class="luxury-card" style="border-color:{{ '#f87171' if cat == 'error' else ('#4ade80' if cat == 'ok' else '#f5b94c') }}; margin-bottom:16px;"><p style="margin:0; font-size:14px;">{{ texto }}</p></div>

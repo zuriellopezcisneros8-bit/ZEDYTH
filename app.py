@@ -1990,6 +1990,17 @@ def _conexiones_de(p):
         return None
 
 
+def _servicios_de(p):
+    """Servicios de ESTA plataforma para su pestaña (solo administradores: son los únicos que pueden administrarlos)."""
+    if rol_actual() != "admin":
+        return None
+    try:
+        return servicios.panel_plataforma(p.id)
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudieron leer sus servicios: %s", p.id, e)
+        return None
+
+
 def _render_de(p):
     """Servicios de Render ligados a la plataforma (solo caché: jamás retrasa la pantalla)."""
     try:
@@ -2032,6 +2043,7 @@ def plataforma_detalle(pid):
         cumplidos=sum(1 for c in p.checks if c.cumplido),
         alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
         conx=_conexiones_de(p), msg_conx=llaves.MENSAJES.get(request.args.get('m', '')),
+        serv_panel=_servicios_de(p), msg_serv=servicios.MENSAJES.get(request.args.get('m', '')),
         intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
         intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
         intel_estados=INTEL_ESTADOS)

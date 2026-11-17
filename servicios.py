@@ -21,6 +21,7 @@ Variables de entorno (opcionales):
 """
 import calendar
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
@@ -90,6 +91,12 @@ def resumen_plataformas(pids):
     Cada grupo trae: filas (servicios con su estado), mes (catálogo, MXN/mes), ia (IA del mes, MXN), nivel (peor estado)
     y prox (próxima renovación: (fecha, nombre) o None). «compartido» = servicios sin plataforma."""
     return _api["resumen"](pids)
+
+
+def panel_plataforma(pid):
+    """Para la pestaña Servicios de la ficha de una plataforma: todos SUS servicios (activos y pausados, con los campos
+    para editarlos) y las listas para los formularios. Sin secretos."""
+    return _api["panel"](pid)
 
 
 def revisar():
@@ -280,6 +287,30 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
 
     def mal(texto):
         return Response(f"Dato no válido: {texto}", 400)
+
+    def hub_de_volver():
+        """(destino, id) si el formulario viene de la ficha de una plataforma (/plataformas/N?tab=...); si no, (None, None)."""
+        dest = request.form.get("volver") or ""
+        m = re.match(r"^/plataformas/(\d{1,9})(\?[A-Za-z0-9_=&-]*)?$", dest)
+        return (dest, int(m.group(1))) if m else (None, None)
+
+    def salir(m):
+        """Regresa a la ficha de la plataforma de donde vino el formulario; desde /servicios, a /servicios."""
+        dest, _ = hub_de_volver()
+        if dest:
+            return redirect(dest + ("&" if "?" in dest else "?") + "m=" + m)
+        return redirect(url_for("servicios.index", m=m))
+
+    def en_ambito(s):
+        """Desde la ficha de una plataforma solo se tocan los servicios de ESA plataforma."""
+        _, pid = hub_de_volver()
+        if pid is not None and s.proyecto_id != pid:
+            abort(404)
+
+    def url_s(s):
+        """Los avisos de un servicio de una plataforma abren la ficha de ESA plataforma (pestaña Servicios)."""
+        p = s.proyecto
+        return f"/plataformas/{s.proyecto_id}?tab=servicios" if s.proyecto_id and p is not None and p.tipo == PLATAFORMA else "/servicios"
 
     # --- lectura y validación del formulario ----------------------------------------------------------
     def leer_fecha(campo):
@@ -497,13 +528,13 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
                 titulo = f"Se renueva {'hoy' if dias == 0 else f'en {dias} día(s)'}: {s.nombre}"
                 clave = f"serv-ren-{s.id}-{s.proxima_renovacion}-{umbral}"
             cuerpo = f"{s.proveedor} · {s.moneda} {s.monto or 0:,.2f} ({(s.periodicidad or '').lower()})"
-            avisar("Servicio", titulo, cuerpo, "/servicios", urgente=dias <= 3, clave=clave)
+            avisar("Servicio", titulo, cuerpo, url_s(s), urgente=dias <= 3, clave=clave)
         for s, previo in verificar([s for s in lista if s.url_estado]):
             if s.estado_ultimo == "falla" and previo != "falla":
-                avisar("Servicio", f"Servicio con falla: {s.nombre}", s.estado_detalle or "", "/servicios",
+                avisar("Servicio", f"Servicio con falla: {s.nombre}", s.estado_detalle or "", url_s(s),
                        urgente=True, clave=f"serv-falla-{s.id}-{ahora:%Y%m%d%H}")
             elif s.estado_ultimo == "ok" and previo == "falla":
-                avisar("Servicio", f"Servicio recuperado: {s.nombre}", s.estado_detalle or "", "/servicios",
+                avisar("Servicio", f"Servicio recuperado: {s.nombre}", s.estado_detalle or "", url_s(s),
                        urgente=False, clave=f"serv-ok-{s.id}-{ahora:%Y%m%d%H}")
         db.session.commit()
 
@@ -538,7 +569,26 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
         compartido = grupos.pop(None)
         return {"por_plat": grupos, "compartido": compartido, "contador": contador, "tc": tc}
 
-    _api.update(costo_mensual=calcular_costos, salidas=salidas, revisar=_revisar, resumen=resumen)
+    def _panel(pid):
+        """Todos los servicios de UNA plataforma (activos y pausados) con lo necesario para editarlos desde su ficha."""
+        asegurar()
+        tc, hoy, ahora = _tipo_cambio(), date.today(), datetime.utcnow()
+        datos, edad = _datos_almacenamiento()
+        filas = []
+        q = Servicio.query.filter_by(proyecto_id=pid).order_by(Servicio.activo.desc(), Servicio.categoria, Servicio.nombre)
+        for s in q.all():
+            nivel, texto = estado_de(s, datos, edad, ahora) if s.activo else ("sin", "Pausado")
+            filas.append({"id": s.id, "nombre": s.nombre, "proveedor": s.proveedor, "categoria": s.categoria, "plan": s.plan,
+                          "monto": s.monto, "moneda": s.moneda, "periodicidad": s.periodicidad,
+                          "proxima_renovacion": s.proxima_renovacion, "ultimo_pago": s.ultimo_pago, "fuente": s.fuente or "",
+                          "url_estado": s.url_estado, "texto_estado": s.texto_estado, "url_panel": s.url_panel, "notas": s.notas,
+                          "activo": bool(s.activo), "nivel": nivel, "texto": texto,
+                          "mes": mensual_mxn(s, tc) if s.activo else 0.0,
+                          "dias": (s.proxima_renovacion - hoy).days if s.proxima_renovacion else None})
+        return {"filas": filas, "proveedores": PROVEEDORES, "categorias": CATEGORIAS, "periodos": list(PERIODOS),
+                "monedas": MONEDAS, "fuentes": FUENTES, "hay_monitor": monitor is not None, "tc": tc}
+
+    _api.update(costo_mensual=calcular_costos, salidas=salidas, revisar=_revisar, resumen=resumen, panel=_panel)
 
     # --- pantallas ---------------------------------------------------------------------------------------
     @bp.route("/servicios")
@@ -606,29 +656,38 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
         d, err = leer_form()
         if err:
             return mal(err)
+        _, pid = hub_de_volver()
+        if pid is not None:                         # desde la ficha: el servicio queda en ESA plataforma, sin excepción
+            if db.session.get(Proyecto, pid) is None:
+                return mal("plataforma no encontrada.")
+            d["proyecto_id"] = pid
         s = Servicio(**d, creado_por=current_user.username)
         db.session.add(s)
         db.session.flush()
         registrar("crear_servicio", "Servicio", s.id, detalle(s))
         db.session.commit()
-        return redirect(url_for("servicios.index", m="creado"))
+        return salir("creado")
 
     @bp.route("/servicios/<int:sid>/editar", methods=["POST"])
     @solo_admin
     def editar(sid):
         asegurar()
         s = cargar(sid)
+        en_ambito(s)
         d, err = leer_form()
         if err:
             db.session.rollback()
             return mal(err)
+        _, pid = hub_de_volver()
+        if pid is not None:
+            d["proyecto_id"] = pid                  # desde la ficha no se puede mover a otra plataforma
         if (d["url_estado"], d["texto_estado"]) != (s.url_estado, s.texto_estado):
             s.estado_ultimo = s.estado_detalle = s.estado_en = None          # otra URL: el resultado anterior ya no vale
         for k, v in d.items():
             setattr(s, k, v)
         registrar("editar_servicio", "Servicio", s.id, detalle(s))
         db.session.commit()
-        return redirect(url_for("servicios.index", m="editado"))
+        return salir("editado")
 
     @bp.route("/servicios/<int:sid>/renovar", methods=["POST"])
     @solo_admin
@@ -636,6 +695,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
         """Registra que se pagó: ultimo_pago = hoy y la próxima fecha avanza un periodo (hasta quedar en el futuro)."""
         asegurar()
         s = cargar(sid)
+        en_ambito(s)
         hoy, paso = date.today(), PERIODOS.get(s.periodicidad, 1)
         nueva = _sumar_meses(s.proxima_renovacion or hoy, paso)
         for _ in range(1200):
@@ -647,36 +707,39 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
         registrar("renovar_servicio", "Servicio", s.id,
                   f"{s.nombre} · {s.moneda} {s.monto or 0:,.2f} · {antes or 'sin fecha'} → {nueva}"[:290])
         db.session.commit()
-        return redirect(url_for("servicios.index", m="renovado"))
+        return salir("renovado")
 
     @bp.route("/servicios/<int:sid>/activo", methods=["POST"])
     @solo_admin
     def activo(sid):
         asegurar()
         s = cargar(sid)
+        en_ambito(s)
         s.activo = not s.activo
         registrar("activar_servicio" if s.activo else "pausar_servicio", "Servicio", s.id, detalle(s))
         db.session.commit()
-        return redirect(url_for("servicios.index", m="activado" if s.activo else "pausado"))
+        return salir("activado" if s.activo else "pausado")
 
     @bp.route("/servicios/<int:sid>/eliminar", methods=["POST"])
     @solo_admin
     def eliminar(sid):
         asegurar()
         s = cargar(sid)
+        en_ambito(s)
         registrar("eliminar_servicio", "Servicio", s.id, detalle(s))
         db.session.delete(s)
         db.session.commit()
-        return redirect(url_for("servicios.index", m="eliminado"))
+        return salir("eliminado")
 
     @bp.route("/servicios/<int:sid>/verificar", methods=["POST"])
     @solo_admin
     def verificar_uno(sid):
         asegurar()
         s = cargar(sid)
+        en_ambito(s)
         verificar([s])
         db.session.commit()
-        return redirect(url_for("servicios.index", m="verificado"))
+        return salir("verificado")
 
     @bp.route("/servicios/verificar", methods=["POST"])
     @solo_admin

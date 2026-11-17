@@ -1,0 +1,86 @@
+<!-- templates/_plat_servicios.html : servicios de ESTA plataforma, administrables sin salir de su ficha -->
+{% macro campos(s=none) %}
+<div class="grid-2" style="gap:12px;">
+    <label class="lbl">Nombre<input class="field" name="nombre" maxlength="100" required value="{{ s.nombre if s else '' }}" placeholder="Ej. Render · plan Starter"></label>
+    <label class="lbl">Proveedor<select class="field" name="proveedor">{% for pr in serv_panel.proveedores %}<option {{ 'selected' if s and s.proveedor == pr }}>{{ pr }}</option>{% endfor %}</select></label>
+    <label class="lbl">Categoría<select class="field" name="categoria"><option value="">Automática según el proveedor</option>{% for c in serv_panel.categorias %}<option {{ 'selected' if s and s.categoria == c }}>{{ c }}</option>{% endfor %}</select></label>
+    <label class="lbl">Plan (opcional)<input class="field" name="plan" maxlength="80" value="{{ s.plan or '' if s else '' }}" placeholder="Ej. Starter, Free, Launch"></label>
+    <label class="lbl">Monto por periodo<input class="field" name="monto" inputmode="decimal" value="{{ '%.2f'|format(s.monto) if s and s.monto is not none else '' }}" placeholder="0.00"></label>
+    <label class="lbl">Moneda<select class="field" name="moneda">{% for m in serv_panel.monedas %}<option {{ 'selected' if s and s.moneda == m }}>{{ m }}</option>{% endfor %}</select></label>
+    <label class="lbl">Se paga<select class="field" name="periodicidad">{% for pe in serv_panel.periodos %}<option {{ 'selected' if s and s.periodicidad == pe }}>{{ pe }}</option>{% endfor %}</select></label>
+    <label class="lbl">Próxima renovación<input class="field" type="date" name="proxima_renovacion" value="{{ s.proxima_renovacion or '' if s else '' }}"></label>
+    <label class="lbl">Último pago (opcional)<input class="field" type="date" name="ultimo_pago" value="{{ s.ultimo_pago or '' if s else '' }}"></label>
+    <label class="lbl">De dónde sale su estado<select class="field" name="fuente">{% for v, t in serv_panel.fuentes %}<option value="{{ v }}" {{ 'selected' if s and (s.fuente or '') == v }}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="lbl">Enlace a su consola (opcional)<input class="field" name="url_panel" maxlength="300" value="{{ s.url_panel or '' if s else '' }}" placeholder="https://…"></label>
+    <label class="lbl">URL de estado (opcional)<input class="field" name="url_estado" maxlength="300" value="{{ s.url_estado or '' if s else '' }}" placeholder="https://…"></label>
+    <label class="lbl">Texto que debe aparecer (opcional)<input class="field" name="texto_estado" maxlength="80" value="{{ s.texto_estado or '' if s else '' }}"></label>
+</div>
+<label class="lbl" style="margin-top:12px;">Notas (opcional)<input class="field" name="notas" maxlength="300" value="{{ s.notas or '' if s else '' }}"></label>
+{% endmacro %}
+{% macro estado(f) -%}
+<span class="badge {{ 'badge-green' if f.nivel == 'ok' else 'badge-amber' if f.nivel == 'alerta' else 'badge-red' if f.nivel == 'falla' else '' }}">{{ {'ok': 'Bien', 'alerta': 'Atención', 'falla': 'Falla', 'sin': 'Sin conexión'}[f.nivel] }}</span>
+<div style="color:var(--text-muted); font-size:12px; margin-top:4px;">{{ f.texto }}</div>
+{%- endmacro %}
+{% macro renovacion(f) -%}
+{% if f.fecha or f.proxima_renovacion %}{% set d = f.fecha or f.proxima_renovacion %}<span style="{{ 'color:#f87171;' if f.dias is not none and f.dias <= 7 }}">{{ d }}</span><div style="color:var(--text-muted); font-size:12px;">{{ 'vencido' if f.dias < 0 else 'hoy' if f.dias == 0 else 'en ' ~ f.dias ~ ' día(s)' }}</div>{% else %}—{% endif %}
+{%- endmacro %}
+
+{% if msg_serv %}<div class="luxury-card" style="border-color:#4ade80; margin-bottom:16px;"><p style="margin:0; font-size:14px;">{{ msg_serv }}</p></div>{% endif %}
+{% if serv_p is none %}
+<div class="luxury-card" style="color:var(--text-muted);">No se pudo leer el módulo de Servicios en este momento.</div>
+{% else %}
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card"><h3 class="stat-label">Servicios del catálogo / mes</h3><div class="stat-value">{{ '${:,.0f}'.format(serv_p.mes) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">IA de este mes</h3><div class="stat-value">{{ '${:,.2f}'.format(serv_p.ia) }}</div></div>
+</div>
+{% endif %}
+
+{% if not es_admin %}
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Servicio</th><th>Estado</th><th>Costo / mes</th><th>Renovación</th></tr></thead><tbody>
+    {% for f in (serv_p.filas if serv_p else []) %}
+    <tr><td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.plan %} · {{ f.plan }}{% endif %}</div></td>
+        <td>{{ estado(f) }}</td><td class="mono">{{ '${:,.0f}'.format(f.mes) }}</td><td class="mono">{{ renovacion(f) }}</td></tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma no tiene servicios en el catálogo.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin-top:14px;">Solo los administradores pueden agregar o cambiar servicios.</p>
+{% elif serv_panel is none %}
+<div class="luxury-card" style="color:var(--text-muted);">No se pudo leer el catálogo de servicios de esta plataforma en este momento.</div>
+{% else %}
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Servicio</th><th>Estado</th><th>Costo / mes</th><th>Renovación</th><th></th></tr></thead><tbody>
+    {% for f in serv_panel.filas %}
+    <tr style="{{ 'opacity:.6;' if not f.activo }}">
+        <td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.plan %} · {{ f.plan }}{% endif %}</div>
+            {% if f.url_panel %}<a href="{{ f.url_panel }}" target="_blank" rel="noopener" style="font-size:12px; text-decoration:underline;">Abrir consola</a>{% endif %}</td>
+        <td>{% if f.activo %}{{ estado(f) }}{% else %}<span class="badge">Pausado</span>{% endif %}</td>
+        <td class="mono">{{ '${:,.0f}'.format(f.mes) }}</td>
+        <td class="mono">{{ renovacion(f) }}</td>
+        <td style="text-align:right;">
+            <div class="mt-acc" style="justify-content:flex-end;">
+                {% if f.activo %}<form method="post" action="/servicios/{{ f.id }}/renovar" onsubmit="return confirm('¿Registrar que ya pagaste «{{ f.nombre|e }}»? La próxima renovación avanzará un periodo.')"><button class="btn btn-sm btn-primary" type="submit">Renovar</button></form>{% endif %}
+                {% if f.url_estado and serv_panel.hay_monitor and f.activo %}<form method="post" action="/servicios/{{ f.id }}/verificar"><button class="btn btn-sm" type="submit">Verificar</button></form>{% endif %}
+                <form method="post" action="/servicios/{{ f.id }}/activo"><button class="btn btn-sm" type="submit">{{ 'Pausar' if f.activo else 'Activar' }}</button></form>
+            </div>
+            <details style="margin-top:8px; text-align:left;"><summary style="cursor:pointer; font-size:13px;">Editar</summary>
+                <form method="post" action="/servicios/{{ f.id }}/editar" autocomplete="off" style="margin-top:10px;">
+                    {{ campos(f) }}
+                    <div style="margin-top:12px;"><button class="btn btn-sm btn-primary" type="submit">Guardar cambios</button></div>
+                </form>
+                <form method="post" action="/servicios/{{ f.id }}/eliminar" style="margin-top:10px;" onsubmit="return confirm('¿Eliminar «{{ f.nombre|e }}» del catálogo? No se puede deshacer.')"><button class="btn btn-sm" type="submit" style="color:#f87171;">Eliminar</button></form>
+            </details>
+        </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma todavía no tiene servicios. Agrega el primero abajo.</td></tr>
+    {% endfor %}
+</tbody></table></div></div>
+<details class="luxury-card" style="margin-top:16px;"><summary style="cursor:pointer;">+ Agregar servicio a esta plataforma</summary>
+    <form method="post" action="/servicios/nuevo" autocomplete="off" style="margin-top:14px;">
+        <input type="hidden" name="proyecto_id" value="{{ p.id }}">
+        {{ campos() }}
+        <div style="margin-top:12px;"><button class="btn btn-primary" type="submit">Guardar servicio</button></div>
+    </form>
+</details>
+<p style="color:var(--text-muted); font-size:13px; margin-top:14px; line-height:1.6;">Montos en MXN al tipo de cambio de referencia (USD ${{ '%.2f'|format(serv_panel.tc) }}). Los costos que ya capturaste en la pestaña Finanzas no se repiten aquí: el catálogo es para lo que no está registrado allá. <a href="/servicios" style="text-decoration:underline;">Ver el catálogo de todo el negocio</a></p>
+{% endif %}

@@ -105,7 +105,8 @@ GRUPOS = [
      ]},
     {"clave": "render", "titulo": "Render (hosting de tus plataformas)", "icono": "ph-rocket-launch", "prueba": "render",
      "intro": "Con la llave, el panel lee tus servicios de Render: estado, plan y último deploy, y te avisa si un deploy falla o un servicio se suspende. "
-              "Una llave ve todos los workspaces de su usuario; si tus plataformas están en usuarios distintos de Render, usa una llave por usuario (hasta 5).",
+              "Una llave ve todos los workspaces de su usuario; si tus plataformas están en usuarios distintos de Render, usa una llave por usuario (hasta 5). "
+              "Estas son las llaves GENERALES: cada plataforma puede tener la suya en su ficha → Conexiones.",
      "donde": ("Render → Account Settings → API Keys → Create API Key. Cópiala al crearla. Es una llave de toda tu cuenta: guárdala solo aquí.",),
      "campos": [
          _c("RENDER_API_KEY", "Llave de Render · usuario 1", True, "", "rnd_…", validar="render_key"),
