@@ -37,7 +37,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 PROVEEDORES = ["Anthropic", "OpenAI", "Google (Gemini)", "Meta (WhatsApp)", "Cloudinary", "Cloudflare R2",
-               "Neon", "Render", "Stripe / procesador de pagos", "PAC / CFDI", "Otro"]
+               "Neon", "Render", "Stripe / procesador de pagos", "PAC / CFDI", "API de plataforma (lectura)", "Otro"]
 AMBIENTES = ["Producción", "Pruebas", "Desarrollo"]
 ENFRIAR_MIN = int(os.environ.get("LLAVES_ENFRIAR_MIN", "15"))
 AVISO_VENCE_DIAS = 14
@@ -50,6 +50,7 @@ LlaveEntregada = namedtuple("LlaveEntregada", "id secreto proveedor etiqueta")
 
 MENSAJES = {
     "creada": "Llave guardada (cifrada). Solo se mostrarán sus últimos 4 caracteres.",
+    "api_ok": "API conectada: la llave quedó guardada (cifrada) y se hizo la primera lectura. Abajo ves el resultado.",
     "rotada": "Llave rotada: el valor anterior ya no existe en el sistema.",
     "desactivada": "Llave desactivada al instante.",
     "activada": "Llave activada de nuevo.",
@@ -94,6 +95,11 @@ def estado_pool(proveedor, proyecto_id=None):
     """Resumen del pool de un proveedor (todas las plataformas y ambientes, o solo una), para la pantalla de Servicios:
     {total, usables, invalidas, vencidas, descanso, desactivadas}. Las revocadas no cuentan."""
     return _api["estado_pool"](proveedor, proyecto_id)
+
+
+def crear_llave(proveedor, proyecto_id, etiqueta, secreto, ambiente="Producción"):
+    """Guarda una llave cifrada ligada a una plataforma (la usa conectores.py). Devuelve (id, error)."""
+    return _api["crear"](proveedor, proyecto_id, etiqueta, secreto, ambiente)
 
 
 def panel_plataforma(proyecto_id):
@@ -439,8 +445,30 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                     avisar("Llave", f"Toca rotar la llave: {nombre}", f"Programada cada {k.rotar_cada_dias} días.", _url_llaves(k),
                            urgente=False, clave=f"llave-rotar-{k.id}-{base:%Y%m%d}")
 
+    def _crear(proveedor, proyecto_id, etiqueta, secreto, ambiente="Producción"):
+        if not cifrado_listo():
+            return None, "No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER)."
+        if proveedor not in PROVEEDORES or ambiente not in AMBIENTES:
+            return None, "proveedor o ambiente desconocido."
+        etiqueta = (etiqueta or "").strip()
+        if not 2 <= len(etiqueta) <= 80:
+            return None, "la etiqueta debe tener entre 2 y 80 caracteres."
+        secreto = (secreto or "").strip()
+        if not 8 <= len(secreto) <= 4000 or any(c.isspace() for c in secreto):
+            return None, "La llave debe tener entre 8 y 4000 caracteres y sin espacios."
+        ultimo = db.session.scalar(db.select(db.func.max(LlaveApi.orden)).where(
+            LlaveApi.proveedor == proveedor, LlaveApi.ambiente == ambiente,
+            LlaveApi.proyecto_id == proyecto_id if proyecto_id else LlaveApi.proyecto_id.is_(None)))
+        k = LlaveApi(proveedor=proveedor, proyecto_id=proyecto_id, etiqueta=etiqueta, ambiente=ambiente, ultimos4=secreto[-4:],
+                     secreto=cifrar(secreto), orden=(ultimo if ultimo is not None else -1) + 1,
+                     creado_por=getattr(current_user, "username", None))
+        db.session.add(k)
+        db.session.flush()
+        registrar("crear_llave", "LlaveApi", k.id, f"{proveedor} · {etiqueta} · {ambiente} · ****{k.ultimos4}")
+        return k.id, None          # el commit lo hace quien llama (así conector + llave se guardan juntos)
+
     _api.update(obtener=_obtener, todas=_disponibles, fallo=_fallo, uso=_uso, costo_mes=_costo_mes, revisar=_revisar,
-                estado_pool=_estado_pool, resumen_plat=_resumen_plat, panel_plat=_panel_plat)
+                estado_pool=_estado_pool, resumen_plat=_resumen_plat, panel_plat=_panel_plat, crear=_crear)
 
     # --- pantallas ------------------------------------------------------------------------------------
     @bp.route("/llaves")

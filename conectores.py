@@ -617,6 +617,42 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto):
         db.session.commit()
         return redirect(url_for("conectores.detalle", cid=c.id, m="creado"))
 
+    @bp.route("/conectores/plataforma/<int:pid>/conectar", methods=["POST"])
+    @escribe
+    def conectar_plataforma(pid):
+        """Todo en uno desde la ficha de la plataforma: guarda la API key (cifrada), crea el conector y su primer endpoint,
+        hace la primera lectura y regresa a la pestaña Conexiones de ESA plataforma."""
+        asegurar()
+        p = db.get_or_404(Proyecto, pid)
+        campos, err = leer_conector()
+        if err:
+            return mal(err)
+        campos["proyecto_id"] = p.id                      # siempre la plataforma desde la que se manda el formulario
+        ep_campos, err = leer_endpoint("ep_")
+        if err:
+            return mal(err)
+        if Conector.query.filter_by(nombre=campos["nombre"]).first():
+            return mal("Ya hay un conector con ese nombre. Cámbiale el nombre.")
+        etiqueta = (txt("etiqueta", 80) or campos["nombre"])[:80]
+        campos["llave_etiqueta"] = etiqueta               # el conector usa SOLO la llave que se acaba de guardar
+        llave_id, err = llaves.crear_llave(PROVEEDOR, p.id, etiqueta, request.form.get("secreto"), campos["ambiente"])
+        if err:
+            db.session.rollback()
+            return mal(err)
+        c = Conector(creado_por=(getattr(current_user, "username", "") or "")[:80], **campos)
+        db.session.add(c)
+        db.session.flush()
+        ep = ConectorEndpoint(conector_id=c.id, **ep_campos)
+        db.session.add(ep)
+        db.session.flush()
+        registrar("conector_creado", "Conector", c.id, f"{c.nombre} · {c.base_url} · plataforma {p.nombre}")
+        db.session.commit()
+        try:
+            leer(ep, forzar=True)                          # primera lectura: así la pestaña ya muestra cifras o el error
+        except Exception:
+            pass
+        return redirect(f"/plataformas/{p.id}?tab=conexiones&m=api_ok")
+
     @bp.route("/conectores/<int:cid>/editar", methods=["POST"])
     @escribe
     def editar(cid):
@@ -670,24 +706,24 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto):
         db.session.commit()
         return redirect(url_for("conectores.detalle", cid=c.id, m="probado_ok" if r["ok"] else "probado_mal"))
 
-    def leer_endpoint():
-        nombre = txt("nombre", 80)
+    def leer_endpoint(pref=""):
+        nombre = txt(pref + "nombre", 80)
         if len(nombre) < 2:
             return None, "Ponle un nombre al endpoint (ej. Resumen)."
-        ruta, err = _limpiar_ruta(request.form.get("ruta"))
+        ruta, err = _limpiar_ruta(request.form.get(pref + "ruta"))
         if err:
             return None, err
-        kpis = [l.strip()[:120] for l in (request.form.get("kpis") or "").splitlines() if l.strip()][:20]
-        alertas = [l.strip()[:160] for l in (request.form.get("alertas") or "").splitlines() if l.strip()][:10]
+        kpis = [l.strip()[:120] for l in (request.form.get(pref + "kpis") or "").splitlines() if l.strip()][:20]
+        alertas = [l.strip()[:160] for l in (request.form.get(pref + "alertas") or "").splitlines() if l.strip()][:10]
         for i, l in enumerate(alertas, 1):
             if not _RE_ALERTA.match(l):
                 return None, f"La alerta {i} no se entiende. Formato: ruta > valor | Mensaje (operadores: > >= < <= == !=)."
         try:
-            ttl = min(max(int(request.form.get("ttl_seg") or TTL_DEFECTO), 30), 86400)
+            ttl = min(max(int(request.form.get(pref + "ttl_seg") or TTL_DEFECTO), 30), 86400)
         except ValueError:
             return None, "El tiempo de caché debe ser un número de segundos."
         return dict(nombre=nombre, ruta=ruta, kpis="\n".join(kpis) or None, alertas="\n".join(alertas) or None, ttl_seg=ttl,
-                    vigilar=request.form.get("vigilar") == "1"), None
+                    vigilar=request.form.get(pref + "vigilar") == "1"), None
 
     @bp.route("/conectores/<int:cid>/endpoint", methods=["POST"])
     @escribe
