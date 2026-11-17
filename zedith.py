@@ -291,10 +291,12 @@ def responder(mensajes, hechos):
                 data = json.load(r)
             _registrar_uso(lid, data)          # la llamada ya consumió tokens, aunque la respuesta salga vacía
         except urllib.error.HTTPError as e:
-            ultimo = f"HTTP {e.code}: {e.read()[:300]!r}"
+            cuerpo_err = e.read()
+            ultimo = f"HTTP {e.code}: {cuerpo_err[:300]!r}"
             log.warning("Gemini falló con una llave (%s)", ultimo)
             if lid is not None and e.code in (401, 403, 429):
-                _llamar_hook(AL_FALLAR, lid, e.code)       # el pool la saca (429 descansa, 401/403 queda inválida)
+                # el pool la saca (429: descansa hasta medianoche del Pacífico o lo que pida Google; 401/403: inválida)
+                _llamar_hook(AL_FALLAR, lid, e.code, cuerpo_err.decode("utf-8", "replace")[:4000])
             if e.code in (401, 403, 429, 500, 502, 503, 504):
                 continue                       # prueba la siguiente llave
             raise ZedithError(ultimo)          # 400/404: error de configuración o de modelo

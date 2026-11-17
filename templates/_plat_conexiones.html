@@ -35,6 +35,7 @@
     <p style="margin:0; font-size:14px; line-height:1.7;">
         <strong>{{ conx.resumen.activas }}</strong> activas · por vencer (14 días): <strong>{{ conx.resumen.por_vencer }}</strong> ·
         con problema: <strong style="color:{{ '#f87171' if conx.resumen.problemas else 'inherit' }};">{{ conx.resumen.problemas }}</strong> ·
+        compartidas con otras plataformas: <strong>{{ conx.resumen.compartidas }}</strong> ·
         costo de IA del mes: <strong>${{ '%.2f'|format(conx.resumen.costo_mes or 0) }}</strong>
         {% if conx.heredar and conx.resumen.heredadas %}<br><span style="color:var(--text-muted); font-size:13px;">Si le falta una llave de un proveedor, esta plataforma todavía puede usar {{ conx.resumen.heredadas }} llave(s) globales del negocio. Se apaga con LLAVES_HEREDAR_GLOBAL=0 cuando cada plataforma tenga las suyas.</span>{% endif %}
         <br><a href="/llaves?plataforma={{ p.id }}" style="text-decoration:underline; font-size:13px;">Abrir la vista completa de llaves de esta plataforma</a>
@@ -46,31 +47,49 @@
 <div class="luxury-card" style="border-color:#f5b94c; margin-bottom:16px;"><p style="margin:0; font-size:14px;">Para crear, rotar o desactivar llaves tu usuario necesita la verificación en dos pasos (TOTP). <a href="/cuenta/seguridad" style="text-decoration:underline;">Activarla en Seguridad</a>.</p></div>
 {% endif %}
 
+{% set volver_tab = '/plataformas/' ~ p.id ~ '?tab=conexiones' %}
+<div class="luxury-card" style="margin-bottom:16px;">
+    <div class="cx-acc" style="align-items:center;">
+        <form method="post" action="/llaves/probar-todas?plataforma={{ p.id }}"><input type="hidden" name="volver" value="{{ volver_tab }}"><button class="btn btn-sm btn-primary" type="submit" {{ 'disabled' if conx.probando.corriendo }}>Probar todas las de Gemini (gratis)</button></form>
+        <form method="post" action="/llaves/probar-todas?plataforma={{ p.id }}"><input type="hidden" name="volver" value="{{ volver_tab }}"><input type="hidden" name="modo" value="real"><button class="btn btn-sm" type="submit" {{ 'disabled' if conx.probando.corriendo }} title="Hace 1 petición de 1 token por llave: sirve para saber si hoy les queda cuota, pero gasta 1 petición de cada una">Probar con una petición real</button></form>
+        {% if conx.globales_gemini %}<form method="post" action="/llaves/asignar-masivo?plataforma={{ p.id }}" onsubmit="return confirm('¿Agregar a esta plataforma las llaves globales de Gemini?')"><input type="hidden" name="volver" value="{{ volver_tab }}"><input type="hidden" name="accion" value="agregar"><button class="btn btn-sm" type="submit">Agregar las {{ conx.globales_gemini }} llaves globales de Gemini a esta plataforma</button></form>{% endif %}
+    </div>
+    {% if conx.probando.corriendo %}<p style="margin:10px 0 0; font-size:13px;">Probando {{ conx.probando.hechas }} de {{ conx.probando.total }}… esta pestaña se actualiza sola.</p>
+    <script>setTimeout(function () { location.reload(); }, 4000);</script>{% endif %}
+    <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">«Prueba» confirma con Google que la llave existe y sirve; una inválida sale del pool sola. El consumo de «Hoy» es el que se registra desde este panel (el día de cuota de Google corre en hora del Pacífico). Las llaves compartidas se administran (rotar, desactivar, revocar) en <a href="/llaves" style="text-decoration:underline;">Llaves</a>: aquí solo se prueban o se quitan de esta plataforma.</p>
+</div>
+
 <div class="luxury-card cx-tab" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-    <thead><tr><th>Proveedor</th><th>Etiqueta</th><th>Termina en</th><th>Estado</th><th>Vence</th><th>Hoy</th><th></th></tr></thead><tbody>
+    <thead><tr><th>Proveedor</th><th>Etiqueta</th><th>Termina en</th><th>Estado</th><th>Prueba</th><th>Vence</th><th>Hoy</th><th></th></tr></thead><tbody>
     {% for k in conx.llaves %}
     <tr>
         <td>{{ k.proveedor }}<div style="color:var(--text-muted); font-size:12px;">{{ k.ambiente }}</div></td>
-        <td>{{ k.etiqueta }}</td>
+        <td>{{ k.etiqueta }}{% if k.compartida %}<div style="color:var(--text-muted); font-size:12px;">Compartida{% if k.tambien %} · también en: {{ k.tambien|join(', ') }}{% endif %}</div>{% endif %}</td>
         <td class="mono">{{ '****' ~ k.ultimos4 if k.ultimos4 else '—' }}</td>
         <td><span class="badge {{ 'badge-green' if k.estado == 'activa' else 'badge-amber' if k.estado in ('desactivada', 'en descanso') else 'badge-red' }}">{{ k.estado }}</span></td>
+        <td style="font-size:12px;">{% if k.prueba %}<span class="badge {{ 'badge-green' if k.prueba in ('valida', 'con_cuota') else 'badge-amber' if k.prueba in ('sin_cuota', 'sin_red', 'error') else 'badge-red' }}">{{ k.prueba_txt }}</span>
+            <div style="color:var(--text-muted);">{{ k.prueba_fecha.strftime('%d/%m %H:%M') if k.prueba_fecha }} UTC</div>
+            {% if k.prueba_detalle %}<div style="color:var(--text-muted); max-width:220px;">{{ k.prueba_detalle }}</div>{% endif %}
+            {% elif k.proveedor == 'Google (Gemini)' and k.estado != 'revocada' %}<span style="color:var(--text-muted);">sin probar</span>{% else %}—{% endif %}</td>
         <td class="mono">{{ k.vence.strftime('%d/%m/%Y') if k.vence else '—' }}{% if k.dias is not none and 0 <= k.dias <= 14 %}<div style="color:#f5b94c; font-size:12px;">en {{ k.dias }} día(s)</div>{% endif %}</td>
-        <td class="mono">{{ k.pet }} pet.</td>
+        <td class="mono">{{ k.pet }} pet.<div style="color:var(--text-muted); font-size:12px;">{{ '{:,}'.format(k.tok) }} tok.</div></td>
         <td style="text-align:right;">
             <div class="cx-acc" style="justify-content:flex-end;">
-                {% if k.estado == 'desactivada' %}<form method="post" action="/llaves/{{ k.id }}/activar?plataforma={{ p.id }}"><button class="btn btn-sm" type="submit">Activar</button></form>
+                {% if k.proveedor == 'Google (Gemini)' and k.estado != 'revocada' %}<form method="post" action="/llaves/{{ k.id }}/probar?plataforma={{ p.id }}"><input type="hidden" name="volver" value="{{ volver_tab }}"><button class="btn btn-sm" type="submit">Probar</button></form>{% endif %}
+                {% if k.compartida %}<form method="post" action="/llaves/{{ k.id }}/plataformas?plataforma={{ p.id }}" onsubmit="return confirm('¿Quitar esta llave de esta plataforma? Sigue existiendo y la usan las demás.')"><input type="hidden" name="volver" value="{{ volver_tab }}"><input type="hidden" name="accion" value="quitar"><button class="btn btn-sm" type="submit">Quitar de aquí</button></form>
+                {% elif k.estado == 'desactivada' %}<form method="post" action="/llaves/{{ k.id }}/activar?plataforma={{ p.id }}"><button class="btn btn-sm" type="submit">Activar</button></form>
                 {% elif k.estado != 'revocada' %}<form method="post" action="/llaves/{{ k.id }}/desactivar?plataforma={{ p.id }}"><button class="btn btn-sm" type="submit">Desactivar</button></form>{% endif %}
-                {% if k.estado != 'revocada' %}<form method="post" action="/llaves/{{ k.id }}/revocar?plataforma={{ p.id }}" onsubmit="return confirm('¿Revocar esta llave? El secreto se borra y no se puede recuperar.')"><button class="btn btn-sm" type="submit">Revocar</button></form>{% endif %}
+                {% if k.estado != 'revocada' and not k.compartida %}<form method="post" action="/llaves/{{ k.id }}/revocar?plataforma={{ p.id }}" onsubmit="return confirm('¿Revocar esta llave? El secreto se borra y no se puede recuperar.')"><button class="btn btn-sm" type="submit">Revocar</button></form>{% endif %}
             </div>
-            <details style="margin-top:8px; text-align:left;"><summary style="cursor:pointer; font-size:13px;">{{ 'Poner un valor nuevo' if k.estado == 'revocada' else 'Rotar' }}</summary>
+            {% if not k.compartida %}<details style="margin-top:8px; text-align:left;"><summary style="cursor:pointer; font-size:13px;">{{ 'Poner un valor nuevo' if k.estado == 'revocada' else 'Rotar' }}</summary>
                 <form method="post" action="/llaves/{{ k.id }}/rotar?plataforma={{ p.id }}" class="cx-acc" autocomplete="off" style="margin-top:8px;">
                     <input class="field mono" type="password" name="secreto" placeholder="Valor nuevo" autocomplete="new-password" required>
                     <input class="field" type="date" name="vence" title="Nueva fecha de vencimiento (opcional)">
                     <button class="btn btn-sm btn-primary" type="submit">Guardar</button>
-                </form></details>
+                </form></details>{% endif %}
         </td>
     </tr>
-    {% else %}<tr><td colspan="7" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma todavía no tiene llaves propias.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="8" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma todavía no tiene llaves propias.</td></tr>{% endfor %}
 </tbody></table></div></div>
 
 <details class="luxury-card" style="margin-top:16px;"><summary style="cursor:pointer;">+ Agregar llave a esta plataforma</summary>

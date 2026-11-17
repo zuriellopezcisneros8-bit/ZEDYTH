@@ -25,13 +25,27 @@ El valor completo de una llave NUNCA se muestra ni se escribe en la bitácora: s
 """
 import base64
 import hashlib
+import json
 import os
+import random
+import re
+import threading
+import time
+import urllib.error
+import urllib.request
 from collections import namedtuple
-from datetime import date, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
+from urllib.parse import urlencode
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:          # Python < 3.9
+    ZoneInfo = None
 
 from cryptography.fernet import Fernet, MultiFernet, InvalidToken
-from flask import Blueprint, render_template, request, redirect, url_for, abort, Response
+from flask import Blueprint, render_template, request, redirect, url_for, abort, Response, jsonify
 from flask_login import current_user
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -48,7 +62,23 @@ HEREDAR_GLOBAL = os.environ.get("LLAVES_HEREDAR_GLOBAL", "1") != "0"
 
 LlaveEntregada = namedtuple("LlaveEntregada", "id secreto proveedor etiqueta")
 
+# --- Gemini: importación desde el entorno, pruebas y día de cuota -------------------------------------
+GEMINI = "Google (Gemini)"
+URL_GEMINI = "https://generativelanguage.googleapis.com/v1beta"
+PROBAR_HILOS = 8                                               # pruebas en paralelo (solo red; la base se escribe al final)
+PROBAR_AUTO = os.environ.get("LLAVES_PROBAR_AUTO", "1") != "0"   # revisión diaria automática (models.list, no gasta cuota)
+PROBAR_CADA_HORAS = 24
+# Modelo de la "prueba real" (1 petición de 1 token). app.py lo apunta a zedith.modelo para usar el mismo que el chat.
+MODELO_PRUEBA = lambda: os.environ.get("LLAVES_MODELO_PRUEBA") or "gemini-3.5-flash-lite"
+ETIQ_PRUEBA = {"valida": "válida", "con_cuota": "válida y con cuota", "sin_cuota": "sin cuota ahora", "invalida": "inválida",
+               "rechazada": "rechazada", "sin_red": "sin conexión", "error": "error"}
+_RE_ENTORNO = re.compile(r"^GEMINI_KEY_?\d+$")
+
 MENSAJES = {
+    "importada": "Importación terminada. Las llaves quedaron cifradas; las variables de Render no se tocaron.",
+    "probando": "Pruebas en marcha: la página se actualiza sola. Puedes seguir trabajando.",
+    "probada": "Llave probada. El resultado quedó en la columna Prueba.",
+    "asignada": "Plataformas actualizadas para esas llaves.",
     "creada": "Llave guardada (cifrada). Solo se mostrarán sus últimos 4 caracteres.",
     "api_ok": "API conectada: la llave quedó guardada (cifrada) y se hizo la primera lectura. Abajo ves el resultado.",
     "rotada": "Llave rotada: el valor anterior ya no existe en el sistema.",
@@ -64,21 +94,140 @@ _api = {}      # lo llena crear_blueprint (misma técnica que monitor.py)
 _base_cifrado = {"secreto": None}     # SECRET_KEY de la app (solo si es fija); la pone crear_blueprint
 
 
+# --- Utilidades sin base de datos (se pueden probar solas) ----------------------------------------
+def huella(secreto):
+    """Identificador estable de una llave que NO revela su valor. Dos plataformas con la misma llave dan la misma huella."""
+    return hashlib.sha256(("llaves-huella|" + secreto).encode()).hexdigest()[:16]
+
+
+def _zona_google():
+    """La cuota diaria gratuita de Gemini se reinicia a medianoche, hora del Pacífico (no UTC ni hora de México)."""
+    try:
+        return ZoneInfo("America/Los_Angeles")
+    except Exception:
+        return timezone(timedelta(hours=-8))      # sin base de zonas horarias en el servidor: aproximación
+
+
+def hoy_google():
+    return datetime.now(_zona_google()).date()
+
+
+def _medianoche_google_utc():
+    z = _zona_google()
+    sig = (datetime.now(z) + timedelta(days=1)).replace(hour=0, minute=0, second=1, microsecond=0)
+    return sig.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def descanso_429(cuerpo="", ahora=None):
+    """Según el cuerpo del error 429 de Google: (hasta cuándo descansa la llave en UTC, explicación).
+    Cuota del día → hasta medianoche del Pacífico; cuota por minuto → lo que pida Google (retryDelay)."""
+    ahora = ahora or datetime.utcnow()
+    t = (cuerpo or "").lower()
+    if "perday" in t or "per day" in t:
+        return _medianoche_google_utc(), "cuota del DÍA agotada; vuelve a medianoche (hora del Pacífico)"
+    m = re.search(r'retrydelay"?\s*:\s*"?(\d+(?:\.\d+)?)s', t)
+    if m:
+        seg = int(min(max(float(m.group(1)), 5), 3600))
+        return ahora + timedelta(seconds=seg + 1), f"límite por minuto; reintenta en {seg} s"
+    return ahora + timedelta(minutes=ENFRIAR_MIN), f"descansa {ENFRIAR_MIN} min"
+
+
+def llaves_del_entorno(entorno=None):
+    """[(nombre de la variable, valor)] de las llaves de Gemini de ESTE servidor: GEMINI_KEY_1, GEMINI_KEY_2, ... (sin tope),
+    y también GEMINI_KEYS / GEMINI_API_KEYS (varias separadas por coma) y GEMINI_API_KEY. Sin repetidas."""
+    e = os.environ if entorno is None else entorno
+    vistas, salida = set(), []
+
+    def agregar(nombre, valor):
+        v = str(valor or "").strip().strip('"').strip("'").strip()
+        if 8 <= len(v) <= 4000 and not any(c.isspace() for c in v) and v not in vistas:
+            vistas.add(v)
+            salida.append((nombre, v))
+
+    for nombre in sorted((k for k in e if _RE_ENTORNO.match(k)), key=lambda k: int(re.sub(r"\D", "", k))):
+        agregar(nombre, e[nombre])
+    for nombre in ("GEMINI_KEYS", "GEMINI_API_KEYS", "GEMINI_API_KEY"):
+        for i, parte in enumerate(re.split(r"[,;\r\n]+", e.get(nombre) or ""), 1):
+            agregar(f"{nombre} #{i}", parte)
+    return salida
+
+
+def _mensaje_google(texto):
+    try:
+        return str(json.loads(texto)["error"]["message"])[:200]
+    except Exception:
+        return (texto or "").strip().replace("\n", " ")[:200]
+
+
+def _http(url, llave, cuerpo=None, timeout=10):
+    """(código HTTP o 0 si no hubo respuesta, texto del cuerpo, milisegundos)."""
+    req = urllib.request.Request(url, method="POST" if cuerpo is not None else "GET",
+                                 data=json.dumps(cuerpo).encode() if cuerpo is not None else None,
+                                 headers={"x-goog-api-key": llave, "Content-Type": "application/json"})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            r.read(4000)
+            return r.status, "", int((time.time() - t0) * 1000)
+    except urllib.error.HTTPError as e:
+        try:
+            txt = e.read().decode("utf-8", "replace")[:4000]
+        except Exception:
+            txt = ""
+        return e.code, txt, int((time.time() - t0) * 1000)
+    except Exception as e:
+        return 0, f"{type(e).__name__}: {e}"[:200], int((time.time() - t0) * 1000)
+
+
+def probar_gemini(llave, real=False, url_base=URL_GEMINI, modelo=None):
+    """Comprueba una llave de Gemini. Siempre llama a models.list (no gasta cuota de generación).
+    real=True además hace UNA petición de 1 token para saber si hoy le queda cuota (gasta 1 petición de esa llave).
+    Devuelve {resultado, detalle, ms, hasta}. resultado: valida | con_cuota | sin_cuota | invalida | rechazada | sin_red | error."""
+    codigo, txt, ms = _http(f"{url_base}/models?pageSize=1", llave)
+    baja = txt.lower()
+    if codigo == 0:
+        return {"resultado": "sin_red", "detalle": txt, "ms": ms, "hasta": None}
+    if codigo == 400 and ("api key not valid" in baja or "api_key_invalid" in baja):
+        return {"resultado": "invalida", "detalle": "Google dice que la llave no es válida (borrada o mal copiada).", "ms": ms, "hasta": None}
+    if codigo in (401, 403):
+        return {"resultado": "rechazada", "detalle": _mensaje_google(txt) or f"HTTP {codigo}", "ms": ms, "hasta": None}
+    if codigo == 429:
+        hasta, motivo = descanso_429(txt)
+        return {"resultado": "sin_cuota", "detalle": motivo, "ms": ms, "hasta": hasta}
+    if codigo != 200:
+        return {"resultado": "error", "detalle": f"HTTP {codigo}: {_mensaje_google(txt)}", "ms": ms, "hasta": None}
+    if not real:
+        return {"resultado": "valida", "detalle": "", "ms": ms, "hasta": None}
+    modelo = modelo or MODELO_PRUEBA()
+    c2, t2, ms2 = _http(f"{url_base}/models/{modelo}:generateContent", llave,
+                        {"contents": [{"parts": [{"text": "ok"}]}], "generationConfig": {"maxOutputTokens": 1}})
+    if c2 == 200:
+        return {"resultado": "con_cuota", "detalle": f"respondió con {modelo}", "ms": ms2, "hasta": None}
+    if c2 == 429:
+        hasta, motivo = descanso_429(t2)
+        return {"resultado": "sin_cuota", "detalle": motivo, "ms": ms2, "hasta": hasta}
+    if c2 in (401, 403):
+        return {"resultado": "rechazada", "detalle": _mensaje_google(t2) or f"HTTP {c2}", "ms": ms2, "hasta": None}
+    return {"resultado": "valida", "detalle": f"models.list ok; no pude comprobar la cuota (HTTP {c2}: {_mensaje_google(t2)})", "ms": ms2, "hasta": None}
+
+
 # --- API pública (para el resto de app.py) ------------------------------------------------------
-def obtener_llave(proveedor, proyecto_id=None, ambiente="Producción", heredar=None):
+def obtener_llave(proveedor, proyecto_id=None, ambiente="Producción", heredar=None, mezclar=False):
     """Primera llave disponible del pool (por orden), o None. Salta las desactivadas, vencidas o en descanso.
-    heredar=False: solo las de esa plataforma (nunca las globales). None = lo que diga LLAVES_HEREDAR_GLOBAL."""
-    return _api["obtener"](proveedor, proyecto_id, ambiente, heredar)
+    heredar=False: solo las de esa plataforma (nunca las globales). None = lo que diga LLAVES_HEREDAR_GLOBAL.
+    mezclar=True: elige al azar entre las disponibles (reparte la carga cuando hay muchas llaves gratuitas)."""
+    return _api["obtener"](proveedor, proyecto_id, ambiente, heredar, mezclar)
 
 
-def obtener_llaves(proveedor, proyecto_id=None, ambiente="Producción", heredar=None):
-    """Lista de todas las llaves utilizables, en orden de pool. Útil para probarlas una por una."""
-    return _api["todas"](proveedor, proyecto_id, ambiente, heredar)
+def obtener_llaves(proveedor, proyecto_id=None, ambiente="Producción", heredar=None, mezclar=False):
+    """Lista de todas las llaves utilizables, en orden de pool (o mezcladas con mezclar=True). Útil para probarlas una por una."""
+    return _api["todas"](proveedor, proyecto_id, ambiente, heredar, mezclar)
 
 
-def reportar_fallo(llave_id, codigo_http):
-    """429 → la llave descansa unos minutos; 401/403 → queda inválida hasta que alguien la revise."""
-    _api["fallo"](llave_id, codigo_http)
+def reportar_fallo(llave_id, codigo_http, cuerpo=""):
+    """429 → la llave descansa (hasta medianoche del Pacífico si es cuota del día, o lo que pida Google si es por minuto);
+    401/403 → queda inválida hasta que alguien la revise. `cuerpo` es el texto del error (opcional, afina el descanso)."""
+    _api["fallo"](llave_id, codigo_http, cuerpo)
 
 
 def registrar_uso(llave_id, peticiones=1, tokens_in=0, tokens_out=0, costo=0.0):
@@ -180,14 +329,90 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         tokens_out = db.Column(db.BigInteger, default=0)
         costo = db.Column(db.Float, default=0.0)
 
-    estado_tablas = {"ok": False}
+    class LlaveMeta(db.Model):
+        """Datos extra de cada llave en una tabla aparte (así no hay que alterar llave_api): huella y última prueba."""
+        __tablename__ = "llave_meta"
+        llave_id = db.Column(db.Integer, primary_key=True)
+        huella = db.Column(db.String(16), index=True)
+        origen = db.Column(db.String(20), default="manual")                    # manual | entorno
+        prueba_fecha = db.Column(db.DateTime)
+        prueba_resultado = db.Column(db.String(16))
+        prueba_detalle = db.Column(db.String(240))
+        prueba_ms = db.Column(db.Integer)
+
+    class LlavePlat(db.Model):
+        """Una llave global (compartida) usada por varias plataformas: una fila por pareja llave–plataforma."""
+        __tablename__ = "llave_plat"
+        llave_id = db.Column(db.Integer, primary_key=True)
+        proyecto_id = db.Column(db.Integer, primary_key=True)
+
+    estado_tablas = {"ok": False, "huellas": False}
+    estado_prueba = {"corriendo": False, "hechas": 0, "total": 0, "inicio": None, "real": False}
+    cerrojo = threading.Lock()
 
     def asegurar():
         if estado_tablas["ok"]:
             return
-        for m in (LlaveApi, UsoIA):
+        for m in (LlaveApi, UsoIA, LlaveMeta, LlavePlat):
             m.__table__.create(db.engine, checkfirst=True)
         estado_tablas["ok"] = True
+
+    def rellenar_huellas():
+        """Llaves creadas antes de esta versión: calcula su huella una vez. Hace commit: no llamarla a mitad de una transacción ajena."""
+        if estado_tablas["huellas"]:
+            return
+        f = _fernet()
+        if f is None:
+            return
+        ya = {m.llave_id for m in LlaveMeta.query.all()}
+        nuevas = False
+        for k in LlaveApi.query.filter(LlaveApi.secreto.isnot(None)).all():
+            if k.id in ya:
+                continue
+            try:
+                db.session.add(LlaveMeta(llave_id=k.id, huella=huella(f.decrypt(k.secreto.encode()).decode()), origen="manual"))
+                nuevas = True
+            except InvalidToken:
+                continue
+        if nuevas:
+            db.session.commit()
+        estado_tablas["huellas"] = True
+
+    def fijar_meta(k, secreto, origen="manual"):
+        """Guarda la huella de la llave (k ya tiene id). No hace commit."""
+        m = db.session.get(LlaveMeta, k.id)
+        if m is None:
+            db.session.add(LlaveMeta(llave_id=k.id, huella=huella(secreto), origen=origen))
+        else:
+            m.huella = huella(secreto)
+
+    def ids_asignadas(pid):
+        return [a.llave_id for a in LlavePlat.query.filter_by(proyecto_id=pid).all()]
+
+    def llaves_de(pid):
+        """Query de las llaves de una plataforma: las suyas y las compartidas que se le asignaron."""
+        cond = LlaveApi.proyecto_id == pid
+        ids = ids_asignadas(pid)
+        if ids:
+            cond = or_(cond, LlaveApi.id.in_(ids))
+        return LlaveApi.query.filter(cond)
+
+    def plataformas_por_llave(ids):
+        """{llave_id: [nombres de plataformas]} (dueña + asignadas) para mostrar «también en»."""
+        if not ids:
+            return {}
+        nombres = {p.id: p.nombre for p in Proyecto.query.all()}
+        r = {}
+        for a in LlavePlat.query.filter(LlavePlat.llave_id.in_(ids)).all():
+            if a.proyecto_id in nombres:
+                r.setdefault(a.llave_id, []).append(nombres[a.proyecto_id])
+        for k in LlaveApi.query.filter(LlaveApi.id.in_(ids), LlaveApi.proyecto_id.isnot(None)).all():
+            nom = nombres.get(k.proyecto_id)
+            if nom and nom not in r.setdefault(k.id, []):
+                r[k.id].insert(0, nom)
+        for v in r.values():
+            v.sort()
+        return r
 
     # --- reglas de acceso ------------------------------------------------------------------------
     def es_admin():
@@ -227,14 +452,15 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             abort(404)
         return p
 
-    def volver(m=None):
+    def volver(m=None, **extra):
+        """extra: contadores para el mensaje (n, d, r...) que solo muestra la pantalla /llaves."""
         dest = request.form.get("volver") or ""
         if dest.startswith("/plataformas/") and "//" not in dest and "\\" not in dest:
             if m and m in MENSAJES:
                 dest += ("&" if "?" in dest else "?") + "m=" + m
             return redirect(dest)
         p = plat_activa()
-        return redirect(url_for("llaves.index", m=m, plataforma=p.id if p else None))
+        return redirect(url_for("llaves.index", m=m, plataforma=p.id if p else None, **extra))
 
     # --- utilidades -------------------------------------------------------------------------------
     def leer_secreto(campo):
@@ -279,8 +505,9 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         return _fernet().encrypt(secreto.encode()).decode()
 
     # --- API interna -------------------------------------------------------------------------------
-    def _disponibles(proveedor, proyecto_id, ambiente, heredar=None):
-        """Todas las llaves utilizables, en orden de pool (las de la plataforma primero; las globales solo si se hereda)."""
+    def _disponibles(proveedor, proyecto_id, ambiente, heredar=None, mezclar=False):
+        """Todas las llaves utilizables, en orden de pool (las de la plataforma y las compartidas que se le asignaron primero;
+        las globales solo si se hereda). mezclar=True las devuelve en orden aleatorio."""
         asegurar()
         if heredar is None:
             heredar = HEREDAR_GLOBAL
@@ -294,31 +521,42 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                                       LlaveApi.estado == "activa", LlaveApi.secreto.isnot(None),
                                       or_(LlaveApi.vence.is_(None), LlaveApi.vence >= hoy),
                                       or_(LlaveApi.bloqueada_hasta.is_(None), LlaveApi.bloqueada_hasta <= ahora))
-            q = q.filter(LlaveApi.proyecto_id == pid) if pid else q.filter(LlaveApi.proyecto_id.is_(None))
+            if pid:
+                cond = LlaveApi.proyecto_id == pid
+                ids = ids_asignadas(pid)
+                q = q.filter(or_(cond, LlaveApi.id.in_(ids)) if ids else cond)
+            else:
+                q = q.filter(LlaveApi.proyecto_id.is_(None))
             return q.order_by(LlaveApi.orden, LlaveApi.id).all()
 
-        filas = buscar(proyecto_id) + (buscar(None) if proyecto_id and heredar else [])
+        filas, vistas = [], set()
+        for k in buscar(proyecto_id) + (buscar(None) if proyecto_id and heredar else []):
+            if k.id not in vistas:          # una llave asignada a la plataforma también es global: no repetirla
+                vistas.add(k.id)
+                filas.append(k)
         salida = []
         for k in filas:
             try:
                 salida.append(LlaveEntregada(k.id, f.decrypt(k.secreto.encode()).decode(), k.proveedor, k.etiqueta))
             except InvalidToken:
                 app.logger.error("Llave %s no se pudo descifrar (¿cambió LLAVES_MASTER?)", k.id)
+        if mezclar:
+            random.shuffle(salida)
         return salida
 
-    def _obtener(proveedor, proyecto_id, ambiente, heredar=None):
-        lista = _disponibles(proveedor, proyecto_id, ambiente, heredar)
+    def _obtener(proveedor, proyecto_id, ambiente, heredar=None, mezclar=False):
+        lista = _disponibles(proveedor, proyecto_id, ambiente, heredar, mezclar)
         return lista[0] if lista else None
 
-    def _fallo(llave_id, codigo):
+    def _fallo(llave_id, codigo, cuerpo=""):
         asegurar()
         k = db.session.execute(db.select(LlaveApi).where(LlaveApi.id == llave_id).with_for_update()).scalar_one_or_none()
         if k is None:
             return
         k.fallos = (k.fallos or 0) + 1
         if codigo == 429:
-            k.bloqueada_hasta = datetime.utcnow() + timedelta(minutes=ENFRIAR_MIN)
-            detalle = f"HTTP 429: descansa {ENFRIAR_MIN} min; el pool pasa a la siguiente"
+            k.bloqueada_hasta, motivo = descanso_429(cuerpo)
+            detalle = f"HTTP 429: {motivo}; el pool pasa a la siguiente"
             urgente = False
         elif codigo in (401, 403):
             k.estado = "invalida"
@@ -329,12 +567,18 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             return
         registrar("llave_fallo", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4} · {detalle}")
         db.session.commit()
+        if codigo == 429:
+            # Con decenas de llaves gratuitas, un 429 suelto es normal: solo se avisa cuando ya no queda NINGUNA utilizable.
+            if _estado_pool(k.proveedor)["usables"] == 0:
+                avisar("Llave", f"Sin llaves disponibles de {k.proveedor}", "Todas están en descanso, inválidas o vencidas.",
+                       "/llaves", urgente=True, clave=f"llave-pool-vacio-{k.proveedor}-{datetime.utcnow():%Y%m%d%H}")
+            return
         avisar("Llave", f"Llave {k.proveedor} · {k.etiqueta}: error {codigo}", detalle, "/llaves",
                urgente=urgente, clave=f"llave-fallo-{k.id}-{codigo}-{datetime.utcnow():%Y%m%d%H}")
 
     def _uso(llave_id, peticiones, tokens_in, tokens_out, costo):
         asegurar()
-        hoy = date.today()
+        hoy = hoy_google()
         for _ in range(2):
             try:
                 u = db.session.execute(db.select(UsoIA).where(UsoIA.fecha == hoy, UsoIA.llave_id == llave_id).with_for_update()).scalar_one_or_none()
@@ -379,7 +623,8 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         listo = cifrado_listo()
         q = LlaveApi.query.filter(LlaveApi.proveedor == proveedor, LlaveApi.estado != "revocada")
         if proyecto_id:
-            q = q.filter(LlaveApi.proyecto_id == proyecto_id)
+            ids = ids_asignadas(proyecto_id)
+            q = q.filter(or_(LlaveApi.proyecto_id == proyecto_id, LlaveApi.id.in_(ids)) if ids else LlaveApi.proyecto_id == proyecto_id)
         for k in q.all():
             r["total"] += 1
             e = estado_visible(k, ahora, hoy)
@@ -398,9 +643,12 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     def _resumen_plat(pid):
         asegurar()
         ahora, hoy = datetime.utcnow(), date.today()
-        r = {"total": 0, "activas": 0, "problemas": 0, "por_vencer": 0, "heredadas": 0, "costo_mes": _costo_mes(pid)}
-        for k in LlaveApi.query.filter(LlaveApi.proyecto_id == pid, LlaveApi.estado != "revocada").all():
+        r = {"total": 0, "activas": 0, "problemas": 0, "por_vencer": 0, "heredadas": 0, "compartidas": 0, "costo_mes": _costo_mes(pid)}
+        asignadas = set(ids_asignadas(pid))
+        for k in llaves_de(pid).filter(LlaveApi.estado != "revocada").all():
             r["total"] += 1
+            if k.proyecto_id != pid:
+                r["compartidas"] += 1
             e = estado_visible(k, ahora, hoy)
             if e == "activa":
                 r["activas"] += 1
@@ -409,21 +657,39 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             if k.estado == "activa" and k.vence and 0 <= (k.vence - hoy).days <= AVISO_VENCE_DIAS:
                 r["por_vencer"] += 1
         if HEREDAR_GLOBAL:      # llaves globales que esta plataforma todavía puede usar
-            r["heredadas"] = LlaveApi.query.filter(LlaveApi.proyecto_id.is_(None), LlaveApi.estado == "activa").count()
+            r["heredadas"] = LlaveApi.query.filter(LlaveApi.proyecto_id.is_(None), LlaveApi.estado == "activa",
+                                                   LlaveApi.id.notin_(asignadas or [0])).count()
         return r
 
     def _panel_plat(pid):
         asegurar()
-        ahora, hoy = datetime.utcnow(), date.today()
-        ks = LlaveApi.query.filter(LlaveApi.proyecto_id == pid).order_by(
-            LlaveApi.proveedor, LlaveApi.ambiente, LlaveApi.orden, LlaveApi.id).all()
-        uso = {u.llave_id: u for u in UsoIA.query.filter(UsoIA.fecha == hoy, UsoIA.llave_id.in_([k.id for k in ks])).all()} if ks else {}
-        filas = [{"id": k.id, "proveedor": k.proveedor, "etiqueta": k.etiqueta, "ambiente": k.ambiente, "ultimos4": k.ultimos4,
-                  "estado": estado_visible(k, ahora, hoy), "vence": k.vence,
-                  "dias": (k.vence - hoy).days if k.vence else None,
-                  "pet": uso[k.id].peticiones if k.id in uso else 0} for k in ks]
+        rellenar_huellas()
+        ahora, hoy = datetime.utcnow(), hoy_google()
+        ks = llaves_de(pid).order_by(LlaveApi.proveedor, LlaveApi.ambiente, LlaveApi.orden, LlaveApi.id).all()
+        ids = [k.id for k in ks]
+        uso = {u.llave_id: u for u in UsoIA.query.filter(UsoIA.fecha == hoy, UsoIA.llave_id.in_(ids)).all()} if ks else {}
+        meta = {m.llave_id: m for m in LlaveMeta.query.filter(LlaveMeta.llave_id.in_(ids)).all()} if ks else {}
+        donde = plataformas_por_llave(ids)
+        filas, mi_nombre = [], nombre_de(pid)
+        for k in ks:
+            m = meta.get(k.id)
+            filas.append({"id": k.id, "proveedor": k.proveedor, "etiqueta": k.etiqueta, "ambiente": k.ambiente, "ultimos4": k.ultimos4,
+                          "estado": estado_visible(k, ahora, hoy), "vence": k.vence,
+                          "dias": (k.vence - date.today()).days if k.vence else None,
+                          "pet": uso[k.id].peticiones if k.id in uso else 0,
+                          "tok": ((uso[k.id].tokens_in or 0) + (uso[k.id].tokens_out or 0)) if k.id in uso else 0,
+                          "compartida": k.proyecto_id != pid,
+                          "tambien": [n for n in donde.get(k.id, []) if n != mi_nombre],
+                          "prueba": m.prueba_resultado if m else None, "prueba_txt": ETIQ_PRUEBA.get(m.prueba_resultado, "") if m else "",
+                          "prueba_fecha": m.prueba_fecha if m else None, "prueba_detalle": (m.prueba_detalle or "") if m else ""})
         return {"llaves": filas, "resumen": _resumen_plat(pid), "proveedores": PROVEEDORES, "ambientes": AMBIENTES,
-                "mfa": mfa_ok(), "cifrado": cifrado_listo(), "heredar": HEREDAR_GLOBAL}
+                "mfa": mfa_ok(), "cifrado": cifrado_listo(), "heredar": HEREDAR_GLOBAL, "probando": dict(estado_prueba),
+                "globales_gemini": LlaveApi.query.filter(LlaveApi.proveedor == GEMINI, LlaveApi.proyecto_id.is_(None),
+                                                         LlaveApi.estado != "revocada").count()}
+
+    def nombre_de(pid):
+        p = db.session.get(Proyecto, pid)
+        return p.nombre if p else ""
 
     def _url_llaves(k):
         return f"/llaves?plataforma={k.proyecto_id}" if k.proyecto_id else "/llaves"
@@ -444,8 +710,16 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 if base + timedelta(days=k.rotar_cada_dias) <= ahora:
                     avisar("Llave", f"Toca rotar la llave: {nombre}", f"Programada cada {k.rotar_cada_dias} días.", _url_llaves(k),
                            urgente=False, clave=f"llave-rotar-{k.id}-{base:%Y%m%d}")
+        if PROBAR_AUTO:        # revisión diaria de las llaves de Gemini (models.list: no gasta cuota)
+            ultima = db.session.scalar(db.select(db.func.max(LlaveMeta.prueba_fecha)))
+            if ultima is None or ahora - ultima > timedelta(hours=PROBAR_CADA_HORAS):
+                ids = [k.id for k in LlaveApi.query.filter(LlaveApi.proveedor == GEMINI, LlaveApi.estado == "activa",
+                                                           LlaveApi.secreto.isnot(None)).all()]
+                if ids:
+                    lanzar_pruebas(ids, False, "sistema")
 
     def _crear(proveedor, proyecto_id, etiqueta, secreto, ambiente="Producción"):
+        asegurar()
         if not cifrado_listo():
             return None, "No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER)."
         if proveedor not in PROVEEDORES or ambiente not in AMBIENTES:
@@ -464,8 +738,81 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                      creado_por=getattr(current_user, "username", None))
         db.session.add(k)
         db.session.flush()
+        fijar_meta(k, secreto)
         registrar("crear_llave", "LlaveApi", k.id, f"{proveedor} · {etiqueta} · {ambiente} · ****{k.ultimos4}")
         return k.id, None          # el commit lo hace quien llama (así conector + llave se guardan juntos)
+
+    def guardar_prueba(k, r, secreto=None):
+        """Anota el resultado de una prueba y aplica sus consecuencias (inválida → fuera del pool; sin cuota → descanso). No hace commit."""
+        m = db.session.get(LlaveMeta, k.id)
+        if m is None:
+            m = LlaveMeta(llave_id=k.id, huella=huella(secreto) if secreto else None, origen="manual")
+            db.session.add(m)
+        m.prueba_fecha, m.prueba_resultado = datetime.utcnow(), r["resultado"]
+        m.prueba_detalle, m.prueba_ms = (r.get("detalle") or "")[:240], r.get("ms")
+        if r["resultado"] in ("invalida", "rechazada") and k.estado == "activa":
+            k.estado = "invalida"
+            registrar("llave_fallo", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4} · prueba: {r['detalle']}")
+        elif r["resultado"] == "sin_cuota" and r.get("hasta"):
+            k.bloqueada_hasta = r["hasta"]
+
+    def lanzar_pruebas(ids, real, quien):
+        """Prueba varias llaves en un hilo aparte (100 llaves tardan más que el tiempo máximo de una petición web).
+        Devuelve False si ya hay una corrida en marcha."""
+        with cerrojo:
+            if estado_prueba["corriendo"]:
+                return False
+            estado_prueba.update(corriendo=True, hechas=0, total=len(ids), inicio=datetime.utcnow(), real=bool(real))
+
+        def trabajo():
+            try:
+                with app.app_context():
+                    f = _fernet()
+                    trabajos = []
+                    for k in LlaveApi.query.filter(LlaveApi.id.in_(ids), LlaveApi.secreto.isnot(None)).all():
+                        try:
+                            trabajos.append((k.id, f.decrypt(k.secreto.encode()).decode()))
+                        except (InvalidToken, AttributeError):
+                            pass
+                    with cerrojo:
+                        estado_prueba["total"] = len(trabajos)
+                    modelo = MODELO_PRUEBA() if real else None      # se resuelve aquí (con contexto de la app), no en los hilos
+                    db.session.rollback()          # no mantener una transacción abierta mientras se espera a la red
+
+                    def una(t):
+                        r = probar_gemini(t[1], real, modelo=modelo)
+                        with cerrojo:
+                            estado_prueba["hechas"] += 1
+                        return t[0], t[1], r
+
+                    with ThreadPoolExecutor(PROBAR_HILOS) as ex:
+                        resultados = list(ex.map(una, trabajos))
+                    cuenta = {}
+                    for lid, secreto, r in resultados:
+                        k = db.session.get(LlaveApi, lid)
+                        if k is not None:
+                            guardar_prueba(k, r, secreto)
+                            cuenta[r["resultado"]] = cuenta.get(r["resultado"], 0) + 1
+                    resumen = ", ".join(f"{ETIQ_PRUEBA.get(c, c)}: {n}" for c, n in sorted(cuenta.items())) or "sin llaves que probar"
+                    registrar("probar_llaves", "LlaveApi", None, f"{len(resultados)} llaves ({'con petición real' if real else 'models.list'}) · {resumen}",
+                              usuario=quien)
+                    db.session.commit()
+            except Exception as e:
+                app.logger.error("Prueba de llaves falló: %s", e)
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
+            finally:
+                with cerrojo:
+                    estado_prueba["corriendo"] = False
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
+
+        threading.Thread(target=trabajo, daemon=True, name="llaves-pruebas").start()
+        return True
 
     _api.update(obtener=_obtener, todas=_disponibles, fallo=_fallo, uso=_uso, costo_mes=_costo_mes, revisar=_revisar,
                 estado_pool=_estado_pool, resumen_plat=_resumen_plat, panel_plat=_panel_plat, crear=_crear)
@@ -475,16 +822,25 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     @solo_admin
     def index():
         asegurar()
-        ahora, hoy = datetime.utcnow(), date.today()
+        rellenar_huellas()
+        ahora, hoy, hoy_g = datetime.utcnow(), date.today(), hoy_google()
         act = plat_activa()
-        q = LlaveApi.query
-        if act:
-            q = q.filter(LlaveApi.proyecto_id == act.id)
+        q = llaves_de(act.id) if act else LlaveApi.query
+        prov = request.args.get("proveedor", "")
+        if prov in PROVEEDORES:
+            q = q.filter(LlaveApi.proveedor == prov)
         llaves = q.order_by(LlaveApi.proveedor, LlaveApi.proyecto_id, LlaveApi.ambiente, LlaveApi.orden, LlaveApi.id).all()
-        uso_hoy = {u.llave_id: u for u in UsoIA.query.filter_by(fecha=hoy).all()}
+        ids_todas = [k.id for k in llaves]
+        uso_hoy = {u.llave_id: u for u in UsoIA.query.filter_by(fecha=hoy_g).all()}
+        meta = {m.llave_id: m for m in LlaveMeta.query.all()}
+        donde = plataformas_por_llave(ids_todas)
+        asig = {}
+        for a in LlavePlat.query.all():
+            asig.setdefault(a.llave_id, []).append(a.proyecto_id)
         filas = []
         for k in llaves:
             u = uso_hoy.get(k.id)
+            m = meta.get(k.id)
             tokens = ((u.tokens_in or 0) + (u.tokens_out or 0)) if u else 0
             filas.append({
                 "k": k, "estado": estado_visible(k, ahora, hoy),
@@ -492,8 +848,12 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 "pet": u.peticiones if u else 0, "tok": tokens,
                 "pct_pet": int((u.peticiones if u else 0) * 100 / k.limite_peticiones) if k.limite_peticiones else None,
                 "pct_tok": int(tokens * 100 / k.limite_tokens) if k.limite_tokens else None,
+                "prueba": m.prueba_resultado if m else None, "prueba_txt": ETIQ_PRUEBA.get(m.prueba_resultado, "") if m else "",
+                "prueba_fecha": m.prueba_fecha if m else None, "prueba_detalle": (m.prueba_detalle or "") if m else "",
+                "prueba_ms": m.prueba_ms if m else None,
+                "plataformas": donde.get(k.id, []), "asig": asig.get(k.id, []), "origen": m.origen if m else "manual",
             })
-        ini = hoy.replace(day=1)
+        ini = hoy_g.replace(day=1)
         cons = db.select(UsoIA.proyecto_id, UsoIA.proveedor, db.func.sum(UsoIA.peticiones), db.func.sum(UsoIA.tokens_in + UsoIA.tokens_out),
                          db.func.sum(UsoIA.costo)).where(UsoIA.fecha >= ini)
         if act:
@@ -501,22 +861,41 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         mes = db.session.execute(cons.group_by(UsoIA.proyecto_id, UsoIA.proveedor).order_by(db.func.sum(UsoIA.costo).desc())).all()
         proyectos = Proyecto.query.order_by(Proyecto.nombre).all()
         nombres = {p.id: p.nombre for p in proyectos}
+        malas = ("invalida", "rechazada", "sin_cuota")
         resumen = {
             "activas": sum(1 for f in filas if f["estado"] == "activa"),
             "por_vencer": sum(1 for f in filas if f["dias"] is not None and 0 <= f["dias"] <= AVISO_VENCE_DIAS and f["k"].estado == "activa"),
             "problemas": sum(1 for f in filas if f["estado"] in ("invalida", "vencida", "en descanso")),
             "costo_mes": sum((m[4] or 0) for m in mes),
+            "sin_probar": sum(1 for f in filas if f["k"].proveedor == GEMINI and f["k"].secreto and not f["prueba"]),
+            "probadas_mal": sum(1 for f in filas if f["prueba"] in malas),
+            "total": len(filas),
         }
+        ver = request.args.get("ver", "")
+        if ver == "problemas":
+            filas = [f for f in filas if f["estado"] in ("invalida", "vencida", "en descanso") or f["prueba"] in malas]
+        elif ver == "sinprobar":
+            filas = [f for f in filas if f["k"].proveedor == GEMINI and f["k"].secreto and not f["prueba"]]
         bq = Auditoria.query.filter_by(entidad="LlaveApi")
         if act:
-            ids = [f["k"].id for f in filas]
-            bq = bq.filter(Auditoria.entidad_id.in_(ids)) if ids else None
+            bq = bq.filter(Auditoria.entidad_id.in_(ids_todas)) if ids_todas else None
         bitacora = bq.order_by(Auditoria.fecha.desc(), Auditoria.id.desc()).limit(15).all() if bq is not None else []
+        # Llaves de Gemini que este servidor trae en sus variables de entorno y todavía no están registradas aquí
+        entorno = {"detectadas": 0, "nuevas": 0}
+        if cifrado_listo():
+            conocidas = {m.huella for m in meta.values() if m.huella}
+            det = llaves_del_entorno()
+            entorno = {"detectadas": len(det), "nuevas": sum(1 for _, v in det if huella(v) not in conocidas)}
+        mensaje = MENSAJES.get(request.args.get("m", ""))
+        if mensaje and request.args.get("m") == "importada":
+            mensaje = (f"Importé {request.args.get('n', '0')} llave(s) nuevas; {request.args.get('d', '0')} ya estaban registradas"
+                       + (f"; {request.args.get('r')} se omitieron porque las revocaste antes." if request.args.get("r", "0") != "0" else ".")
+                       + " Quedaron cifradas; las variables de Render no se tocaron.")
         return render_template("llaves.html", filas=filas, resumen=resumen, mes=mes, nombres=nombres, proyectos=proyectos,
                                proveedores=PROVEEDORES, ambientes=AMBIENTES, bitacora=bitacora,
-                               cifrado=cifrado_listo(), mfa=mfa_ok(), enfriar=ENFRIAR_MIN,
-                               mensaje=MENSAJES.get(request.args.get("m", "")),
-                               act=act, qplat=(f"?plataforma={act.id}" if act else ""))
+                               cifrado=cifrado_listo(), mfa=mfa_ok(), enfriar=ENFRIAR_MIN, mensaje=mensaje,
+                               act=act, qplat=(f"?plataforma={act.id}" if act else ""), entorno=entorno,
+                               probando=dict(estado_prueba), prov_filtro=prov, ver=ver, gemini=GEMINI)
 
     @bp.route("/llaves/nueva", methods=["POST"])
     @escribe
@@ -563,17 +942,22 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                      rotar_cada_dias=rotar, limite_peticiones=lim_p, limite_tokens=lim_t, creado_por=current_user.username)
         db.session.add(k)
         db.session.flush()
+        fijar_meta(k, secreto)
         registrar("crear_llave", "LlaveApi", k.id, f"{proveedor} · {etiqueta} · {ambiente} · ****{k.ultimos4}")
         db.session.commit()
         return volver("creada")
 
-    def cargar(lid):
-        k = db.session.execute(db.select(LlaveApi).where(LlaveApi.id == lid).with_for_update()).scalar_one_or_none()
+    def cargar(lid, compartida_ok=False, bloquear=True):
+        """Desde la pantalla de una plataforma solo se tocan SUS llaves. Las compartidas (de varias plataformas) solo se pueden
+        probar o quitar de esa plataforma: desactivarlas, rotarlas o revocarlas afectaría a todas, y eso se hace en /llaves."""
+        q = db.select(LlaveApi).where(LlaveApi.id == lid)
+        k = db.session.execute(q.with_for_update() if bloquear else q).scalar_one_or_none()
         if k is None:
             abort(404)
         act = plat_activa()
-        if act and k.proyecto_id != act.id:        # desde la pantalla de una plataforma solo se tocan SUS llaves
-            abort(404)
+        if act and k.proyecto_id != act.id:
+            if not (compartida_ok and db.session.get(LlavePlat, (k.id, act.id))):
+                abort(404)
         return k
 
     @bp.route("/llaves/<int:lid>/rotar", methods=["POST"])
@@ -590,6 +974,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             return mal(err)
         antes = k.ultimos4
         k.secreto, k.ultimos4 = cifrar(secreto), secreto[-4:]
+        fijar_meta(k, secreto)
         k.rotada_en, k.fallos, k.bloqueada_hasta, k.estado = datetime.utcnow(), 0, None, "activa"
         vence, err = leer_fecha("vence")
         if err:
@@ -674,6 +1059,164 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             registrar("ordenar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · {'sube' if sube else 'baja'} en el pool")
         db.session.commit()
         return volver("movida")
+
+    # --- Gemini: importar del entorno, asignar a plataformas, probar ------------------------------------
+    @bp.route("/llaves/importar-entorno", methods=["POST"])
+    @escribe
+    def importar_entorno():
+        """Copia (cifradas) a este registro las llaves GEMINI_KEY_N de las variables de Render de ESTE servidor. Es idempotente:
+        las que ya están (misma huella) no se duplican. Las variables de Render no se modifican."""
+        asegurar()
+        rellenar_huellas()
+        if not cifrado_listo():
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
+        candidatas = llaves_del_entorno()
+        if not candidatas:
+            return mal("No encontré llaves GEMINI_KEY_1, GEMINI_KEY_2... en las variables de este servidor.")
+        pedidas = [int(x) for x in request.form.getlist("asignar") if x.isdigit()]
+        destinos = {p.id for p in Proyecto.query.filter(Proyecto.id.in_(pedidas)).all()} if pedidas else set()
+        conocidas = {m.huella: m.llave_id for m in LlaveMeta.query.all() if m.huella}
+        ultimo = db.session.scalar(db.select(db.func.max(LlaveApi.orden)).where(
+            LlaveApi.proveedor == GEMINI, LlaveApi.ambiente == "Producción", LlaveApi.proyecto_id.is_(None)))
+        siguiente = (ultimo if ultimo is not None else -1) + 1
+        nuevas = repetidas = omitidas = 0
+        afectadas = []
+        for nombre, valor in candidatas:
+            h = huella(valor)
+            if h in conocidas:
+                k = db.session.get(LlaveApi, conocidas[h])
+                if k is None or k.estado == "revocada":
+                    omitidas += 1
+                else:
+                    repetidas += 1
+                    if k.proyecto_id is None:
+                        afectadas.append(k.id)
+                continue
+            k = LlaveApi(proveedor=GEMINI, proyecto_id=None, etiqueta=nombre[:80], ambiente="Producción", ultimos4=valor[-4:],
+                         secreto=cifrar(valor), orden=siguiente, creado_por=current_user.username)
+            siguiente += 1
+            db.session.add(k)
+            db.session.flush()
+            db.session.add(LlaveMeta(llave_id=k.id, huella=h, origen="entorno"))
+            conocidas[h] = k.id
+            afectadas.append(k.id)
+            nuevas += 1
+        asignaciones = 0
+        if destinos and afectadas:
+            ya = {(a.llave_id, a.proyecto_id) for a in LlavePlat.query.filter(LlavePlat.llave_id.in_(afectadas)).all()}
+            for lid in afectadas:
+                for pid in destinos:
+                    if (lid, pid) not in ya:
+                        db.session.add(LlavePlat(llave_id=lid, proyecto_id=pid))
+                        asignaciones += 1
+        registrar("importar_llaves", "LlaveApi", None,
+                  f"{nuevas} nuevas, {repetidas} ya estaban, {omitidas} revocadas omitidas desde las variables de entorno · "
+                  f"{asignaciones} asignaciones a {len(destinos)} plataforma(s)")
+        db.session.commit()
+        return volver("importada", n=nuevas, d=repetidas, r=omitidas)
+
+    @bp.route("/llaves/asignar-masivo", methods=["POST"])
+    @escribe
+    def asignar_masivo():
+        """Agrega o quita de plataformas TODAS las llaves globales de un proveedor (por defecto Gemini)."""
+        asegurar()
+        proveedor = request.form.get("proveedor") or GEMINI
+        if proveedor not in PROVEEDORES:
+            return mal("proveedor desconocido.")
+        accion = request.form.get("accion")
+        if accion not in ("agregar", "quitar"):
+            return mal("acción desconocida.")
+        act = plat_activa()
+        pedidas = [act.id] if act else [int(x) for x in request.form.getlist("proyecto_ids") if x.isdigit()]
+        destinos = {p.id for p in Proyecto.query.filter(Proyecto.id.in_(pedidas)).all()} if pedidas else set()
+        if not destinos:
+            return mal("elige al menos una plataforma.")
+        ids = [k.id for k in LlaveApi.query.filter(LlaveApi.proveedor == proveedor, LlaveApi.proyecto_id.is_(None),
+                                                    LlaveApi.estado != "revocada").all()]
+        if not ids:
+            return mal("no hay llaves globales de ese proveedor.")
+        existentes = {(a.llave_id, a.proyecto_id): a for a in LlavePlat.query.filter(LlavePlat.llave_id.in_(ids)).all()}
+        cambios = 0
+        for pid in destinos:
+            for lid in ids:
+                a = existentes.get((lid, pid))
+                if accion == "agregar" and a is None:
+                    db.session.add(LlavePlat(llave_id=lid, proyecto_id=pid))
+                    cambios += 1
+                elif accion == "quitar" and a is not None:
+                    db.session.delete(a)
+                    cambios += 1
+        registrar("asignar_llaves", "LlaveApi", None, f"{accion}: {len(ids)} llaves de {proveedor} · {len(destinos)} plataforma(s) · {cambios} cambios")
+        db.session.commit()
+        return volver("asignada")
+
+    @bp.route("/llaves/<int:lid>/plataformas", methods=["POST"])
+    @escribe
+    def plataformas_llave(lid):
+        """Agrega o quita UNA plataforma a una llave global. Desde la pantalla de una plataforma, «quitar» la saca solo de ella."""
+        asegurar()
+        k = cargar(lid, compartida_ok=True)
+        if k.proyecto_id is not None:
+            db.session.rollback()
+            return mal("esta llave pertenece a una sola plataforma; solo las globales se comparten.")
+        act = plat_activa()
+        pid = act.id if act else (int(request.form["proyecto_id"]) if (request.form.get("proyecto_id") or "").isdigit() else None)
+        if pid is None or db.session.get(Proyecto, pid) is None:
+            db.session.rollback()
+            return mal("plataforma no encontrada.")
+        a = db.session.get(LlavePlat, (k.id, pid))
+        accion = request.form.get("accion")
+        if accion == "agregar" and a is None:
+            db.session.add(LlavePlat(llave_id=k.id, proyecto_id=pid))
+        elif accion == "quitar" and a is not None:
+            db.session.delete(a)
+        else:
+            db.session.rollback()
+            return volver()
+        registrar("asignar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4} · {accion} plataforma #{pid}")
+        db.session.commit()
+        return volver("asignada")
+
+    @bp.route("/llaves/<int:lid>/probar", methods=["POST"])
+    @escribe
+    def probar(lid):
+        asegurar()
+        k = cargar(lid, compartida_ok=True, bloquear=False)
+        f = _fernet()
+        if k.proveedor != GEMINI or not k.secreto or f is None:
+            return mal("solo se pueden probar llaves de Gemini que tengan su valor guardado.")
+        try:
+            secreto = f.decrypt(k.secreto.encode()).decode()
+        except InvalidToken:
+            return mal("no se pudo descifrar la llave (¿cambió la clave maestra?).")
+        db.session.rollback()          # que no quede abierta una transacción mientras se espera a Google
+        r = probar_gemini(secreto, real=request.form.get("modo") == "real")
+        k = db.session.get(LlaveApi, lid)
+        guardar_prueba(k, r, secreto)
+        db.session.commit()
+        return volver("probada")
+
+    @bp.route("/llaves/probar-todas", methods=["POST"])
+    @escribe
+    def probar_todas():
+        """Prueba en segundo plano las llaves de Gemini de todo el negocio o, desde una plataforma, solo las suyas."""
+        asegurar()
+        act = plat_activa()
+        q = llaves_de(act.id) if act else LlaveApi.query
+        ids = [k.id for k in q.filter(LlaveApi.proveedor == GEMINI, LlaveApi.estado.in_(("activa", "invalida")),
+                                      LlaveApi.secreto.isnot(None)).all()]
+        if not ids:
+            return mal("no hay llaves de Gemini con valor guardado para probar.")
+        lanzar_pruebas(ids, request.form.get("modo") == "real", current_user.username)
+        return volver("probando")
+
+    @bp.route("/llaves/probar-estado")
+    @solo_admin
+    def probar_estado():
+        with cerrojo:
+            e = dict(estado_prueba)
+        e["inicio"] = e["inicio"].isoformat() if e.get("inicio") else None
+        return jsonify(e)
 
     @bp.route("/llaves/recifrar", methods=["POST"])
     @escribe

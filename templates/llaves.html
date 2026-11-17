@@ -37,6 +37,50 @@
     </div>
 </div>
 
+{% if not act %}
+<div class="section-title">Llaves de Gemini</div>
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card">
+        <h3 class="stat-label">Registrar las de este servidor</h3>
+        {% if entorno.detectadas %}
+        <p style="margin:0 0 10px; font-size:13px;">Este servidor trae <strong>{{ entorno.detectadas }}</strong> llaves <span class="mono">GEMINI_KEY_N</span> en sus variables de Render; <strong>{{ entorno.nuevas }}</strong> todavía no están registradas aquí.</p>
+        <form method="post" action="/llaves/importar-entorno" onsubmit="return confirm('¿Importar y cifrar las llaves de Gemini de este servidor?')">
+            <p style="margin:0 0 6px; font-size:13px; color:var(--text-muted);">Marca las plataformas que usan estas llaves (puedes cambiarlo después):</p>
+            <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:12px;">
+                {% for pr in proyectos %}<label style="font-size:13px;"><input type="checkbox" name="asignar" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Importar y cifrar</button>
+        </form>
+        <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Se copian cifradas a este registro; las variables de Render no se tocan y se puede repetir sin duplicar (se reconocen por su huella, no por el nombre). A partir de aquí el chat de este panel reparte la carga entre ellas al azar.</p>
+        {% else %}
+        <p style="margin:0; font-size:13px; color:var(--text-muted);">Este servidor no trae variables <span class="mono">GEMINI_KEY_N</span>{% if resumen.total %}; las que ya registraste se administran abajo{% endif %}.</p>
+        {% endif %}
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Probar</h3>
+        <p style="margin:0 0 10px; font-size:13px;">
+            <strong>{{ resumen.sin_probar }}</strong> sin probar · <strong style="color:{{ '#f87171' if resumen.probadas_mal else 'inherit' }};">{{ resumen.probadas_mal }}</strong> con problema en su última prueba</p>
+        <div class="toolbar" style="gap:8px; flex-wrap:wrap;">
+            <form method="post" action="/llaves/probar-todas{{ qplat }}"><button class="btn btn-primary btn-sm" type="submit" {{ 'disabled' if probando.corriendo }}>Probar todas (gratis)</button></form>
+            <form method="post" action="/llaves/probar-todas{{ qplat }}"><input type="hidden" name="modo" value="real"><button class="btn btn-sm" type="submit" {{ 'disabled' if probando.corriendo }} title="1 petición de 1 token por llave">Probar con petición real</button></form>
+        </div>
+        {% if probando.corriendo %}<p style="margin:10px 0 0; font-size:13px;">Probando {{ probando.hechas }} de {{ probando.total }}… la página se actualiza sola.</p>
+        <script>setTimeout(function () { location.reload(); }, 4000);</script>{% endif %}
+        <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">La prueba gratuita confirma con Google que la llave existe y sirve (no gasta cuota). La «petición real» además dice si hoy le queda cuota, pero gasta 1 petición de cada llave. Se hace sola una vez al día. Google no informa cuántos tokens le quedan a una llave: el consumo de «Hoy» es el que pasa por este panel, y el día de cuota corre en hora del Pacífico.</p>
+        <form method="post" action="/llaves/asignar-masivo" style="margin-top:12px;" onsubmit="return confirm('¿Aplicar a todas las llaves globales de Gemini?')">
+            <input type="hidden" name="proveedor" value="{{ gemini }}">
+            <details><summary style="cursor:pointer; font-size:13px;">Asignar o quitar TODAS las de Gemini a plataformas</summary>
+                <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0;">
+                    {% for pr in proyectos %}<label style="font-size:13px;"><input type="checkbox" name="proyecto_ids" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
+                </div>
+                <button class="btn btn-sm" type="submit" name="accion" value="agregar">Agregar a las marcadas</button>
+                <button class="btn btn-sm" type="submit" name="accion" value="quitar">Quitar de las marcadas</button>
+            </details>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <div class="section-title">Nueva llave</div>
 <form method="post" action="/llaves/nueva{{ qplat }}" class="luxury-card" style="margin-bottom:20px;" autocomplete="off">
     <div class="grid-2" style="gap:12px;">
@@ -55,22 +99,34 @@
     <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Entra al final del pool de su proveedor, plataforma y ambiente. Se usan en orden; si una falla con 429 o 401/403, pasa a la siguiente.</p>
 </form>
 
-<div class="section-title">Llaves</div>
+<div class="section-title">Llaves ({{ filas|length }}{% if filas|length != resumen.total %} de {{ resumen.total }}{% endif %})</div>
+<div class="toolbar" style="gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+    <a class="btn btn-sm {{ 'btn-primary' if not ver }}" href="/llaves{{ qplat }}">Todas</a>
+    <a class="btn btn-sm {{ 'btn-primary' if ver == 'problemas' }}" href="/llaves?ver=problemas{{ ('&plataforma=' ~ act.id) if act }}">Con problema</a>
+    <a class="btn btn-sm {{ 'btn-primary' if ver == 'sinprobar' }}" href="/llaves?ver=sinprobar{{ ('&plataforma=' ~ act.id) if act }}">Sin probar</a>
+</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-    <thead><tr><th>Llave</th><th>Pertenece a</th><th>Estado</th><th>Vence</th><th>Hoy</th><th>Acciones</th></tr></thead><tbody>
+    <thead><tr><th>Llave</th><th>Pertenece a</th><th>Estado</th><th>Prueba</th><th>Vence</th><th>Hoy</th><th>Acciones</th></tr></thead><tbody>
     {% for r in filas %}{% set k = r.k %}
     <tr>
         <td><strong>{{ k.etiqueta }}</strong>
             <div class="mono" style="font-size:12px; color:var(--text-muted);">{{ k.proveedor }} · ····{{ k.ultimos4 or '----' }}</div></td>
         <td style="font-size:13px;">{{ k.proyecto.nombre if k.proyecto else 'Global' }}
-            <div style="font-size:12px; color:var(--text-muted);">{{ k.ambiente }} · pool #{{ (k.orden or 0) + 1 }}</div></td>
+            {% if not k.proyecto and r.asig %}<div style="font-size:12px;">En: {% for pid in r.asig %}{{ nombres.get(pid, '?') }}{{ ', ' if not loop.last }}{% endfor %}</div>
+            {% elif not k.proyecto %}<div style="font-size:12px; color:var(--text-muted);">sin plataformas asignadas</div>{% endif %}
+            <div style="font-size:12px; color:var(--text-muted);">{{ k.ambiente }} · pool #{{ (k.orden or 0) + 1 }}{% if r.origen == 'entorno' %} · de Render{% endif %}</div></td>
         <td><span class="badge {{ 'badge-green' if r.estado == 'activa' else ('badge-amber' if r.estado in ('en descanso', 'desactivada') else 'badge-red') }}">{{ r.estado }}</span>
             {% if k.fallos %}<div style="font-size:12px; color:var(--text-muted);">{{ k.fallos }} fallo(s)</div>{% endif %}</td>
+        <td style="font-size:12px;">{% if r.prueba %}<span class="badge {{ 'badge-green' if r.prueba in ('valida', 'con_cuota') else ('badge-amber' if r.prueba in ('sin_cuota', 'sin_red', 'error') else 'badge-red') }}">{{ r.prueba_txt }}</span>
+            <div style="color:var(--text-muted);">{{ r.prueba_fecha.strftime('%d/%m %H:%M') if r.prueba_fecha }} UTC{% if r.prueba_ms %} · {{ r.prueba_ms }} ms{% endif %}</div>
+            {% if r.prueba_detalle %}<div style="color:var(--text-muted); max-width:240px;">{{ r.prueba_detalle }}</div>{% endif %}
+            {% elif k.proveedor == gemini and k.secreto %}<span style="color:var(--text-muted);">sin probar</span>{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}</td>
         <td class="mono" style="font-size:12px;">{% if k.vence %}{{ k.vence.strftime('%d/%m/%Y') }}<div style="color:{{ '#f87171' if r.dias < 0 else ('#f5b94c' if r.dias <= 14 else 'var(--text-muted)') }};">{{ 'vencida' if r.dias < 0 else ('en ' ~ r.dias ~ ' d') }}</div>{% else %}<span style="color:var(--text-muted);">sin fecha</span>{% endif %}</td>
         <td style="font-size:12px;">{{ r.pet }} pet.{% if r.pct_pet is not none %} <span style="color:{{ '#f87171' if r.pct_pet >= 80 else 'var(--text-muted)' }};">({{ r.pct_pet }}%)</span>{% endif %}
             <div>{{ '{:,}'.format(r.tok) }} tok.{% if r.pct_tok is not none %} <span style="color:{{ '#f87171' if r.pct_tok >= 80 else 'var(--text-muted)' }};">({{ r.pct_tok }}%)</span>{% endif %}</div></td>
         <td>
             <div class="toolbar" style="gap:6px; flex-wrap:wrap;">
+                {% if k.proveedor == gemini and k.secreto %}<form method="post" action="/llaves/{{ k.id }}/probar{{ qplat }}" style="display:inline;"><button class="btn btn-sm" type="submit">Probar</button></form>{% endif %}
                 <form method="post" action="/llaves/{{ k.id }}/mover{{ qplat }}" style="display:inline;"><input type="hidden" name="dir" value="subir"><button class="btn btn-sm" type="submit" title="Subir en el pool">↑</button></form>
                 <form method="post" action="/llaves/{{ k.id }}/mover{{ qplat }}" style="display:inline;"><input type="hidden" name="dir" value="bajar"><button class="btn btn-sm" type="submit" title="Bajar en el pool">↓</button></form>
                 {% if k.estado == 'activa' %}
@@ -79,6 +135,14 @@
                 <form method="post" action="/llaves/{{ k.id }}/activar{{ qplat }}" style="display:inline;"><button class="btn btn-sm" type="submit">Activar</button></form>
                 {% endif %}
             </div>
+            {% if not k.proyecto_id and k.estado != 'revocada' %}<details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px;">Plataformas ({{ r.asig|length }})</summary>
+                <form method="post" action="/llaves/{{ k.id }}/plataformas" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+                    <input type="hidden" name="accion" value="agregar">
+                    <select class="field" name="proyecto_id" style="width:auto; min-width:140px; margin:0;">{% for pr in proyectos if pr.id not in r.asig %}<option value="{{ pr.id }}">{{ pr.nombre }}</option>{% endfor %}</select>
+                    <button class="btn btn-sm" type="submit">Agregar</button>
+                </form>
+                {% for pid in r.asig %}<form method="post" action="/llaves/{{ k.id }}/plataformas" style="margin-top:6px;"><input type="hidden" name="accion" value="quitar"><input type="hidden" name="proyecto_id" value="{{ pid }}"><button class="btn btn-sm" type="submit">Quitar de {{ nombres.get(pid, '?') }}</button></form>{% endfor %}
+            </details>{% endif %}
             <details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px;">Rotar, editar o revocar</summary>
                 <form method="post" action="/llaves/{{ k.id }}/rotar{{ qplat }}" style="margin-top:8px;" autocomplete="off">
                     <label class="lbl">Nuevo valor<input class="field mono" type="password" name="secreto" autocomplete="new-password" required></label>
@@ -102,7 +166,7 @@
             </details>
         </td>
     </tr>
-    {% else %}<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted);">Todavía no hay llaves registradas.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-muted);">{{ 'No hay llaves con ese filtro.' if ver else 'Todavía no hay llaves registradas.' }}</td></tr>{% endfor %}
 </tbody></table></div></div>
 
 <div class="section-title" style="margin-top:24px;">Consumo del mes por plataforma</div>
