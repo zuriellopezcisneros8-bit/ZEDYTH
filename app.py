@@ -29,6 +29,7 @@ import ajustes
 import notificar
 import monitor
 import llaves
+import conectores
 import servicios
 import operaciones
 import respaldos
@@ -1053,7 +1054,7 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "respaldos.", "servicios.", "ajustes."))) and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "conectores.", "respaldos.", "servicios.", "ajustes."))) and rol != "admin":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
             and request.endpoint not in ('logout', 'seguridad', 'vault.vault_desbloquear', 'vault.vault_bloquear', 'vault.vault_latido'):
@@ -1990,6 +1991,18 @@ def _conexiones_de(p):
         return None
 
 
+def _api_de(p):
+    """Estado de los conectores (APIs de solo lectura) de ESTA plataforma para la pestaña Conexiones. Solo administradores; sin secretos.
+    Si conectores.py falla devuelve [] en vez de tumbar la ficha."""
+    if rol_actual() != "admin":
+        return None
+    try:
+        return conectores.panel_plataforma(p.id)
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudieron leer los conectores: %s", p.id, e)
+        return None
+
+
 def _servicios_de(p):
     """Servicios de ESTA plataforma para su pestaña (solo administradores: son los únicos que pueden administrarlos)."""
     if rol_actual() != "admin":
@@ -2077,7 +2090,7 @@ def plataforma_detalle(pid):
         alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
         vista_alertas=vista_alertas, cuentas_alertas=cuentas_alertas, grupos_alertas=grupos_alertas,
         por_cobrar=por_cobrar_p, dias_aviso=DIAS_AVISO, dias_venc=DIAS_VENCIMIENTO, dias_respaldo=DIAS_RESPALDO,
-        conx=_conexiones_de(p), msg_conx=llaves.MENSAJES.get(request.args.get('m', '')),
+        conx=_conexiones_de(p), api_conx=_api_de(p), msg_conx=llaves.MENSAJES.get(request.args.get('m', '')),
         serv_panel=_servicios_de(p), msg_serv=servicios.MENSAJES.get(request.args.get('m', '')),
         intel_p=intel_p, intel_det=intel_det, intel_candidatos=intel_candidatos, intel_tipos=INTEL_TIPOS,
         intel_prioridades=INTEL_PRIORIDADES, intel_relaciones=list(INTEL_RELACIONES),
@@ -3385,6 +3398,7 @@ def _vigilante():
                     almacenamiento.instantanea_diaria()      # una lectura al día del historial (aprovecha el mismo despertar)
                     monitor.volcar()                         # conteo de disponibilidad del monitor (solo escribe si hay algo nuevo)
                     llaves.revisar()                         # llaves por vencer, vencidas o con rotación programada
+                    conectores.revisar()                     # lee las APIs de tus plataformas (solo lectura), guarda cifras y dispara alertas
                     servicios.revisar()                      # renovaciones de servicios y verificación de sus URLs de estado
                     respaldos.revisar()                      # respaldo diario a R2, verificación y alertas
                     actualizar_cobranza()                    # Pendiente / Atrasado / Suspendido según la fecha de pago
@@ -3640,6 +3654,7 @@ def push_revisar():
     almacenamiento.instantanea_diaria()          # por si el hilo vigilante no está corriendo
     monitor.volcar()
     llaves.revisar()
+    conectores.revisar()
     servicios.revisar()
     render_panel.revisar()
     operaciones.revisar()
@@ -3651,6 +3666,7 @@ import almacenamiento
 app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 app.register_blueprint(monitor.crear_blueprint(app, db, registrar, crear_notificacion))
 app.register_blueprint(llaves.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, Auditoria))
+app.register_blueprint(conectores.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /conectores: APIs de solo lectura de tus plataformas (Zmarthket, etc.)
 app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
 app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
 import render_panel

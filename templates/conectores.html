@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block content %}
+{# templates/conectores.html — APIs de solo lectura de tus plataformas. vista = "lista" | "detalle" #}
+<section class="hero">
+    <h1>Conectores de API</h1>
+    <p>Lee las APIs de solo lectura de tus plataformas (Zmarthket y las que vengan). La llave vive cifrada en <a href="/llaves">Llaves</a>; aquí solo se guarda la URL, los endpoints, las cifras y las alertas.</p>
+</section>
+{% if mensaje %}<div class="luxury-card" style="border-color:#4ade80; margin-bottom:16px;"><p style="margin:0; font-size:14px;">{{ mensaje }}</p></div>{% endif %}
+{% if not cifrado %}
+<div class="luxury-card" style="border-color:#f87171; margin-bottom:16px;"><p style="margin:0; font-size:14px;">No hay clave para cifrar (<span class="mono">SECRET_KEY</span>). Sin ella no se pueden leer las llaves guardadas.</p></div>
+{% endif %}
+{% if not mfa %}
+<div class="luxury-card" style="border-color:#f5b94c; margin-bottom:16px;"><p style="margin:0; font-size:14px;">Para crear o editar conectores tu usuario necesita TOTP activo. <a href="/cuenta/seguridad">Configurarlo en Seguridad</a>. Mientras tanto puedes mirar, pero no cambiar.</p></div>
+{% endif %}
+
+{% macro badge(estado) -%}
+<span class="badge {{ 'badge-green' if estado == 'ok' else 'badge-red' if estado == 'con fallas' else 'badge-amber' if estado == 'sin lecturas' else '' }}">{{ estado|capitalize }}</span>
+{%- endmacro %}
+
+{% macro flecha(k) -%}
+{%- if k.valor is not none and k.antes is not none and k.valor != k.antes -%}
+<span style="font-size:12px; color:var(--text-muted);">{{ '▲' if k.valor > k.antes else '▼' }} antes {{ '{:,.2f}'.format(k.antes).rstrip('0').rstrip('.') }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro form_conector(c=none) %}
+<div class="grid-2" style="gap:12px;">
+    <label class="lbl">Nombre<input class="field" name="nombre" maxlength="80" required value="{{ c.nombre if c else '' }}" placeholder="Ej. Zmarthket"></label>
+    <label class="lbl">URL base (https)<input class="field mono" name="base_url" maxlength="300" required value="{{ c.base_url if c else '' }}" placeholder="https://zmarthket.onrender.com"></label>
+    <label class="lbl">Plataforma<select class="field" name="proyecto_id"><option value="">Sin ligar</option>{% for p in plataformas %}<option value="{{ p.id }}" {{ 'selected' if c and c.proyecto_id == p.id }}>{{ p.nombre }}</option>{% endfor %}</select></label>
+    <label class="lbl">Ambiente<select class="field" name="ambiente">{% for a in ambientes %}<option {{ 'selected' if c and c.ambiente == a }}>{{ a }}</option>{% endfor %}</select></label>
+    <label class="lbl">Cómo se autentica<select class="field" name="auth">{% for k, v in auth_tipos.items() %}<option value="{{ k }}" {{ 'selected' if c and c.auth == k }}>{{ v }}</option>{% endfor %}</select></label>
+    <label class="lbl">Nombre de cabecera (solo «otra cabecera»)<input class="field" name="cabecera" maxlength="60" value="{{ c.cabecera or '' if c else '' }}"></label>
+    <label class="lbl">Etiqueta de la llave (opcional)<input class="field" name="llave_etiqueta" maxlength="80" value="{{ c.llave_etiqueta or '' if c else '' }}" placeholder="Solo usa la llave con esta etiqueta"></label>
+    <label class="lbl">Nota<input class="field" name="nota" maxlength="300" value="{{ c.nota or '' if c else '' }}"></label>
+</div>
+{% endmacro %}
+
+{% if vista == "lista" %}
+<div class="section-title">Nuevo conector</div>
+<form method="post" action="/conectores/nuevo" class="luxury-card" style="margin-bottom:20px;" autocomplete="off">
+    {{ form_conector() }}
+    <div class="toolbar" style="margin-top:12px;"><button class="btn btn-primary" type="submit" {{ 'disabled' if not mfa }}>Crear conector</button></div>
+    <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Antes de crearlo sube la llave en <a href="/llaves">Llaves</a> con el proveedor «{{ proveedor }}», ligada a la misma plataforma y ambiente.</p>
+</form>
+
+<div class="section-title">Conectores</div>
+{% if not filas %}
+<div class="luxury-card"><p style="margin:0; font-size:14px;">Aún no hay conectores.</p></div>
+{% else %}
+<div class="grid-2" style="gap:16px;">
+{% for f in filas %}
+<div class="luxury-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <h3 class="stat-label" style="margin:0;"><a href="/conectores/{{ f.c.id }}">{{ f.c.nombre }}</a></h3>
+        {{ badge(f.estado) }}
+    </div>
+    <p style="margin:6px 0; font-size:12px; color:var(--text-muted);"><span class="mono">{{ f.c.base_url }}</span><br>{{ f.c.proyecto.nombre if f.c.proyecto else 'Sin plataforma' }} · {{ f.c.ambiente }} · {{ f.llaves }} llave(s) utilizable(s)</p>
+    {% if f.llaves == 0 %}<p style="margin:4px 0; font-size:13px; color:#f5b94c;">Sin llave: súbela en Llaves con el proveedor «{{ proveedor }}».</p>{% endif %}
+    {% for x in f.eps %}
+    <div style="border-top:1px solid var(--border,#2a2a2a); padding:8px 0; font-size:13px;">
+        <strong>{{ x.e.nombre }}</strong>
+        <span style="color:{{ '#4ade80' if x.e.ultimo_ok else '#f87171' if x.e.ultimo_ok is false else 'var(--text-muted)' }};">{{ 'ok' if x.e.ultimo_ok else 'falla' if x.e.ultimo_ok is false else 'sin leer' }}</span>
+        {% if x.e.vigilar %}<span class="badge">vigilado</span>{% endif %}
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:4px;">
+            {% for et, k in x.kpis.items() %}<span>{{ et }}: <strong>{{ k.texto if k.valor is none else '{:,.2f}'.format(k.valor).rstrip('0').rstrip('.') }}</strong> {{ flecha(k) }}</span>{% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% else %}
+{# ---------------- detalle ---------------- #}
+<div class="toolbar" style="margin-bottom:12px;"><a class="btn btn-sm" href="/conectores">← Conectores</a></div>
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;"><h3 class="stat-label" style="margin:0;">{{ c.nombre }}</h3>{{ badge(estado) }}</div>
+        <p style="margin:8px 0; font-size:13px; color:var(--text-muted);"><span class="mono">{{ c.base_url }}</span><br>
+            {{ c.proyecto.nombre if c.proyecto else 'Sin plataforma' }} · {{ c.ambiente }} · auth: {{ auth_tipos.get(c.auth, c.auth) }}<br>
+            Llaves utilizables: <strong style="color:{{ '#f87171' if llaves_n == 0 else 'inherit' }};">{{ llaves_n }}</strong></p>
+        <div class="toolbar" style="gap:8px; flex-wrap:wrap;">
+            <form method="post" action="/conectores/{{ c.id }}/probar"><button class="btn btn-sm btn-primary" {{ 'disabled' if not mfa }}>Probar conexión</button></form>
+            <form method="post" action="/conectores/{{ c.id }}/activar"><button class="btn btn-sm" {{ 'disabled' if not mfa }}>{{ 'Desactivar' if c.activo else 'Activar' }}</button></form>
+            <form method="post" action="/conectores/{{ c.id }}/eliminar" onsubmit="return confirm('¿Eliminar el conector «{{ c.nombre|e }}» y sus cifras? Las llaves no se tocan.')"><button class="btn btn-sm" style="color:#f87171;" {{ 'disabled' if not mfa }}>Eliminar</button></form>
+        </div>
+    </div>
+    <details class="luxury-card">
+        <summary class="stat-label" style="cursor:pointer;">Editar conector</summary>
+        <form method="post" action="/conectores/{{ c.id }}/editar" autocomplete="off" style="margin-top:12px;">
+            {{ form_conector(c) }}
+            <div class="toolbar" style="margin-top:12px;"><button class="btn btn-primary" type="submit" {{ 'disabled' if not mfa }}>Guardar cambios</button></div>
+        </form>
+    </details>
+</div>
+
+<div class="section-title">Endpoints</div>
+<div class="toolbar" style="gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+    {% for e in c.endpoints %}
+    <a class="btn btn-sm {{ 'btn-primary' if ep and ep.id == e.id }}" href="/conectores/{{ c.id }}?e={{ e.id }}">{{ e.nombre }} {{ '✓' if e.ultimo_ok else '✗' if e.ultimo_ok is false else '' }}</a>
+    {% endfor %}
+    {% if not c.endpoints %}<span style="font-size:13px; color:var(--text-muted);">Aún no hay endpoints: agrega el primero abajo.</span>{% endif %}
+</div>
+
+{% if ep %}
+<div class="luxury-card" style="margin-bottom:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <h3 class="stat-label" style="margin:0;">{{ ep.nombre }} <span class="mono" style="text-transform:none;">GET {{ ep.ruta }}</span></h3>
+        <a class="btn btn-sm" href="/conectores/{{ c.id }}?e={{ ep.id }}&actualizar=1">Actualizar</a>
+    </div>
+    {% if lectura %}
+    <p style="margin:8px 0; font-size:13px; color:var(--text-muted);">
+        {% if lectura.ok %}<span style="color:#4ade80;">Respondió {{ lectura.status }}</span>{% else %}<span style="color:#f87171;">{{ lectura.error or 'Sin respuesta' }}</span>{% endif %}
+        · {{ lectura.ms or 0 }} ms{% if lectura.cached %} · desde caché{% endif %} · caché {{ ep.ttl_seg }} s · {{ 'se vigila solo' if ep.vigilar else 'solo se lee al abrir' }}
+        {% if ep.fallos_seguidos %} · <strong style="color:#f87171;">{{ ep.fallos_seguidos }} fallo(s) seguidos</strong>{% endif %}
+    </p>
+    {% endif %}
+    {% if resumen %}
+        {% if resumen.kpis %}
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin:10px 0;">
+            {% for k, v in resumen.kpis %}<div class="luxury-card" style="padding:10px;"><div class="stat-label" style="font-size:11px;">{{ k }}</div><div class="stat-value" style="font-size:18px;">{{ v }}</div></div>{% endfor %}
+        </div>
+        {% endif %}
+        {% for t in resumen.tablas %}
+        <div class="section-title" style="font-size:13px;">{{ t.titulo }} ({{ t.total }})</div>
+        <div class="table-wrap"><table class="table-luxury"><thead><tr>{% for col in t.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for fila in t.filas %}<tr>{% for v in fila %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+        {% endfor %}
+        {% for titulo, texto in resumen.otros %}
+        <div class="section-title" style="font-size:13px;">{{ titulo }}</div><pre class="mono" style="white-space:pre-wrap; font-size:12px;">{{ texto }}</pre>
+        {% endfor %}
+    {% endif %}
+
+    <details style="margin-top:14px;">
+        <summary class="stat-label" style="cursor:pointer;">Editar endpoint</summary>
+        <form method="post" action="/conectores/endpoint/{{ ep.id }}/editar" style="margin-top:12px;">
+            <div class="grid-2" style="gap:12px;">
+                <label class="lbl">Nombre<input class="field" name="nombre" maxlength="80" required value="{{ ep.nombre }}"></label>
+                <label class="lbl">Ruta<input class="field mono" name="ruta" maxlength="300" required value="{{ ep.ruta }}"></label>
+                <label class="lbl">Caché (segundos)<input class="field" name="ttl_seg" inputmode="numeric" value="{{ ep.ttl_seg }}"></label>
+                <label class="lbl">Vigilar solo<select class="field" name="vigilar"><option value="0">No</option><option value="1" {{ 'selected' if ep.vigilar }}>Sí (el vigilante lo lee y guarda sus cifras)</option></select></label>
+                <label class="lbl">Cifras (una por línea: ruta | Etiqueta)<textarea class="field mono" name="kpis" rows="5">{{ ep.kpis or '' }}</textarea></label>
+                <label class="lbl">Alertas (ruta OP valor | Mensaje)<textarea class="field mono" name="alertas" rows="5">{{ ep.alertas or '' }}</textarea></label>
+            </div>
+            <div class="toolbar" style="margin-top:12px; gap:8px;"><button class="btn btn-primary" type="submit" {{ 'disabled' if not mfa }}>Guardar endpoint</button></div>
+        </form>
+        <form method="post" action="/conectores/endpoint/{{ ep.id }}/eliminar" onsubmit="return confirm('¿Eliminar este endpoint y sus cifras?')" style="margin-top:8px;"><button class="btn btn-sm" style="color:#f87171;" {{ 'disabled' if not mfa }}>Eliminar endpoint</button></form>
+    </details>
+</div>
+{% endif %}
+
+<div class="section-title">Agregar endpoint</div>
+<form method="post" action="/conectores/{{ c.id }}/endpoint" class="luxury-card" id="cn-nuevo-ep" autocomplete="off">
+    <label class="lbl">Plantilla rápida (Zmarthket)
+        <select class="field" id="cn-preset"><option value="">— elegir —</option>
+            <option value="resumen">Resumen del Panel global</option><option value="cobros">Cobros vencidos / por vencer</option>
+            <option value="negocios">Negocios (solo contar)</option><option value="hacking">Permisos de pruebas de seguridad</option>
+        </select></label>
+    <div class="grid-2" style="gap:12px; margin-top:8px;">
+        <label class="lbl">Nombre<input class="field" name="nombre" id="cn-nombre" maxlength="80" required placeholder="Resumen"></label>
+        <label class="lbl">Ruta (solo GET)<input class="field mono" name="ruta" id="cn-ruta" maxlength="300" required placeholder="/api/global/resumen"></label>
+        <label class="lbl">Caché (segundos)<input class="field" name="ttl_seg" inputmode="numeric" value="{{ ttl_defecto }}"></label>
+        <label class="lbl">Vigilar solo<select class="field" name="vigilar"><option value="0">No</option><option value="1">Sí</option></select></label>
+        <label class="lbl">Cifras (ruta | Etiqueta)<textarea class="field mono" name="kpis" id="cn-kpis" rows="5"></textarea></label>
+        <label class="lbl">Alertas (ruta OP valor | Mensaje)<textarea class="field mono" name="alertas" id="cn-alertas" rows="5"></textarea></label>
+    </div>
+    <p style="margin:8px 0; font-size:12px; color:var(--text-muted);">Rutas: <span class="mono">a.b.c</span>, <span class="mono">lista.0.campo</span> y <span class="mono">lista.#</span> (cuántos elementos). Operadores: &gt; &gt;= &lt; &lt;= == !=. Vigilar un endpoint despierta tu base de datos solo cuando el vigilante ya iba a correr; usa cachés de 5 a 15 minutos o más.</p>
+    <div class="toolbar"><button class="btn btn-primary" type="submit" {{ 'disabled' if not mfa }}>Agregar endpoint</button></div>
+</form>
+<script>
+(function () {
+  var P = {
+    resumen:  { n: "Resumen", r: "/api/global/resumen", k: "negocios | Negocios\nsuspendidos | Suspendidos\nde_pago | De pago\npor_vencer | Por vencer\nvencidos | Cobros vencidos\nusuarios | Usuarios\nventas_mes | Ventas del mes\ningresos_mes | Ingresos del mes", a: "vencidos > 0 | Hay cobros vencidos en Zmarthket\nsuspendidos > 0 | Hay negocios suspendidos" },
+    cobros:   { n: "Cobros", r: "/api/global/cobros", k: "cobros.# | Cobros pendientes", a: "cobros.# > 0 | Hay cobros vencidos o por vencer" },
+    negocios: { n: "Negocios", r: "/api/global/negocios", k: "negocios.# | Negocios registrados", a: "" },
+    hacking:  { n: "Permisos de seguridad", r: "/api/global/hacking", k: "permisos.# | Permisos registrados", a: "" }
+  };
+  var s = document.getElementById("cn-preset");
+  if (!s) return;
+  s.onchange = function () {
+    var p = P[s.value]; if (!p) return;
+    document.getElementById("cn-nombre").value = p.n; document.getElementById("cn-ruta").value = p.r;
+    document.getElementById("cn-kpis").value = p.k; document.getElementById("cn-alertas").value = p.a;
+  };
+})();
+</script>
+{% endif %}
+{% endblock %}

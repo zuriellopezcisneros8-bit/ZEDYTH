@@ -1,0 +1,32 @@
+<!-- templates/_plat_api.html : APIs de solo lectura (conectores) ligadas a ESTA plataforma. Se incluye al final de _plat_conexiones.html -->
+{% if es_admin %}
+<div class="section-title" style="margin-top:24px;">API de la plataforma (solo lectura)</div>
+{% if not api_conx %}
+<div class="luxury-card" style="margin-bottom:16px;">
+    <p style="margin:0; font-size:14px;">Esta plataforma no tiene conectores. Sube su llave en <a href="/llaves">Llaves</a> (proveedor «API de plataforma (lectura)») y crea el conector en <a href="/conectores">Conectores</a>, ligándolo a «{{ p.nombre }}».</p>
+</div>
+{% else %}
+<div class="grid-2" style="gap:16px; margin-bottom:16px;">
+{% for c in api_conx %}
+<div class="luxury-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <h3 class="stat-label" style="margin:0;"><a href="/conectores/{{ c.id }}">{{ c.nombre }}</a></h3>
+        <span class="badge {{ 'badge-green' if c.estado == 'ok' else 'badge-red' if c.estado == 'con fallas' else 'badge-amber' if c.estado == 'sin lecturas' else '' }}">{{ c.estado|capitalize }}</span>
+    </div>
+    {% for e in c.endpoints %}
+    <div style="border-top:1px solid var(--border,#2a2a2a); margin-top:8px; padding-top:8px; font-size:13px;">
+        <strong>{{ e.nombre }}</strong>
+        <span style="color:{{ '#4ade80' if e.ok else '#f87171' if e.ok is false else 'var(--text-muted)' }};">{{ 'ok' if e.ok else 'falla' if e.ok is false else 'sin leer' }}</span>
+        {% if e.lectura %}<span style="color:var(--text-muted); font-size:12px;"> · {{ e.lectura.strftime('%d/%m %H:%M') }} UTC</span>{% endif %}
+        {% if e.ok is false and e.error %}<div style="color:#f87171; font-size:12px;">{{ e.error }}</div>{% endif %}
+        <div style="display:flex; flex-wrap:wrap; gap:4px 16px; margin-top:4px;">
+            {% for et, k in e.kpis.items() %}<span>{{ et }}: <strong>{{ k.texto if k.valor is none else '{:,.2f}'.format(k.valor).rstrip('0').rstrip('.') }}</strong></span>{% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+    <div class="toolbar" style="margin-top:10px;"><a class="btn btn-sm" href="/conectores/{{ c.id }}">Administrar</a></div>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endif %}
