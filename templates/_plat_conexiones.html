@@ -1,0 +1,172 @@
+<!-- templates/_plat_conexiones.html : conexiones y llaves de ESTA plataforma (cada plataforma tiene las suyas) -->
+<div class="mt-panel {{ 'on' if tab == 'conexiones' }}" data-panel="conexiones">
+{% if not es_admin %}
+<div class="luxury-card"><p style="margin:0;">Solo los administradores pueden ver y cambiar las conexiones y llaves.</p></div>
+{% else %}
+<style>
+  .cx-card { display:flex; flex-direction:column; gap:10px; }
+  .cx-card .cx-cab { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .cx-card .lbl { margin:0; }
+  .cx-msg { min-height:18px; font-size:13px; }
+  .cx-msg.ok { color:#4ade80; } .cx-msg.mal { color:#f87171; }
+  .cx-acc { display:flex; flex-wrap:wrap; gap:8px; }
+  .cx-tab input.field, .cx-tab select.field { margin:0; width:auto; min-width:150px; }
+</style>
+{% if msg_conx %}<div class="luxury-card" style="border-color:#4ade80; margin-bottom:16px;"><p style="margin:0; font-size:14px;">{{ msg_conx }}</p></div>{% endif %}
+
+<div class="section-title">Base de datos y almacenamiento</div>
+<p style="margin:0 0 14px; font-size:13px; color:var(--text-muted); line-height:1.6;">Las cuentas de esta plataforma son solo suyas: no usa las de otras plataformas ni las generales del sistema. Los secretos se guardan cifrados y nunca se vuelven a mostrar; si dejas un secreto vacío se conserva el que ya está.</p>
+<div id="cx-alm" data-pid="{{ p.id }}" class="grid-2" style="gap:20px; margin-bottom:8px;"><div class="luxury-card">Cargando conexiones…</div></div>
+
+<div class="section-title">Llaves de API</div>
+{% if not conx %}
+<div class="luxury-card"><p style="margin:0; color:var(--text-muted);">No se pudo leer el registro de llaves en este momento.</p></div>
+{% else %}
+<div class="luxury-card" style="margin-bottom:16px;">
+    <p style="margin:0; font-size:14px; line-height:1.7;">
+        <strong>{{ conx.resumen.activas }}</strong> activas · por vencer (14 días): <strong>{{ conx.resumen.por_vencer }}</strong> ·
+        con problema: <strong style="color:{{ '#f87171' if conx.resumen.problemas else 'inherit' }};">{{ conx.resumen.problemas }}</strong> ·
+        costo de IA del mes: <strong>${{ '%.2f'|format(conx.resumen.costo_mes or 0) }}</strong>
+        {% if conx.heredar and conx.resumen.heredadas %}<br><span style="color:var(--text-muted); font-size:13px;">Si le falta una llave de un proveedor, esta plataforma todavía puede usar {{ conx.resumen.heredadas }} llave(s) globales del negocio. Se apaga con LLAVES_HEREDAR_GLOBAL=0 cuando cada plataforma tenga las suyas.</span>{% endif %}
+        <br><a href="/llaves?plataforma={{ p.id }}" style="text-decoration:underline; font-size:13px;">Abrir la vista completa de llaves de esta plataforma</a>
+    </p>
+</div>
+{% if not conx.cifrado %}
+<div class="luxury-card" style="border-color:#f87171; margin-bottom:16px;"><p style="margin:0; font-size:14px;">No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER) en Render para poder guardar llaves.</p></div>
+{% elif not conx.mfa %}
+<div class="luxury-card" style="border-color:#f5b94c; margin-bottom:16px;"><p style="margin:0; font-size:14px;">Para crear, rotar o desactivar llaves tu usuario necesita la verificación en dos pasos (TOTP). <a href="/cuenta/seguridad" style="text-decoration:underline;">Activarla en Seguridad</a>.</p></div>
+{% endif %}
+
+<div class="luxury-card cx-tab" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Proveedor</th><th>Etiqueta</th><th>Termina en</th><th>Estado</th><th>Vence</th><th>Hoy</th><th></th></tr></thead><tbody>
+    {% for k in conx.llaves %}
+    <tr>
+        <td>{{ k.proveedor }}<div style="color:var(--text-muted); font-size:12px;">{{ k.ambiente }}</div></td>
+        <td>{{ k.etiqueta }}</td>
+        <td class="mono">{{ '****' ~ k.ultimos4 if k.ultimos4 else '—' }}</td>
+        <td><span class="badge {{ 'badge-green' if k.estado == 'activa' else 'badge-amber' if k.estado in ('desactivada', 'en descanso') else 'badge-red' }}">{{ k.estado }}</span></td>
+        <td class="mono">{{ k.vence.strftime('%d/%m/%Y') if k.vence else '—' }}{% if k.dias is not none and 0 <= k.dias <= 14 %}<div style="color:#f5b94c; font-size:12px;">en {{ k.dias }} día(s)</div>{% endif %}</td>
+        <td class="mono">{{ k.pet }} pet.</td>
+        <td style="text-align:right;">
+            <div class="cx-acc" style="justify-content:flex-end;">
+                {% if k.estado == 'desactivada' %}<form method="post" action="/llaves/{{ k.id }}/activar?plataforma={{ p.id }}"><button class="btn btn-sm" type="submit">Activar</button></form>
+                {% elif k.estado != 'revocada' %}<form method="post" action="/llaves/{{ k.id }}/desactivar?plataforma={{ p.id }}"><button class="btn btn-sm" type="submit">Desactivar</button></form>{% endif %}
+                {% if k.estado != 'revocada' %}<form method="post" action="/llaves/{{ k.id }}/revocar?plataforma={{ p.id }}" onsubmit="return confirm('¿Revocar esta llave? El secreto se borra y no se puede recuperar.')"><button class="btn btn-sm" type="submit">Revocar</button></form>{% endif %}
+            </div>
+            <details style="margin-top:8px; text-align:left;"><summary style="cursor:pointer; font-size:13px;">{{ 'Poner un valor nuevo' if k.estado == 'revocada' else 'Rotar' }}</summary>
+                <form method="post" action="/llaves/{{ k.id }}/rotar?plataforma={{ p.id }}" class="cx-acc" autocomplete="off" style="margin-top:8px;">
+                    <input class="field mono" type="password" name="secreto" placeholder="Valor nuevo" autocomplete="new-password" required>
+                    <input class="field" type="date" name="vence" title="Nueva fecha de vencimiento (opcional)">
+                    <button class="btn btn-sm btn-primary" type="submit">Guardar</button>
+                </form></details>
+        </td>
+    </tr>
+    {% else %}<tr><td colspan="7" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma todavía no tiene llaves propias.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<details class="luxury-card" style="margin-top:16px;"><summary style="cursor:pointer;">+ Agregar llave a esta plataforma</summary>
+    <form method="post" action="/llaves/nueva?plataforma={{ p.id }}" class="grid-2" autocomplete="off" style="margin-top:12px; gap:12px;">
+        <label class="lbl">Proveedor<select class="field" name="proveedor" required>{% for pr in conx.proveedores %}<option>{{ pr }}</option>{% endfor %}</select></label>
+        <label class="lbl">Etiqueta<input class="field" name="etiqueta" maxlength="80" placeholder="Ej. Chat principal" required></label>
+        <label class="lbl">Ambiente<select class="field" name="ambiente">{% for a in conx.ambientes %}<option>{{ a }}</option>{% endfor %}</select></label>
+        <label class="lbl">Valor de la llave<input class="field mono" type="password" name="secreto" autocomplete="new-password" required></label>
+        <label class="lbl">Vence (opcional)<input class="field" type="date" name="vence"></label>
+        <label class="lbl">Rotar cada (días, opcional)<input class="field" type="number" name="rotar_cada_dias" min="1" max="3650"></label>
+        <div><button class="btn btn-primary" type="submit">Guardar llave cifrada</button></div>
+    </form></details>
+{% endif %}
+
+{% raw %}
+<script>
+(function () {
+  var raiz = document.getElementById("cx-alm"); if (!raiz) return;
+  var pid = parseInt(raiz.dataset.pid, 10);
+  var SERV = [
+    { id: "neon", titulo: "Neon · base de datos", campos: [["NEON_API_KEY", "Llave de API"], ["NEON_ORG_ID", "ID de organización (opcional)"], ["NEON_PLAN", "Plan"], ["NEON_LIMITE_GB", "Límite por proyecto (GB)"], ["NEON_LIMITE_CU", "Límite de horas de cómputo"]] },
+    { id: "r2", titulo: "Cloudflare R2 · archivos", campos: [["R2_ACCOUNT_ID", "Account ID"], ["R2_ACCESS_KEY_ID", "Access Key ID"], ["R2_SECRET_ACCESS_KEY", "Secret Access Key"], ["R2_BUCKETS", "Buckets (opcional)"], ["R2_LIMITE_GB", "Límite (GB)"]] },
+    { id: "cloudinary", titulo: "Cloudinary · imágenes", campos: [["CLOUDINARY_CLOUD_NAME", "Cloud name"], ["CLOUDINARY_API_KEY", "API Key"], ["CLOUDINARY_API_SECRET", "API Secret"], ["CLOUDINARY_LIMITE_GB", "Límite (GB)"]] },
+    { id: "uptimerobot", titulo: "UptimeRobot · disponibilidad", campos: [["UPTIMEROBOT_API_KEY", "Llave de API"]] }
+  ];
+  function el(tag, props, hijos) {
+    var e = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) { if (k === "text") e.textContent = props[k]; else e[k] = props[k]; });
+    (hijos || []).forEach(function (h) { e.appendChild(h); });
+    return e;
+  }
+  function api(url, cuerpo) {
+    var op = { credentials: "same-origin" };
+    if (cuerpo) { op.method = "POST"; op.headers = { "Content-Type": "application/json" }; op.body = JSON.stringify(Object.assign({ plataforma: pid }, cuerpo)); }
+    return fetch(url, op).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: "Respuesta no válida (" + r.status + ")." }; });
+    }).catch(function () { return { ok: false, error: "No se pudo conectar con el servidor." }; });
+  }
+  function pintar(datos, mensajes) {
+    var porNombre = {}; (datos.campos || []).forEach(function (c) { porNombre[c.nombre] = c; });
+    raiz.textContent = "";
+    SERV.forEach(function (sv) {
+      var conectado = !!(datos.conectado || {})[sv.id], inputs = {}, msg = el("div", { className: "cx-msg" });
+      var m = (mensajes || {})[sv.id]; if (m) { msg.textContent = m.texto; msg.className = "cx-msg " + (m.ok ? "ok" : "mal"); }
+      var cab = el("div", { className: "cx-cab" }, [el("h3", { className: "stat-label", text: sv.titulo, style: "margin:0;" }),
+        el("span", { className: "badge " + (conectado ? "badge-green" : "badge-amber"), text: conectado ? "Conectado" : "Sin conexión propia" })]);
+      var card = el("div", { className: "luxury-card cx-card" }, [cab]);
+      sv.campos.forEach(function (par) {
+        var info = porNombre[par[0]] || {}, secreto = !!info.secreto;
+        var inp = el("input", { className: "field" + (secreto ? " mono" : ""), type: secreto ? "password" : "text", autocomplete: secreto ? "new-password" : "off" });
+        if (secreto) inp.placeholder = info.origen ? "•••• guardada (vacío = conservarla)" : "";
+        else inp.value = info.valor || "";
+        inputs[par[0]] = inp;
+        card.appendChild(el("label", { className: "lbl" }, [document.createTextNode(par[1]), inp]));
+      });
+      card.appendChild(msg);
+      function aviso(ok, texto) { msg.textContent = texto; msg.className = "cx-msg " + (ok ? "ok" : "mal"); }
+      function recargar(ok, texto) { var o = {}; o[sv.id] = { ok: ok, texto: texto }; cargar(o); }
+      var bG = el("button", { className: "btn btn-sm btn-primary", type: "button", text: "Guardar" });
+      bG.onclick = function () {
+        var v = {}; Object.keys(inputs).forEach(function (n) { v[n] = inputs[n].value.trim(); });
+        bG.disabled = true;
+        api("/api/almacenamiento/conexiones/guardar", { servicio: sv.id, valores: v, confirmar: true }).then(function (d) {
+          bG.disabled = false; if (d.ok) recargar(true, "Guardado (cifrado)."); else aviso(false, d.error || "No se pudo guardar.");
+        });
+      };
+      var bP = el("button", { className: "btn btn-sm", type: "button", text: "Probar" });
+      bP.onclick = function () {
+        aviso(true, "Probando…");
+        api("/api/almacenamiento/conexiones/probar", { servicio: sv.id }).then(function (d) { aviso(!!d.ok, d.ok ? (d.mensaje || "Funciona.") : (d.error || "Falló la prueba.")); });
+      };
+      var acc = el("div", { className: "cx-acc" }, [bG, bP]);
+      if (conectado) {
+        var bD = el("button", { className: "btn btn-sm", type: "button", text: "Desconectar" });
+        bD.onclick = function () {
+          if (!confirm("¿Quitar las conexiones de «" + sv.titulo + "» de esta plataforma?")) return;
+          api("/api/almacenamiento/conexiones/desconectar", { servicio: sv.id, confirmar: true }).then(function (d) {
+            if (d.ok) recargar(true, "Desconectado."); else aviso(false, d.error || "No se pudo desconectar.");
+          });
+        };
+        acc.appendChild(bD);
+      } else {
+        var bC = el("button", { className: "btn btn-sm", type: "button", text: "Copiar las generales" });
+        bC.title = "Copia (cifradas) las llaves generales de este servicio a esta plataforma";
+        bC.onclick = function () {
+          if (!confirm("¿Copiar a esta plataforma las llaves generales de «" + sv.titulo + "»? Después podrás cambiarlas sin afectar a las demás.")) return;
+          api("/api/almacenamiento/conexiones/copiar", { servicio: sv.id, confirmar: true }).then(function (d) {
+            if (d.ok) recargar(true, "Copiadas (" + d.copiados + " campo(s))."); else aviso(false, d.error || "No se pudo copiar.");
+          });
+        };
+        acc.appendChild(bC);
+      }
+      card.appendChild(acc);
+      raiz.appendChild(card);
+    });
+  }
+  function cargar(mensajes) {
+    api("/api/almacenamiento/conexiones?plataforma=" + pid).then(function (d) {
+      if (!d.ok) { raiz.textContent = ""; raiz.appendChild(el("div", { className: "luxury-card", text: "No se pudieron leer las conexiones (" + (d.error || "error") + ")." })); return; }
+      pintar(d, mensajes);
+    });
+  }
+  cargar();
+})();
+</script>
+{% endraw %}
+{% endif %}
+</div>

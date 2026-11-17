@@ -32,6 +32,7 @@
     <button type="button" class="mt-tab {{ 'on' if tab == 'servicios' }}" data-tab="servicios">Servicios{% if serv_p and serv_p.nivel in ('alerta', 'falla') %}<span class="mt-n">!</span>{% endif %}</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'infra' }}" data-tab="infra">Repositorio</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'almacenamiento' }}" data-tab="almacenamiento">Almacenamiento</button>
+    <button type="button" class="mt-tab {{ 'on' if tab == 'conexiones' }}" data-tab="conexiones">Conexiones{% if conx and conx.resumen.problemas %}<span class="mt-n">{{ conx.resumen.problemas }}</span>{% endif %}</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'monitor' }}" data-tab="monitor">Monitor</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'seguridad' }}" data-tab="seguridad">Ciberseguridad{% if abiertos %}<span class="mt-n">{{ abiertos }}</span>{% endif %}</button>
     <button type="button" class="mt-tab {{ 'on' if tab == 'alertas' }}" data-tab="alertas">Alertas{% if alertas|length %}<span class="mt-n">{{ alertas|length }}</span>{% endif %}</button>
@@ -205,6 +206,7 @@
 </tbody></table></div></div>
 </div>
 {% include '_plat_negocio.html' %}
+{% include '_plat_conexiones.html' %}
 <script>
 (function () {
   var tabs = document.querySelectorAll('.mt-tab'), paneles = document.querySelectorAll('.mt-panel');

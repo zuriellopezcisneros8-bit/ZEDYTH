@@ -30,7 +30,7 @@
   .ap-acciones { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
 </style>
 
-<div class="alm-proy" data-pid="{{ p.id }}">
+<div class="alm-proy" data-pid="{{ p.id }}"{% if p.tipo == 'Plataforma propia' %} data-plat="1"{% endif %}>
   <div class="ap-cab" style="margin-bottom:14px;">
     <span class="ap-mut ap-generado">Consultando…</span>
     <div class="ap-acciones">
@@ -51,6 +51,7 @@
   if (!raiz || window.__almProyCargado) return;
   window.__almProyCargado = true;
   const pid = raiz.dataset.pid;
+  const plat = raiz.dataset.plat ? "plataforma=" + pid : "";     // una plataforma propia usa SUS conexiones, no las generales
   const $ = s => raiz.querySelector(s);
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -274,7 +275,7 @@
 
   const cargar = forzar => {
     $(".ap-generado").textContent = "Consultando…";
-    return fetch("/api/almacenamiento/proyectos" + (forzar ? "?forzar=1" : ""), { credentials: "same-origin" })
+    return fetch("/api/almacenamiento/proyectos" + (forzar || plat ? "?" + [forzar ? "forzar=1" : "", plat].filter(Boolean).join("&") : ""), { credentials: "same-origin" })
       .then(r => r.status === 403 ? { ok: false, error: "Solo administradores." } : r.json())
       .then(d => {
         if (!d.ok) throw new Error(d.error || "Error");
@@ -295,7 +296,7 @@
     const nombre = esR2 ? b.dataset.key : b.dataset.id;
     if (!confirm("¿Eliminar «" + nombre + "»? No se puede deshacer.")) return;
     b.disabled = true;
-    const url = "/api/almacenamiento/proyectos/" + pid + (esR2 ? "/r2/eliminar" : "/cloudinary/eliminar");
+    const url = "/api/almacenamiento/proyectos/" + pid + (esR2 ? "/r2/eliminar" : "/cloudinary/eliminar") + (plat ? "?" + plat : "");
     const cuerpo = esR2 ? { bucket: b.dataset.bucket, key: b.dataset.key, confirmar: true }
                         : { public_id: b.dataset.id, resource_type: b.dataset.rt, confirmar: true };
     try {
@@ -313,6 +314,6 @@
 <div class="luxury-card">
   <p style="margin:0 0 10px;">Esta plataforma todavía no tiene vinculada su base de datos ni su almacenamiento.</p>
   <p style="margin:0 0 14px; font-size:13px; color:var(--text-muted);">Vincula el proyecto de Neon, el bucket de R2 y/o la carpeta de Cloudinary para ver aquí cuánto ocupa, el porcentaje usado y cuánto te queda.</p>
-  <a class="btn btn-primary" href="/proyectos/{{ p.id }}/editar">Vincular ahora</a>
+  <a class="btn btn-primary" href="/proyectos/{{ p.id }}/editar">Vincular ahora</a>{% if p.tipo == 'Plataforma propia' %} <a class="btn" href="/plataformas/{{ p.id }}?tab=conexiones">Conectar sus cuentas</a>{% endif %}
 </div>
 {% endif %}

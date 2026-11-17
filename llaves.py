@@ -96,6 +96,11 @@ def estado_pool(proveedor, proyecto_id=None):
     return _api["estado_pool"](proveedor, proyecto_id)
 
 
+def panel_plataforma(proyecto_id):
+    """Todo lo que necesita la pestaña Conexiones de la ficha: llaves de la plataforma (sin secretos), resumen y avisos."""
+    return _api["panel_plat"](proyecto_id)
+
+
 def resumen_plataforma(proyecto_id):
     """Para la ficha de una plataforma: {total, activas, problemas, por_vencer, heredadas, costo_mes}. Sin secretos."""
     return _api["resumen_plat"](proyecto_id)
@@ -217,6 +222,11 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         return p
 
     def volver(m=None):
+        dest = request.form.get("volver") or ""
+        if dest.startswith("/plataformas/") and "//" not in dest and "\\" not in dest:
+            if m and m in MENSAJES:
+                dest += ("&" if "?" in dest else "?") + "m=" + m
+            return redirect(dest)
         p = plat_activa()
         return redirect(url_for("llaves.index", m=m, plataforma=p.id if p else None))
 
@@ -396,6 +406,19 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             r["heredadas"] = LlaveApi.query.filter(LlaveApi.proyecto_id.is_(None), LlaveApi.estado == "activa").count()
         return r
 
+    def _panel_plat(pid):
+        asegurar()
+        ahora, hoy = datetime.utcnow(), date.today()
+        ks = LlaveApi.query.filter(LlaveApi.proyecto_id == pid).order_by(
+            LlaveApi.proveedor, LlaveApi.ambiente, LlaveApi.orden, LlaveApi.id).all()
+        uso = {u.llave_id: u for u in UsoIA.query.filter(UsoIA.fecha == hoy, UsoIA.llave_id.in_([k.id for k in ks])).all()} if ks else {}
+        filas = [{"id": k.id, "proveedor": k.proveedor, "etiqueta": k.etiqueta, "ambiente": k.ambiente, "ultimos4": k.ultimos4,
+                  "estado": estado_visible(k, ahora, hoy), "vence": k.vence,
+                  "dias": (k.vence - hoy).days if k.vence else None,
+                  "pet": uso[k.id].peticiones if k.id in uso else 0} for k in ks]
+        return {"llaves": filas, "resumen": _resumen_plat(pid), "proveedores": PROVEEDORES, "ambientes": AMBIENTES,
+                "mfa": mfa_ok(), "cifrado": cifrado_listo(), "heredar": HEREDAR_GLOBAL}
+
     def _url_llaves(k):
         return f"/llaves?plataforma={k.proyecto_id}" if k.proyecto_id else "/llaves"
 
@@ -417,7 +440,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                            urgente=False, clave=f"llave-rotar-{k.id}-{base:%Y%m%d}")
 
     _api.update(obtener=_obtener, todas=_disponibles, fallo=_fallo, uso=_uso, costo_mes=_costo_mes, revisar=_revisar,
-                estado_pool=_estado_pool, resumen_plat=_resumen_plat)
+                estado_pool=_estado_pool, resumen_plat=_resumen_plat, panel_plat=_panel_plat)
 
     # --- pantallas ------------------------------------------------------------------------------------
     @bp.route("/llaves")
