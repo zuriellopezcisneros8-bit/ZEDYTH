@@ -1,0 +1,289 @@
+<!-- templates/_plat_resumen.html
+     FASE 8 · Resumen de ESTA plataforma: lo más importante de todas las demás pestañas.
+     Todo sale de variables que ya llegan a plataforma_detalle (no hay consultas nuevas en app.py).
+     Monitor y Almacenamiento se leen en el navegador con los mismos endpoints que usan sus pestañas. -->
+{# ---------- cálculos ---------- #}
+{% set filas_s = serv_panel.filas if (serv_panel is defined and serv_panel) else (serv_p.filas if serv_p else []) %}
+{% set sv = namespace(ok=0, alerta=0, falla=0, sin=0, venc=0) %}
+{% for f in filas_s %}{% if f.activo %}
+  {% if f.nivel == 'ok' %}{% set sv.ok = sv.ok + 1 %}{% elif f.nivel == 'alerta' %}{% set sv.alerta = sv.alerta + 1 %}{% elif f.nivel == 'falla' %}{% set sv.falla = sv.falla + 1 %}{% else %}{% set sv.sin = sv.sin + 1 %}{% endif %}
+  {% if f.dias is not none and f.dias < 0 %}{% set sv.venc = sv.venc + 1 %}{% endif %}
+{% endif %}{% endfor %}
+{% set serv_total = (serv_p.mes + serv_p.ia + (serv_p.almacenamiento or 0)) if serv_p else gasto %}
+
+{% set pg = namespace(venc=0, n=0) %}
+{% for k in costos %}{% if k.proxima_fecha_pago and k.proxima_fecha_pago < hoy %}{% set pg.venc = pg.venc + (k.monto_periodo or k.monto_mensual or 0) %}{% set pg.n = pg.n + 1 %}{% endif %}{% endfor %}
+{% set cb = namespace(venc=0, n=0, total=0) %}
+{% for a in por_cobrar|default([]) %}{% set cb.total = cb.total + (a.monto or 0) %}{% if a.dias < 0 %}{% set cb.venc = cb.venc + (a.monto or 0) %}{% set cb.n = cb.n + 1 %}{% endif %}{% endfor %}
+
+{% set dias_v = dias_venc|default(30) %}
+{% set vv = namespace(prox=0, vencidos=0) %}
+{% for v in vencimientos %}{% if v.fecha %}{% set d = (v.fecha - hoy).days %}{% if d < 0 %}{% set vv.vencidos = vv.vencidos + 1 %}{% endif %}{% if d <= dias_v %}{% set vv.prox = vv.prox + 1 %}{% endif %}{% endif %}{% endfor %}
+
+{% set ia_ = namespace(abiertos=0, altas=0) %}
+{% for d in intel_det %}{% if d.r.estado != 'Cerrado' %}{% set ia_.abiertos = ia_.abiertos + 1 %}{% if d.r.prioridad in ['Alta', 'Crítica'] %}{% set ia_.altas = ia_.altas + 1 %}{% endif %}{% endif %}{% endfor %}
+
+{# próximos eventos de todas las fuentes, en una sola lista ordenada #}
+{% set ev = namespace(l=[]) %}
+{% for v in vencimientos %}{% if v.fecha %}{% if ev.l.append({'tipo': 'Vencimiento', 'nombre': v.nombre, 'fecha': v.fecha, 'dias': (v.fecha - hoy).days, 'tab': 'seguridad'}) %}{% endif %}{% endif %}{% endfor %}
+{% for k in costos %}{% if k.proxima_fecha_pago %}{% if ev.l.append({'tipo': 'Pago', 'nombre': k.proveedor ~ ((' · ' ~ k.concepto) if k.concepto else ''), 'fecha': k.proxima_fecha_pago, 'dias': (k.proxima_fecha_pago - hoy).days, 'tab': 'finanzas'}) %}{% endif %}{% endif %}{% endfor %}
+{% for f in filas_s %}{% if f.activo and f.dias is not none %}{% if ev.l.append({'tipo': 'Renovación', 'nombre': f.nombre, 'fecha': f.fecha, 'dias': f.dias, 'tab': 'servicios'}) %}{% endif %}{% endif %}{% endfor %}
+{% for a in por_cobrar|default([]) %}{% if ev.l.append({'tipo': 'Cobro', 'nombre': a.cliente.nombre_comercial ~ ' · ' ~ a.plan, 'fecha': a.fecha, 'dias': a.dias, 'tab': 'alertas'}) %}{% endif %}{% endfor %}
+{% set eventos = ev.l|selectattr('dias', 'le', 45)|sort(attribute='dias')|list %}
+
+{# nivel de cada pestaña: ok / amb / mal / gris #}
+{% set niv_serv = 'mal' if sv.falla else ('amb' if (sv.alerta or sv.venc) else ('ok' if filas_s else 'gris')) %}
+{% set niv_conx = 'gris' if not conx else ('mal' if conx.resumen.problemas else ('amb' if conx.resumen.por_vencer else 'ok')) %}
+{% set niv_fin = 'mal' if (fin.ganancia < 0 or pg.n or cb.n) else 'ok' %}
+{% set seg_al = alertas|selectattr('tab', 'equalto', 'seguridad')|list %}
+{% set niv_seg = 'mal' if (abiertos or (seg_al|selectattr('grave')|list)) else ('amb' if (seg_al or cumplidos < checklist|length) else 'ok') %}
+{% set niv_ale = 'mal' if (cuentas_alertas and cuentas_alertas.criticas) else ('amb' if (alertas or (cuentas_alertas and cuentas_alertas.sinleer)) else 'ok') %}
+{% set niv_int = 'amb' if ia_.altas else ('ok' if intel_det else 'gris') %}
+{% set niv_rep = 'gris' if not p.repo_url else ('amb' if (render_p and render_p.errores) else 'ok') %}
+
+<style>
+  .rs-chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:22px; }
+  .rs-chip { display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.02); color:inherit; font:500 14px Inter,sans-serif; cursor:pointer; text-align:left; }
+  .rs-chip:hover { border-color:rgba(255,255,255,.35); }
+  .rs-chip small { display:block; color:var(--text-muted,#9aa3b2); font-weight:400; font-size:12px; margin-top:2px; }
+  .rs-dot { flex:0 0 auto; width:10px; height:10px; border-radius:50%; background:#6b7280; }
+  .rs-dot.ok { background:#4ade80; } .rs-dot.amb { background:#f5b94c; } .rs-dot.mal { background:#f87171; } .rs-dot.gris { background:#6b7280; }
+  .rs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin-bottom:8px; }
+  .rs-card h3 { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .rs-card h3 a { font:500 12px Inter,sans-serif; text-transform:none; letter-spacing:0; text-decoration:underline; cursor:pointer; color:var(--text-muted,#9aa3b2); }
+  .rs-big { font-size:26px; font-weight:600; line-height:1.15; margin:6px 0 2px; }
+  .rs-mut { color:var(--text-muted,#9aa3b2); font-size:13px; line-height:1.5; }
+  .rs-lin { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-top:1px solid rgba(255,255,255,.07); font-size:13px; }
+  .rs-lin:first-of-type { border-top:0; }
+  .rs-lin span:first-child { color:var(--text-muted,#9aa3b2); }
+  .rs-neg { color:#f87171; } .rs-pos { color:#4ade80; } .rs-amb-t { color:#f5b94c; }
+  .rs-barra { height:7px; background:rgba(128,128,128,.25); border-radius:99px; overflow:hidden; margin:4px 0 8px; }
+  .rs-barra > i { display:block; height:100%; border-radius:99px; min-width:2px; }
+  .rs-b-ok { background:#4ade80; } .rs-b-amb { background:#f5b94c; } .rs-b-mal { background:#f87171; }
+</style>
+
+<div class="section-title" style="margin-top:0;">Estado de cada sección</div>
+<div class="rs-chips">
+  {% for clave, nombre, nivel, sub in [
+      ('monitor', 'Monitor', 'gris', 'Consultando…'),
+      ('servicios', 'Servicios', niv_serv, (sv.falla ~ ' con falla · ' ~ sv.alerta ~ ' con atención') if filas_s else 'Sin servicios'),
+      ('almacenamiento', 'Almacenamiento', 'gris', 'Consultando…' if (p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo) else 'Sin vínculos'),
+      ('conexiones', 'Conexiones', niv_conx, ((conx.resumen.problemas ~ ' con problema · ' ~ conx.resumen.por_vencer ~ ' por vencer') if conx else 'Solo administradores')),
+      ('finanzas', 'Finanzas', niv_fin, ('Ganancia ' ~ '${:,.0f}'.format(fin.ganancia))),
+      ('seguridad', 'Ciberseguridad', niv_seg, (abiertos ~ ' incidente(s) abierto(s)') if abiertos else ('Checklist ' ~ cumplidos ~ '/' ~ checklist|length)),
+      ('alertas', 'Alertas', niv_ale, ((cuentas_alertas.sinleer ~ ' sin leer · ' ~ cuentas_alertas.criticas ~ ' críticas') if cuentas_alertas else (alertas|length ~ ' activas'))),
+      ('inteligencia', 'Inteligencia', niv_int, (ia_.abiertos ~ ' abiertos') if intel_det else 'Sin registros'),
+      ('infra', 'Repositorio', niv_rep, (p.rama_produccion or 'main') if p.repo_url else 'Sin repositorio')
+  ] %}
+  <button type="button" class="rs-chip" data-ir="{{ clave }}"><i class="rs-dot {{ nivel }}" id="rs-dot-{{ clave }}"></i><span>{{ nombre }}<small id="rs-sub-{{ clave }}">{{ sub }}</small></span></button>
+  {% endfor %}
+</div>
+
+<div class="section-title">Dinero</div>
+<div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:20px; margin-bottom:24px;">
+    <div class="luxury-card"><h3 class="stat-label">Ingresos (últimos 30 días)</h3><div class="stat-value">{{ '${:,.0f}'.format(fin.ingreso_30d) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Costo mensual de servicios</h3><div class="stat-value">{{ '${:,.0f}'.format(serv_total) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Ganancia{% if fin.margen is not none %} · margen {{ fin.margen }}%{% endif %}</h3><div class="stat-value {{ 'pos' if fin.ganancia > 0 else 'neg' if fin.ganancia < 0 }}">{{ '${:,.0f}'.format(fin.ganancia) }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Por cobrar vencido</h3><div class="stat-value {{ 'neg' if cb.venc }}">{{ '${:,.0f}'.format(cb.venc) }}</div><div class="rs-mut">{{ cb.n }} cobro(s) vencido(s) · {{ '${:,.0f}'.format(cb.total) }} en los próximos {{ dias_aviso|default(30) }} d</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Por pagar vencido</h3><div class="stat-value {{ 'neg' if pg.venc }}">{{ '${:,.0f}'.format(pg.venc) }}</div><div class="rs-mut">{{ pg.n }} servicio(s) con fecha de pago pasada</div></div>
+</div>
+
+<div class="section-title">Requiere atención</div>
+{% include '_plat_lista_alertas.html' %}
+
+<div class="section-title">Lo que viene (próximos 45 días)</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Tipo</th><th>Concepto</th><th>Fecha</th><th>Cuándo</th><th></th></tr></thead><tbody>
+    {% for e in eventos[:10] %}
+    <tr><td><span class="badge {{ 'badge-red' if e.dias < 0 else 'badge-amber' if e.dias <= 7 else '' }}">{{ e.tipo }}</span></td>
+        <td>{{ e.nombre }}</td><td class="mono">{{ e.fecha or '—' }}</td>
+        <td class="mono {{ 'rs-neg' if e.dias < 0 }}">{{ 'vencido hace ' ~ (-e.dias) ~ ' d' if e.dias < 0 else ('hoy' if e.dias == 0 else 'en ' ~ e.dias ~ ' d') }}</td>
+        <td style="text-align:right;"><button type="button" class="btn btn-sm" data-ir="{{ e.tab }}">Ver</button></td></tr>
+    {% else %}<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Nada por vencer, pagar, renovar ni cobrar en los próximos 45 días.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-title">Por sección</div>
+<div class="rs-grid" id="rs-{{ p.id }}" data-pid="{{ p.id }}" data-admin="{{ 1 if es_admin else 0 }}" data-alm="{{ 1 if (p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo) else 0 }}">
+
+  <div class="luxury-card rs-card" id="rs-monitor"><h3 class="stat-label">Monitor <a data-ir="monitor">Abrir</a></h3><div class="rs-mut">Consultando…</div></div>
+
+  <div class="luxury-card rs-card"><h3 class="stat-label">Servicios <a data-ir="servicios">Abrir</a></h3>
+    <div class="rs-big {{ 'rs-neg' if sv.falla }}">{{ sv.falla }} con falla</div>
+    <div class="rs-mut">{{ sv.alerta }} con atención · {{ sv.ok }} operativos · {{ sv.sin }} sin datos</div>
+    {% if serv_p %}<div style="margin-top:10px;">
+      <div class="rs-lin"><span>Catálogo</span><span class="mono">{{ '${:,.0f}'.format(serv_p.mes) }}</span></div>
+      <div class="rs-lin"><span>IA</span><span class="mono">{{ '${:,.0f}'.format(serv_p.ia) }}</span></div>
+      <div class="rs-lin"><span>Almacenamiento est.</span><span class="mono">{{ '${:,.0f}'.format(serv_p.almacenamiento or 0) }}</span></div>
+      {% if sv.venc %}<div class="rs-lin"><span>Renovaciones vencidas</span><span class="rs-neg">{{ sv.venc }}</span></div>{% endif %}
+    </div>{% endif %}</div>
+
+  <div class="luxury-card rs-card" id="rs-almacenamiento"><h3 class="stat-label">Almacenamiento <a data-ir="almacenamiento">Abrir</a></h3>
+    <div class="rs-mut">{% if p.neon_proyecto or p.r2_buckets or p.cloudinary_prefijo %}{{ 'Consultando…' if es_admin else 'Solo administradores.' }}{% else %}Esta plataforma no tiene Neon, R2 ni Cloudinary vinculados. <a href="/proyectos/{{ p.id }}/editar" style="text-decoration:underline;">Vincularlos</a>.{% endif %}</div></div>
+
+  <div class="luxury-card rs-card"><h3 class="stat-label">Conexiones <a data-ir="conexiones">Abrir</a></h3>
+    {% if conx %}
+    <div class="rs-big {{ 'rs-neg' if conx.resumen.problemas }}">{{ conx.resumen.activas }} activas</div>
+    <div class="rs-mut">{{ conx.resumen.problemas }} con problema · {{ conx.resumen.por_vencer }} por vencer · {{ conx.resumen.heredadas }} heredadas</div>
+    {% else %}<div class="rs-mut">Solo los administradores ven las conexiones.</div>{% endif %}</div>
+
+  <div class="luxury-card rs-card"><h3 class="stat-label">Ciberseguridad <a data-ir="seguridad">Abrir</a></h3>
+    <div class="rs-big {{ 'rs-neg' if abiertos }}">{{ abiertos or 0 }} incidente(s)</div>
+    <div class="rs-mut">abiertos</div>
+    <div style="margin-top:10px;">
+      <div class="rs-lin"><span>Checklist</span><span class="mono">{{ cumplidos }}/{{ checklist|length }}</span></div>
+      <div class="rs-lin"><span>Último respaldo</span><span class="mono {{ 'rs-neg' if not ultimo }}">{{ ultimo or 'Sin respaldos' }}</span></div>
+      <div class="rs-lin"><span>Vencimientos ({{ dias_v }} d)</span><span class="mono {{ 'rs-amb-t' if vv.prox }}">{{ vv.prox }}{% if vv.vencidos %} · <span class="rs-neg">{{ vv.vencidos }} vencido(s)</span>{% endif %}</span></div>
+    </div></div>
+
+  <div class="luxury-card rs-card"><h3 class="stat-label">Alertas <a data-ir="alertas">Abrir</a></h3>
+    <div class="rs-big {{ 'rs-neg' if alertas }}">{{ alertas|length }} activas</div>
+    {% if cuentas_alertas %}<div class="rs-mut">{{ cuentas_alertas.criticas }} críticas · {{ cuentas_alertas.avisos }} avisos · {{ cuentas_alertas.sinleer }} sin leer</div>{% endif %}
+    {% if notifs %}<div style="margin-top:10px;" class="rs-mut">Última: <a href="{{ notifs[0].url or '/panel' }}" style="text-decoration:underline;">{{ notifs[0].titulo }}</a><br><span class="mono">{{ notifs[0].hora.strftime('%d/%m/%Y %H:%M') }} UTC</span></div>{% endif %}</div>
+
+  <div class="luxury-card rs-card"><h3 class="stat-label">Inteligencia <a data-ir="inteligencia">Abrir</a></h3>
+    <div class="rs-big">{{ ia_.abiertos }} abiertos</div>
+    <div class="rs-mut">{{ intel_det|length }} registros{% if ia_.altas %} · <span class="rs-amb-t">{{ ia_.altas }} de prioridad alta</span>{% endif %}</div>
+    {% set pend = [] %}{% for d in intel_det %}{% if d.r.estado != 'Cerrado' and d.r.prioridad in ['Alta', 'Crítica'] and pend|length < 3 %}{% if pend.append(d.r) %}{% endif %}{% endif %}{% endfor %}
+    {% if pend %}<div style="margin-top:10px;">{% for r in pend %}<div class="rs-lin"><span style="color:inherit;">{{ r.titulo }}</span><span class="rs-mut">{{ r.tipo }}</span></div>{% endfor %}</div>{% endif %}</div>
+
+  <div class="luxury-card rs-card"><h3 class="stat-label">Repositorio y Render <a data-ir="infra">Abrir</a></h3>
+    {% if p.repo_url %}<div class="rs-mut"><a href="{{ p.repo_url }}" target="_blank" rel="noopener" style="text-decoration:underline; word-break:break-all;">{{ p.repo_url|replace('https://','')|replace('http://','') }}</a> · rama {{ p.rama_produccion or 'main' }}</div>
+    {% else %}<div class="rs-mut">Sin repositorio registrado.</div>{% endif %}
+    <div style="margin-top:10px;">
+      <div class="rs-lin"><span>Dominios y subdominios</span><span class="mono">{{ p.subdominios|length }}</span></div>
+      {% if render_p and render_p.servicios %}{% for s in render_p.servicios[:3] %}
+      <div class="rs-lin"><span style="color:inherit;">{{ s.nombre }}</span><span class="{{ 'rs-neg' if s.nivel == 'mal' or s.nivel == 'falla' else 'rs-amb-t' if s.nivel in ['amb', 'alerta'] }}">{{ s.estado or '—' }}</span></div>
+      {% endfor %}{% elif render_p and render_p.conectado %}<div class="rs-lin"><span>Render</span><span>Sin servicios ligados</span></div>{% endif %}
+    </div></div>
+</div>
+
+{% raw %}
+<script>
+(function () {
+  var raiz = document.querySelector('.rs-grid[data-pid]');
+  if (!raiz || raiz.dataset.listo) return;
+  raiz.dataset.listo = '1';
+  var pid = Number(raiz.dataset.pid), esAdmin = raiz.dataset.admin === '1', hayAlm = raiz.dataset.alm === '1';
+
+  // enlaces «Abrir» / «Ver» / chips: cambian a la pestaña indicada
+  document.querySelectorAll('[data-panel="resumen"] [data-ir]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      var t = document.querySelector('.mt-tab[data-tab="' + el.dataset.ir + '"]');
+      if (t) { t.click(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    });
+  });
+
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var fmt = function (b) {
+    if (b == null || isNaN(b)) return '—';
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0, n = Number(b);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i >= 3 ? 2 : (i ? 1 : 0)) + ' ' + u[i];
+  };
+  var cab = function (t, tab) { return '<h3 class="stat-label">' + t + ' <a data-ir="' + tab + '">Abrir</a></h3>'; };
+  var lin = function (a, b, cls) { return '<div class="rs-lin"><span>' + a + '</span><span class="mono ' + (cls || '') + '">' + b + '</span></div>'; };
+  var barra = function (pct, umbral) {
+    var c = pct == null ? 'ok' : pct >= umbral ? 'mal' : pct >= 60 ? 'amb' : 'ok';
+    return '<div class="rs-barra"><i class="rs-b-' + c + '" style="width:' + Math.min(pct || 0, 100) + '%"></i></div>';
+  };
+  var pon = function (id, html) {
+    var c = document.getElementById(id);
+    if (!c) return;
+    c.innerHTML = html;
+    c.querySelectorAll('[data-ir]').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.preventDefault(); var t = document.querySelector('.mt-tab[data-tab="' + el.dataset.ir + '"]'); if (t) { t.click(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+    });
+  };
+  var chip = function (clave, nivel, sub) {
+    var d = document.getElementById('rs-dot-' + clave), s = document.getElementById('rs-sub-' + clave);
+    if (d) d.className = 'rs-dot ' + nivel;
+    if (s) s.textContent = sub;
+  };
+  var get = function (u) { return fetch(u, { credentials: 'same-origin' }).then(function (r) { return r.json(); }); };
+
+  // ---------- Monitor ----------
+  function cargarMonitor() {
+    Promise.all([get('/api/monitor/estado'), get('/api/monitor/resumen').catch(function () { return null; })]).then(function (r) {
+      var d = r[0], res = r[1];
+      if (!d || !d.ok) throw new Error((d && d.error) || 'Error');
+      var m = (d.sitios || []).filter(function (s) { return s.proyecto_id === pid; });
+      var act = m.filter(function (s) { return s.activo; });
+      var caidos = act.filter(function (s) { return s.estado === 'abajo'; }).length;
+      var ms = act.filter(function (s) { return s.ms != null; }).map(function (s) { return s.ms; });
+      var prom = ms.length ? Math.round(ms.reduce(function (a, b) { return a + b; }, 0) / ms.length) : null;
+      var ssl = m.filter(function (s) { return s.ssl_dias != null; }).sort(function (a, b) { return a.ssl_dias - b.ssl_dias; })[0];
+      var u30s = res && res.ok ? m.map(function (s) { return (res.sitios[String(s.id)] || {}).u30; }).filter(function (v) { return v != null; }) : [];
+      var u30 = u30s.length ? u30s.reduce(function (a, b) { return a + b; }, 0) / u30s.length : null;
+      if (!m.length) {
+        pon('rs-monitor', cab('Monitor', 'monitor') + '<div class="rs-mut">Esta plataforma aún no tiene sitios vigilados.</div>');
+        chip('monitor', 'gris', 'Sin sitios vigilados'); return;
+      }
+      var nivel = caidos ? 'mal' : (ssl && ssl.ssl_dias <= 14 ? 'amb' : 'ok');
+      pon('rs-monitor', cab('Monitor', 'monitor') +
+        '<div class="rs-big ' + (caidos ? 'rs-neg' : 'rs-pos') + '">' + (caidos ? caidos + ' caído(s)' : 'Todo en línea') + '</div>' +
+        '<div class="rs-mut">' + act.length + ' activo(s) de ' + m.length + '</div><div style="margin-top:10px;">' +
+        lin('Respuesta promedio', prom != null ? prom + ' ms' : '—') +
+        lin('Disponibilidad 30 días', u30 != null ? u30.toFixed(2) + '%' : '—', u30 != null && u30 < 99.5 ? 'rs-amb-t' : '') +
+        lin('Certificado más próximo', ssl ? ssl.ssl_dias + ' d · ' + esc(ssl.nombre) : '—', ssl && ssl.ssl_dias <= 14 ? 'rs-amb-t' : '') + '</div>');
+      chip('monitor', nivel, caidos ? caidos + ' caído(s)' : act.length + ' en línea');
+    }).catch(function (e) {
+      pon('rs-monitor', cab('Monitor', 'monitor') + '<div class="rs-mut">No se pudo consultar el monitor (' + esc(e.message) + ').</div>');
+      chip('monitor', 'gris', 'Sin datos');
+    });
+  }
+
+  // ---------- Almacenamiento ----------
+  function cargarAlm() {
+    if (!hayAlm || !esAdmin) return;
+    get('/api/almacenamiento/proyectos?plataforma=' + pid).then(function (d) {
+      if (!d.ok) throw new Error(d.error || 'Error');
+      var r = d.proyectos[pid];
+      if (!r) throw new Error('sin vínculos guardados');
+      var u = r.umbral || 80, h = '', peor = 0, resumen = [], avisos = [];
+      if (r.neon) {
+        if (r.neon.estado === 'ok') {
+          h += lin('Neon · ' + esc(r.neon.nombre), fmt(r.neon.bytes) + (r.neon.pct != null ? ' · ' + r.neon.pct + '%' : '')) + (r.neon.pct != null ? barra(r.neon.pct, u) : '');
+          if (r.neon.pct != null) { peor = Math.max(peor, r.neon.pct); if (r.neon.pct >= u) avisos.push('Neon al ' + r.neon.pct + '%'); }
+          if (r.neon.horas && (r.neon.horas.estado === 'agotadas' || r.neon.horas.estado === 'riesgo')) avisos.push(r.neon.horas.estado === 'agotadas' ? 'Neon sin horas de cómputo' : 'Horas de Neon no alcanzan');
+          resumen.push('Neon ' + fmt(r.neon.bytes));
+        } else h += lin('Neon', esc(r.neon.estado === 'sin_conectar' ? 'sin conectar' : (r.neon.error || r.neon.estado)), 'rs-amb-t');
+      }
+      var r2 = (r.r2 || []).filter(function (e) { return e.estado === 'ok'; });
+      if ((r.r2 || []).length) {
+        if (r2.length && r.r2_cuenta) {
+          var mio = r2.reduce(function (a, e) { return a + (e.bytes || 0); }, 0);
+          h += lin('Cloudflare R2', fmt(mio) + (r.r2_cuenta.pct != null ? ' · cuenta ' + r.r2_cuenta.pct + '%' : '')) + (r.r2_cuenta.pct != null ? barra(r.r2_cuenta.pct, u) : '');
+          if (r.r2_cuenta.pct != null) { peor = Math.max(peor, r.r2_cuenta.pct); if (r.r2_cuenta.pct >= u) avisos.push('R2 al ' + r.r2_cuenta.pct + '%'); }
+          resumen.push('R2 ' + fmt(mio));
+        } else h += lin('Cloudflare R2', 'sin lectura', 'rs-amb-t');
+      }
+      if (r.cloudinary) {
+        if (r.cloudinary.estado === 'ok' && r.cld_cuenta) {
+          h += lin('Cloudinary', fmt(r.cloudinary.bytes) + (r.cld_cuenta.pct != null ? ' · cuenta ' + r.cld_cuenta.pct + '%' : '')) + (r.cld_cuenta.pct != null ? barra(r.cld_cuenta.pct, u) : '');
+          if (r.cld_cuenta.pct != null) { peor = Math.max(peor, r.cld_cuenta.pct); if (r.cld_cuenta.pct >= u) avisos.push('Cloudinary al ' + r.cld_cuenta.pct + '%'); }
+          resumen.push('Cloudinary ' + fmt(r.cloudinary.bytes));
+        } else h += lin('Cloudinary', 'sin lectura', 'rs-amb-t');
+      }
+      pon('rs-almacenamiento', cab('Almacenamiento', 'almacenamiento') +
+        (avisos.length ? '<div class="rs-big rs-amb-t" style="font-size:20px;">' + esc(avisos.join(' · ')) + '</div>' : '<div class="rs-big rs-pos" style="font-size:20px;">Dentro de los límites</div>') +
+        '<div style="margin-top:10px;">' + h + '</div>');
+      chip('almacenamiento', peor >= u || avisos.length ? 'amb' : 'ok', avisos.length ? avisos[0] : (resumen.join(' · ') || 'Sin datos'));
+    }).catch(function (e) {
+      pon('rs-almacenamiento', cab('Almacenamiento', 'almacenamiento') + '<div class="rs-mut">No se pudo consultar el almacenamiento (' + esc(e.message) + ').</div>');
+      chip('almacenamiento', 'gris', 'Sin datos');
+    });
+  }
+
+  var cargado = false;
+  function cargarTodo() { if (cargado) return; cargado = true; cargarMonitor(); cargarAlm(); }
+  var panel = document.querySelector('.mt-panel[data-panel="resumen"]');
+  if (panel && panel.classList.contains('on')) cargarTodo();
+  else {
+    var t = document.querySelector('.mt-tab[data-tab="resumen"]');
+    if (t) t.addEventListener('click', cargarTodo);
+    window.addEventListener('popstate', function () { if ((new URL(location.href).searchParams.get('tab') || 'resumen') === 'resumen') cargarTodo(); });
+  }
+})();
+</script>
+{% endraw %}
