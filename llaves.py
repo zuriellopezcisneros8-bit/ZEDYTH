@@ -42,6 +42,9 @@ AMBIENTES = ["Producción", "Pruebas", "Desarrollo"]
 ENFRIAR_MIN = int(os.environ.get("LLAVES_ENFRIAR_MIN", "15"))
 AVISO_VENCE_DIAS = 14
 UMBRAL_USO = 0.80
+# Si una plataforma no tiene llave propia de un proveedor, ¿puede usar la global del negocio? Por defecto sí (como siempre).
+# Con LLAVES_HEREDAR_GLOBAL=0 cada plataforma usa SOLO las suyas. También se decide por llamada con heredar=True/False.
+HEREDAR_GLOBAL = os.environ.get("LLAVES_HEREDAR_GLOBAL", "1") != "0"
 
 LlaveEntregada = namedtuple("LlaveEntregada", "id secreto proveedor etiqueta")
 
@@ -61,14 +64,15 @@ _base_cifrado = {"secreto": None}     # SECRET_KEY de la app (solo si es fija); 
 
 
 # --- API pública (para el resto de app.py) ------------------------------------------------------
-def obtener_llave(proveedor, proyecto_id=None, ambiente="Producción"):
-    """Primera llave disponible del pool (por orden), o None. Salta las desactivadas, vencidas o en descanso."""
-    return _api["obtener"](proveedor, proyecto_id, ambiente)
+def obtener_llave(proveedor, proyecto_id=None, ambiente="Producción", heredar=None):
+    """Primera llave disponible del pool (por orden), o None. Salta las desactivadas, vencidas o en descanso.
+    heredar=False: solo las de esa plataforma (nunca las globales). None = lo que diga LLAVES_HEREDAR_GLOBAL."""
+    return _api["obtener"](proveedor, proyecto_id, ambiente, heredar)
 
 
-def obtener_llaves(proveedor, proyecto_id=None, ambiente="Producción"):
+def obtener_llaves(proveedor, proyecto_id=None, ambiente="Producción", heredar=None):
     """Lista de todas las llaves utilizables, en orden de pool. Útil para probarlas una por una."""
-    return _api["todas"](proveedor, proyecto_id, ambiente)
+    return _api["todas"](proveedor, proyecto_id, ambiente, heredar)
 
 
 def reportar_fallo(llave_id, codigo_http):
@@ -86,10 +90,15 @@ def costo_mes(proyecto_id=None):
     return _api["costo_mes"](proyecto_id)
 
 
-def estado_pool(proveedor):
-    """Resumen del pool de un proveedor (todas las plataformas y ambientes), para la pantalla de Servicios:
+def estado_pool(proveedor, proyecto_id=None):
+    """Resumen del pool de un proveedor (todas las plataformas y ambientes, o solo una), para la pantalla de Servicios:
     {total, usables, invalidas, vencidas, descanso, desactivadas}. Las revocadas no cuentan."""
-    return _api["estado_pool"](proveedor)
+    return _api["estado_pool"](proveedor, proyecto_id)
+
+
+def resumen_plataforma(proyecto_id):
+    """Para la ficha de una plataforma: {total, activas, problemas, por_vencer, heredadas, costo_mes}. Sin secretos."""
+    return _api["resumen_plat"](proyecto_id)
 
 
 def revisar():
@@ -197,6 +206,20 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     def mal(texto):
         return Response(f"Dato no válido: {texto}", 400)
 
+    def plat_activa():
+        """La plataforma con la que se trabaja (?plataforma=N en la URL o en el formulario), o None = vista general."""
+        raw = request.values.get("plataforma")
+        if not raw:
+            return None
+        p = db.session.get(Proyecto, int(raw)) if raw.isdigit() else None
+        if p is None:
+            abort(404)
+        return p
+
+    def volver(m=None):
+        p = plat_activa()
+        return redirect(url_for("llaves.index", m=m, plataforma=p.id if p else None))
+
     # --- utilidades -------------------------------------------------------------------------------
     def leer_secreto(campo):
         s = (request.form.get(campo) or "").strip()
@@ -240,9 +263,11 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         return _fernet().encrypt(secreto.encode()).decode()
 
     # --- API interna -------------------------------------------------------------------------------
-    def _disponibles(proveedor, proyecto_id, ambiente):
-        """Todas las llaves utilizables, en orden de pool (las de la plataforma primero, luego las globales)."""
+    def _disponibles(proveedor, proyecto_id, ambiente, heredar=None):
+        """Todas las llaves utilizables, en orden de pool (las de la plataforma primero; las globales solo si se hereda)."""
         asegurar()
+        if heredar is None:
+            heredar = HEREDAR_GLOBAL
         f = _fernet()
         if f is None:
             return []
@@ -256,7 +281,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             q = q.filter(LlaveApi.proyecto_id == pid) if pid else q.filter(LlaveApi.proyecto_id.is_(None))
             return q.order_by(LlaveApi.orden, LlaveApi.id).all()
 
-        filas = buscar(proyecto_id) + (buscar(None) if proyecto_id else [])
+        filas = buscar(proyecto_id) + (buscar(None) if proyecto_id and heredar else [])
         salida = []
         for k in filas:
             try:
@@ -265,8 +290,8 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 app.logger.error("Llave %s no se pudo descifrar (¿cambió LLAVES_MASTER?)", k.id)
         return salida
 
-    def _obtener(proveedor, proyecto_id, ambiente):
-        lista = _disponibles(proveedor, proyecto_id, ambiente)
+    def _obtener(proveedor, proyecto_id, ambiente, heredar=None):
+        lista = _disponibles(proveedor, proyecto_id, ambiente, heredar)
         return lista[0] if lista else None
 
     def _fallo(llave_id, codigo):
@@ -331,12 +356,15 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             q = q.where(UsoIA.proyecto_id == proyecto_id)
         return float(db.session.scalar(q) or 0.0)
 
-    def _estado_pool(proveedor):
+    def _estado_pool(proveedor, proyecto_id=None):
         asegurar()
         ahora, hoy = datetime.utcnow(), date.today()
         r = {"total": 0, "usables": 0, "invalidas": 0, "vencidas": 0, "descanso": 0, "desactivadas": 0}
         listo = cifrado_listo()
-        for k in LlaveApi.query.filter(LlaveApi.proveedor == proveedor, LlaveApi.estado != "revocada").all():
+        q = LlaveApi.query.filter(LlaveApi.proveedor == proveedor, LlaveApi.estado != "revocada")
+        if proyecto_id:
+            q = q.filter(LlaveApi.proyecto_id == proyecto_id)
+        for k in q.all():
             r["total"] += 1
             e = estado_visible(k, ahora, hoy)
             if e == "activa":
@@ -351,6 +379,26 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 r["desactivadas"] += 1
         return r
 
+    def _resumen_plat(pid):
+        asegurar()
+        ahora, hoy = datetime.utcnow(), date.today()
+        r = {"total": 0, "activas": 0, "problemas": 0, "por_vencer": 0, "heredadas": 0, "costo_mes": _costo_mes(pid)}
+        for k in LlaveApi.query.filter(LlaveApi.proyecto_id == pid, LlaveApi.estado != "revocada").all():
+            r["total"] += 1
+            e = estado_visible(k, ahora, hoy)
+            if e == "activa":
+                r["activas"] += 1
+            elif e in ("invalida", "vencida", "en descanso"):
+                r["problemas"] += 1
+            if k.estado == "activa" and k.vence and 0 <= (k.vence - hoy).days <= AVISO_VENCE_DIAS:
+                r["por_vencer"] += 1
+        if HEREDAR_GLOBAL:      # llaves globales que esta plataforma todavía puede usar
+            r["heredadas"] = LlaveApi.query.filter(LlaveApi.proyecto_id.is_(None), LlaveApi.estado == "activa").count()
+        return r
+
+    def _url_llaves(k):
+        return f"/llaves?plataforma={k.proyecto_id}" if k.proyecto_id else "/llaves"
+
     def _revisar():
         asegurar()
         ahora, hoy = datetime.utcnow(), date.today()
@@ -360,16 +408,16 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 dias = (k.vence - hoy).days
                 if dias <= AVISO_VENCE_DIAS:
                     titulo = f"Llave vencida: {nombre}" if dias < 0 else f"Llave por vencer en {dias} día(s): {nombre}"
-                    avisar("Llave", titulo, "Rótala o renueva la fecha en /llaves.", "/llaves", urgente=dias <= 3,
+                    avisar("Llave", titulo, "Rótala o renueva la fecha en /llaves.", _url_llaves(k), urgente=dias <= 3,
                            clave=f"llave-vence-{k.id}-{k.vence}-{'v' if dias < 0 else 'p'}")
             if k.rotar_cada_dias:
                 base = k.rotada_en or k.creada or ahora
                 if base + timedelta(days=k.rotar_cada_dias) <= ahora:
-                    avisar("Llave", f"Toca rotar la llave: {nombre}", f"Programada cada {k.rotar_cada_dias} días.", "/llaves",
+                    avisar("Llave", f"Toca rotar la llave: {nombre}", f"Programada cada {k.rotar_cada_dias} días.", _url_llaves(k),
                            urgente=False, clave=f"llave-rotar-{k.id}-{base:%Y%m%d}")
 
     _api.update(obtener=_obtener, todas=_disponibles, fallo=_fallo, uso=_uso, costo_mes=_costo_mes, revisar=_revisar,
-                estado_pool=_estado_pool)
+                estado_pool=_estado_pool, resumen_plat=_resumen_plat)
 
     # --- pantallas ------------------------------------------------------------------------------------
     @bp.route("/llaves")
@@ -377,7 +425,11 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
     def index():
         asegurar()
         ahora, hoy = datetime.utcnow(), date.today()
-        llaves = LlaveApi.query.order_by(LlaveApi.proveedor, LlaveApi.proyecto_id, LlaveApi.ambiente, LlaveApi.orden, LlaveApi.id).all()
+        act = plat_activa()
+        q = LlaveApi.query
+        if act:
+            q = q.filter(LlaveApi.proyecto_id == act.id)
+        llaves = q.order_by(LlaveApi.proveedor, LlaveApi.proyecto_id, LlaveApi.ambiente, LlaveApi.orden, LlaveApi.id).all()
         uso_hoy = {u.llave_id: u for u in UsoIA.query.filter_by(fecha=hoy).all()}
         filas = []
         for k in llaves:
@@ -391,10 +443,11 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 "pct_tok": int(tokens * 100 / k.limite_tokens) if k.limite_tokens else None,
             })
         ini = hoy.replace(day=1)
-        mes = db.session.execute(
-            db.select(UsoIA.proyecto_id, UsoIA.proveedor, db.func.sum(UsoIA.peticiones), db.func.sum(UsoIA.tokens_in + UsoIA.tokens_out),
-                      db.func.sum(UsoIA.costo)).where(UsoIA.fecha >= ini).group_by(UsoIA.proyecto_id, UsoIA.proveedor)
-            .order_by(db.func.sum(UsoIA.costo).desc())).all()
+        cons = db.select(UsoIA.proyecto_id, UsoIA.proveedor, db.func.sum(UsoIA.peticiones), db.func.sum(UsoIA.tokens_in + UsoIA.tokens_out),
+                         db.func.sum(UsoIA.costo)).where(UsoIA.fecha >= ini)
+        if act:
+            cons = cons.where(UsoIA.proyecto_id == act.id)
+        mes = db.session.execute(cons.group_by(UsoIA.proyecto_id, UsoIA.proveedor).order_by(db.func.sum(UsoIA.costo).desc())).all()
         proyectos = Proyecto.query.order_by(Proyecto.nombre).all()
         nombres = {p.id: p.nombre for p in proyectos}
         resumen = {
@@ -403,11 +456,16 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             "problemas": sum(1 for f in filas if f["estado"] in ("invalida", "vencida", "en descanso")),
             "costo_mes": sum((m[4] or 0) for m in mes),
         }
-        bitacora = Auditoria.query.filter_by(entidad="LlaveApi").order_by(Auditoria.fecha.desc(), Auditoria.id.desc()).limit(15).all()
+        bq = Auditoria.query.filter_by(entidad="LlaveApi")
+        if act:
+            ids = [f["k"].id for f in filas]
+            bq = bq.filter(Auditoria.entidad_id.in_(ids)) if ids else None
+        bitacora = bq.order_by(Auditoria.fecha.desc(), Auditoria.id.desc()).limit(15).all() if bq is not None else []
         return render_template("llaves.html", filas=filas, resumen=resumen, mes=mes, nombres=nombres, proyectos=proyectos,
                                proveedores=PROVEEDORES, ambientes=AMBIENTES, bitacora=bitacora,
                                cifrado=cifrado_listo(), mfa=mfa_ok(), enfriar=ENFRIAR_MIN,
-                               mensaje=MENSAJES.get(request.args.get("m", "")))
+                               mensaje=MENSAJES.get(request.args.get("m", "")),
+                               act=act, qplat=(f"?plataforma={act.id}" if act else ""))
 
     @bp.route("/llaves/nueva", methods=["POST"])
     @escribe
@@ -438,7 +496,10 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         if err:
             return mal(err)
         pid = None
-        if request.form.get("proyecto_id"):
+        act = plat_activa()
+        if act:
+            pid = act.id                      # desde la pantalla de una plataforma NUNCA se crea una llave global
+        elif request.form.get("proyecto_id"):
             p = db.session.get(Proyecto, int(request.form["proyecto_id"])) if request.form["proyecto_id"].isdigit() else None
             if p is None:
                 return mal("plataforma no encontrada.")
@@ -453,11 +514,14 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         db.session.flush()
         registrar("crear_llave", "LlaveApi", k.id, f"{proveedor} · {etiqueta} · {ambiente} · ****{k.ultimos4}")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="creada"))
+        return volver("creada")
 
     def cargar(lid):
         k = db.session.execute(db.select(LlaveApi).where(LlaveApi.id == lid).with_for_update()).scalar_one_or_none()
         if k is None:
+            abort(404)
+        act = plat_activa()
+        if act and k.proyecto_id != act.id:        # desde la pantalla de una plataforma solo se tocan SUS llaves
             abort(404)
         return k
 
@@ -484,7 +548,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             k.vence = vence
         registrar("rotar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{antes} → ****{k.ultimos4}")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="rotada"))
+        return volver("rotada")
 
     @bp.route("/llaves/<int:lid>/desactivar", methods=["POST"])
     @escribe
@@ -493,11 +557,11 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         k = cargar(lid)
         if k.estado == "revocada":
             db.session.rollback()
-            return redirect(url_for("llaves.index"))
+            return volver()
         k.estado = "desactivada"
         registrar("desactivar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4}")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="desactivada"))
+        return volver("desactivada")
 
     @bp.route("/llaves/<int:lid>/activar", methods=["POST"])
     @escribe
@@ -510,7 +574,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         k.estado, k.fallos, k.bloqueada_hasta = "activa", 0, None
         registrar("activar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4}")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="activada"))
+        return volver("activada")
 
     @bp.route("/llaves/<int:lid>/revocar", methods=["POST"])
     @escribe
@@ -520,7 +584,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         k.estado, k.secreto = "revocada", None          # el secreto se borra de verdad
         registrar("revocar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4}")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="revocada"))
+        return volver("revocada")
 
     @bp.route("/llaves/<int:lid>/editar", methods=["POST"])
     @escribe
@@ -541,7 +605,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         k.etiqueta, k.vence, k.rotar_cada_dias, k.limite_peticiones, k.limite_tokens = etiqueta, vence, rotar, lim_p, lim_t
         registrar("editar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · ****{k.ultimos4}")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="editada"))
+        return volver("editada")
 
     @bp.route("/llaves/<int:lid>/mover", methods=["POST"])
     @escribe
@@ -558,7 +622,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             hermanas[i].orden, hermanas[j].orden = hermanas[j].orden, hermanas[i].orden
             registrar("ordenar_llave", "LlaveApi", k.id, f"{k.proveedor} · {k.etiqueta} · {'sube' if sube else 'baja'} en el pool")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="movida"))
+        return volver("movida")
 
     @bp.route("/llaves/recifrar", methods=["POST"])
     @escribe
@@ -578,6 +642,6 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                 return mal(f"la llave #{k.id} no se pudo descifrar con ninguna clave maestra: no se cambió nada.")
         registrar("recifrar_llaves", "LlaveApi", None, f"{n} llaves re-cifradas con la clave maestra actual")
         db.session.commit()
-        return redirect(url_for("llaves.index", m="recifrada"))
+        return volver("recifrada")
 
     return bp

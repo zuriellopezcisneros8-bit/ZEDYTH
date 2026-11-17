@@ -12,6 +12,7 @@ Uso en app.py (antes de `if __name__ == '__main__':`):
     app.register_blueprint(almacenamiento.crear_blueprint(db, registrar))
 """
 import base64
+import contextvars
 import hashlib
 import heapq
 import json
@@ -50,7 +51,43 @@ CAMPOS = {
     "NEON_PRECIO_GB": ("costos", False), "NEON_GRATIS_TOTAL_GB": ("costos", False), "NEON_OTROS_USD": ("costos", False),
 }
 SERVICIOS = ("neon", "r2", "cloudinary", "uptimerobot", "costos")
-_guardadas = {}           # valores guardados desde el panel (ya descifrados, solo en memoria)
+# ÁMBITO: 0 = conexiones generales (las de siempre: entorno + panel). N > 0 = la plataforma (Proyecto.id) N, con SUS
+# propias llaves y sin heredar nada del resto. Cada petición fija su ámbito (ver before_request en crear_blueprint).
+_ambito = contextvars.ContextVar("almacen_ambito", default=0)
+_por_ambito = {}          # ámbito -> {nombre: valor ya descifrado, solo en memoria}
+
+
+class _Guardadas:
+    """Los valores guardados del ámbito ACTUAL. Mantiene la interfaz de dict que usa el resto del módulo."""
+    def _d(self):
+        return _por_ambito.setdefault(_ambito.get(), {})
+    def get(self, k, d=None):
+        return self._d().get(k, d)
+    def clear(self):
+        self._d().clear()
+    def update(self, o):
+        self._d().update(o)
+    def __getitem__(self, k):
+        return self._d()[k]
+    def __contains__(self, k):
+        return k in self._d()
+
+
+_guardadas = _Guardadas()
+
+
+def _en_ambito(fn):
+    """Los hilos de ThreadPoolExecutor no heredan el ámbito: este envoltorio se lo pasa (si no, leerían el general)."""
+    amb = _ambito.get()
+    def _f(*a, **k):
+        tok = _ambito.set(amb)
+        try:
+            return fn(*a, **k)
+        finally:
+            _ambito.reset(tok)
+    return _f
+
+
 _estado = {"tabla": False, "tabla_h": False, "limpieza": None, "ilegibles": 0}
 
 # --- historial y costos: constantes -------------------------------------------
@@ -454,13 +491,16 @@ def _campo_permitido(nombre):
 
 
 def _env(nombre, defecto=""):
-    return (_guardadas.get(nombre) or os.environ.get(nombre) or defecto).strip()
+    v = _guardadas.get(nombre)
+    if not v and _ambito.get() == 0:          # las variables de entorno son del sistema general, no de una plataforma
+        v = os.environ.get(nombre)
+    return (v or defecto).strip()
 
 
 def _origen(nombre):
     if _guardadas.get(nombre):
         return "panel"
-    return "entorno" if (os.environ.get(nombre) or "").strip() else None
+    return "entorno" if (_ambito.get() == 0 and (os.environ.get(nombre) or "").strip()) else None
 
 
 def _gb(nombre, defecto=""):
@@ -579,7 +619,7 @@ def datos_neon():
         try:
             proyectos = _neon(_ruta_proyectos(org), clave).get("projects", [])
             with ThreadPoolExecutor(max_workers=4) as ex:
-                fs = list(ex.map(lambda p, c=clave: _neon_proyecto(p, c), proyectos))
+                fs = list(ex.map(_en_ambito(lambda p, c=clave: _neon_proyecto(p, c)), proyectos))
         except RuntimeError as e:
             fallos.append({"cuenta": etiqueta, "error": str(e)[:200]})
             continue
@@ -714,7 +754,7 @@ def datos_r2():
     cli = _r2()
     nombres = _buckets_r2(cli)
     with ThreadPoolExecutor(max_workers=4) as ex:
-        buckets = list(ex.map(_bucket_r2, [(cli, n) for n in nombres]))
+        buckets = list(ex.map(_en_ambito(_bucket_r2), [(cli, n) for n in nombres]))
     total = sum(b.get("bytes", 0) for b in buckets)
     limite = _gb("R2_LIMITE_GB", "10")          # plan gratuito de R2: 10 GB; cámbialo si tu plan es otro
     return {"configurado": True, "buckets": buckets, "total": total, "limite": limite, "pct": _pct(total, limite)}
@@ -894,7 +934,13 @@ def _uptime_de_proyecto(ur, nombre, url_prod, subdominios, todos=False):
 
 
 # --- resumen general ----------------------------------------------------------
-_cache = {"t": 0.0, "datos": None}
+_cache = {"t": 0.0, "datos": None}          # ámbito general
+_caches = {}                                 # plataforma -> {"t", "datos"}
+
+
+def _cache_de():
+    amb = _ambito.get()
+    return _cache if amb == 0 else _caches.setdefault(amb, {"t": 0.0, "datos": None})
 _lock = threading.Lock()
 
 
@@ -1145,7 +1191,7 @@ def _plan_proyecto(d, res):
 
 def _armar():
     with ThreadPoolExecutor(max_workers=4) as ex:
-        f1, f2, f3, f4 = (ex.submit(_seguro, fn) for fn in (datos_neon, datos_r2, datos_cloudinary, datos_uptime))
+        f1, f2, f3, f4 = (ex.submit(_en_ambito(_seguro), fn) for fn in (datos_neon, datos_r2, datos_cloudinary, datos_uptime))
         d = {"neon": f1.result(), "r2": f2.result(), "cloudinary": f3.result(), "uptimerobot": f4.result()}
     d["alertas"] = _alertas(d)
     d["generado"] = datetime.utcnow().isoformat() + "Z"
@@ -1153,7 +1199,7 @@ def _armar():
 
 
 def _invalidar():
-    _cache["t"] = 0.0
+    _cache_de()["t"] = 0.0
 
 
 def _probar(servicio):
@@ -1495,9 +1541,58 @@ def avisos_horas():
     return out
 
 
+def _migrar_conexiones(db, tabla):
+    """Tablas creadas antes de las plataformas tienen PK solo en `nombre`. Añade proyecto_id (lo existente queda en 0 =
+    general, no se pierde nada) y pasa la PK a (proyecto_id, nombre). Seguro con varios workers a la vez."""
+    from sqlalchemy import inspect, text
+    if "proyecto_id" in {c["name"] for c in inspect(db.engine).get_columns("conexiones_almacen")}:
+        return
+    with db.engine.begin() as cx:
+        if db.engine.dialect.name == "postgresql":
+            cx.execute(text("SELECT pg_advisory_xact_lock(748201)"))
+            ya = cx.execute(text("SELECT 1 FROM information_schema.columns "
+                                 "WHERE table_name = 'conexiones_almacen' AND column_name = 'proyecto_id'")).first()
+            if ya:
+                return
+            cx.execute(text("ALTER TABLE conexiones_almacen ADD COLUMN proyecto_id INTEGER NOT NULL DEFAULT 0"))
+            cx.execute(text("ALTER TABLE conexiones_almacen DROP CONSTRAINT IF EXISTS conexiones_almacen_pkey"))
+            cx.execute(text("ALTER TABLE conexiones_almacen ADD PRIMARY KEY (proyecto_id, nombre)"))
+        else:                                                   # SQLite (desarrollo): se reconstruye la tabla
+            cx.execute(text("ALTER TABLE conexiones_almacen RENAME TO conexiones_almacen_old"))
+            tabla.create(cx)
+            cx.execute(text("INSERT INTO conexiones_almacen (proyecto_id, nombre, valor, actualizado) "
+                            "SELECT 0, nombre, valor, actualizado FROM conexiones_almacen_old"))
+            cx.execute(text("DROP TABLE conexiones_almacen_old"))
+
+
 def crear_blueprint(db, registrar):
     global _Modelo, _ModeloH
     bp = Blueprint("almacen", __name__)
+
+    @bp.before_request
+    def fijar_ambito():
+        """?plataforma=N (o "plataforma" en el JSON) trabaja SOLO con las conexiones de esa plataforma propia.
+        Sin eso, todo sigue como antes (ámbito general). Una plataforma que no existe se rechaza."""
+        raw = request.args.get("plataforma")
+        if raw is None and request.is_json:
+            j = request.get_json(silent=True)
+            raw = j.get("plataforma") if isinstance(j, dict) else None
+        try:
+            amb = int(raw) if raw not in (None, "") else 0
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error="Plataforma no válida."), 400
+        if amb < 0:
+            return jsonify(ok=False, error="Plataforma no válida."), 400
+        if amb:
+            from sqlalchemy import text
+            try:
+                tipo = db.session.execute(text("SELECT tipo FROM proyecto WHERE id = :i"), {"i": amb}).scalar()
+            except Exception:
+                db.session.rollback()
+                return jsonify(ok=False, error="No se pudo verificar la plataforma."), 500
+            if tipo != "Plataforma propia":
+                return jsonify(ok=False, error="Plataforma no encontrada."), 404
+        _ambito.set(amb)
 
     if _ModeloH is None:
         class HistorialAlmacen(db.Model):
@@ -1515,6 +1610,7 @@ def crear_blueprint(db, registrar):
         class ConexionAlmacen(db.Model):
             """Llaves de las APIs guardadas desde el panel. El valor va CIFRADO (Fernet)."""
             __tablename__ = "conexiones_almacen"
+            proyecto_id = db.Column(db.Integer, primary_key=True, default=0)   # 0 = general; N = plataforma N
             nombre = db.Column(db.String(60), primary_key=True)
             valor = db.Column(db.Text, nullable=False)
             actualizado = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1530,9 +1626,10 @@ def crear_blueprint(db, registrar):
         """Lee y descifra lo guardado. Se llama en cada petición: así todos los workers ven lo último."""
         if not _estado["tabla"]:
             Conexion.__table__.create(db.engine, checkfirst=True)
+            _migrar_conexiones(db, Conexion.__table__)
             _estado["tabla"] = True
         nuevas, ilegibles = {}, 0
-        filas = Conexion.query.all()
+        filas = Conexion.query.filter_by(proyecto_id=_ambito.get()).all()
         if filas:
             f = fernet()
             for r in filas:
@@ -1568,6 +1665,15 @@ def crear_blueprint(db, registrar):
         return render_template("almacenamiento.html")
 
     # --- historial diario ---------------------------------------------------------
+    def _pref_hist():
+        """Las lecturas de una plataforma llevan el prefijo @pN| (ninguna clave real empieza con @)."""
+        amb = _ambito.get()
+        return f"@p{amb}|" if amb else ""
+
+    def _filtro_hist():
+        pref = _pref_hist()
+        return Historial.clave.like(pref + "%") if pref else ~Historial.clave.like("@%")
+
     def asegurar_tabla_historial():
         if not _estado["tabla_h"]:
             Historial.__table__.create(db.engine, checkfirst=True)
@@ -1582,7 +1688,7 @@ def crear_blueprint(db, registrar):
             asegurar_tabla_historial()
             hoy = _hoy()
             for clave, valor, limite, unidad in lecturas:
-                clave = clave[:160]
+                clave = (_pref_hist() + clave)[:160]
                 fila = db.session.get(Historial, (hoy, clave))
                 if fila:
                     fila.valor, fila.limite, fila.unidad = float(valor), limite, unidad
@@ -1601,11 +1707,12 @@ def crear_blueprint(db, registrar):
         Se ocultan las claves sin lectura en los últimos 3 días (proyectos que ya no existen)."""
         asegurar_tabla_historial()
         hoy = _hoy()
-        filas = (Historial.query.filter(Historial.fecha >= hoy - timedelta(days=HISTORIAL_DIAS))
+        filas = (Historial.query.filter(Historial.fecha >= hoy - timedelta(days=HISTORIAL_DIAS), _filtro_hist())
                  .order_by(Historial.fecha).all())
         series = {}
+        quitar = len(_pref_hist())
         for f in filas:
-            s = series.setdefault(f.clave, {"serie": [], "limite": None, "unidad": f.unidad or "bytes"})
+            s = series.setdefault(f.clave[quitar:], {"serie": [], "limite": None, "unidad": f.unidad or "bytes"})
             s["serie"].append((f.fecha, f.valor))
             s["limite"], s["unidad"] = f.limite, f.unidad or "bytes"
         return {k: v for k, v in series.items() if (hoy - v["serie"][-1][0]).days <= 3}
@@ -1618,7 +1725,7 @@ def crear_blueprint(db, registrar):
             db.session.rollback()
             current_app.logger.warning("Leer historial de almacenamiento: %s", e)
             return []
-        neon = (_cache["datos"] or {}).get("neon") or {}
+        neon = (_cache_de()["datos"] or {}).get("neon") or {}
         fines = {str(p["nombre"]): p.get("periodo_fin") for p in neon.get("proyectos", []) if isinstance(p, dict)}
         items = []
         for clave, s in series.items():
@@ -1640,34 +1747,66 @@ def crear_blueprint(db, registrar):
     def datos_cacheados(forzar=False):
         cargar_guardadas()
         with _lock:
-            if forzar or not _cache["datos"] or time.time() - _cache["t"] > CACHE_SEGUNDOS:
+            c = _cache_de()
+            if forzar or not c["datos"] or time.time() - c["t"] > CACHE_SEGUNDOS:
                 datos = _armar()
-                try:
-                    datos["tablas"] = tablas_locales(db)
-                except Exception as e:
-                    db.session.rollback()
-                    datos["tablas"] = {"error": str(e)[:200]}
+                if _ambito.get() == 0:               # las tablas locales son de la app general, no de una plataforma
+                    try:
+                        datos["tablas"] = tablas_locales(db)
+                    except Exception as e:
+                        db.session.rollback()
+                        datos["tablas"] = {"error": str(e)[:200]}
                 guardar_instantanea(datos)
-                _cache["datos"], _cache["t"] = datos, time.time()
-            return _cache["datos"]
+                c["datos"], c["t"] = datos, time.time()
+            return c["datos"]
 
     def tomar_si_falta():
         """Usada por instantanea_diaria(): True si ya hay (o se logró guardar) la lectura de hoy."""
         asegurar_tabla_historial()
-        hay = lambda: db.session.query(Historial.fecha).filter(Historial.fecha == _hoy()).first() is not None
-        if hay():
-            return True
-        datos_cacheados(True)
-        return hay()
+
+        def hay():
+            return db.session.query(Historial.fecha).filter(Historial.fecha == _hoy(), _filtro_hist()).first() is not None
+
+        def tomar(amb):
+            tok = _ambito.set(amb)
+            try:
+                if hay():
+                    return True
+                datos_cacheados(True)
+                return hay()
+            finally:
+                _ambito.reset(tok)
+
+        ok = tomar(0)                                  # el resultado de la tarea sigue siendo el del general
+        try:
+            Conexion.__table__.create(db.engine, checkfirst=True)
+            plats = [r[0] for r in db.session.query(Conexion.proyecto_id).filter(Conexion.proyecto_id > 0).distinct().all()]
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.warning("Plataformas con conexiones de almacenamiento: %s", e)
+            plats = []
+        for amb in plats:                              # cada plataforma, por separado: un fallo no afecta a las demás
+            try:
+                tomar(amb)
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.warning("Instantánea de almacenamiento (plataforma %s): %s", amb, e)
+        return ok
 
     _tarea["fn"] = tomar_si_falta
+
+    def _filas_de_ambito():
+        """Proyectos vinculados. Con una plataforma activa, SOLO ella (nunca los de otras plataformas ni clientes)."""
+        filas = _filas_proyectos(db)
+        amb = _ambito.get()
+        return [f for f in filas if f["id"] == amb] if amb else filas
 
     @bp.route("/api/almacenamiento/resumen")
     def resumen():
         if not es_admin():
             return negado()
         d = _publico(datos_cacheados(request.args.get("forzar") == "1"))
-        d["vinculos"] = _vinculos(_filas_proyectos(db))
+        d["vinculos"] = _vinculos(_filas_de_ambito())
         d["alertas"] = list(d.get("alertas") or []) + _alertas_historial(items_historial())   # copia: no tocar el caché
         return jsonify(ok=True, **d)
 
@@ -1719,7 +1858,7 @@ def crear_blueprint(db, registrar):
             return negado()
         d = datos_cacheados(request.args.get("forzar") == "1")
         return jsonify(ok=True, generado=d["generado"],
-                       proyectos={str(f["id"]): _por_proyecto(d, f) for f in _filas_proyectos(db)})
+                       proyectos={str(f["id"]): _por_proyecto(d, f) for f in _filas_de_ambito()})
 
     @bp.route("/api/almacenamiento/proyectos/<int:pid>/disponibilidad")
     def disponibilidad_proyecto(pid):
@@ -1779,7 +1918,7 @@ def crear_blueprint(db, registrar):
                 return jsonify(ok=False, error="UptimeRobot no aceptó esa llave: " + str(e)[:150]), 400
         cargar_guardadas()
         try:
-            fila = db.session.get(Conexion, nombre)
+            fila = db.session.get(Conexion, (_ambito.get(), nombre))
             if borrar:
                 if fila:
                     db.session.delete(fila)
@@ -1788,7 +1927,7 @@ def crear_blueprint(db, registrar):
                 if fila:
                     fila.valor, fila.actualizado = cifrado, datetime.utcnow()
                 else:
-                    db.session.add(Conexion(nombre=nombre, valor=cifrado))
+                    db.session.add(Conexion(proyecto_id=_ambito.get(), nombre=nombre, valor=cifrado))
             registrar("eliminar" if borrar else "guardar", "Conexión", None, f"uptimerobot proyecto {pid}")
             db.session.commit()
         except Exception as e:
@@ -1940,7 +2079,44 @@ def crear_blueprint(db, registrar):
                            "valor": None if (secreto or not origen) else _env(nombre)})
         listo = {"neon": bool(_neon_cuentas()), "r2": _r2_configurado(), "cloudinary": _cld_configurado(),
                  "uptimerobot": _ur_configurado()}   # "costos" no es una conexión
-        return jsonify(ok=True, campos=campos, conectado=listo, ilegibles=_estado["ilegibles"])
+        return jsonify(ok=True, campos=campos, conectado=listo, ilegibles=_estado["ilegibles"], ambito=_ambito.get())
+
+    @bp.route("/api/almacenamiento/conexiones/copiar", methods=["POST"])
+    def conexiones_copiar():
+        """Copia (sin descifrar) las llaves GENERALES de un servicio a una plataforma, para repartir lo que ya tenías.
+        Después cada plataforma puede cambiar o quitar las suyas sin afectar a las demás."""
+        d, fallo = cuerpo_confirmado()
+        if fallo:
+            return fallo
+        amb, serv = _ambito.get(), d.get("servicio")
+        if not amb:
+            return jsonify(ok=False, error="Indica la plataforma de destino."), 400
+        if serv not in SERVICIOS:
+            return jsonify(ok=False, error="Datos incompletos."), 400
+        cargar_guardadas()
+        try:
+            copiados = 0
+            for nombre, (s_, _) in CAMPOS.items():
+                if s_ != serv:
+                    continue
+                origen = db.session.get(Conexion, (0, nombre))
+                if not origen:
+                    continue
+                destino = db.session.get(Conexion, (amb, nombre))
+                if destino:
+                    destino.valor, destino.actualizado = origen.valor, datetime.utcnow()
+                else:
+                    db.session.add(Conexion(proyecto_id=amb, nombre=nombre, valor=origen.valor))
+                copiados += 1
+            if not copiados:
+                return jsonify(ok=False, error="No hay conexiones generales de ese servicio para copiar."), 400
+            registrar("guardar", "Conexión", amb, f"copiadas de general a plataforma {amb}: {serv}"[:300])
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo copiar: " + str(e)[:150]), 500
+        _invalidar()
+        return jsonify(ok=True, copiados=copiados)
 
     @bp.route("/api/almacenamiento/conexiones/guardar", methods=["POST"])
     def conexiones_guardar():
@@ -1985,7 +2161,7 @@ def crear_blueprint(db, registrar):
         try:
             f = fernet()
             for nombre, v in cambios:
-                fila = db.session.get(Conexion, nombre)
+                fila = db.session.get(Conexion, (_ambito.get(), nombre))
                 if not v:
                     if fila:
                         db.session.delete(fila)
@@ -1994,7 +2170,7 @@ def crear_blueprint(db, registrar):
                 if fila:
                     fila.valor, fila.actualizado = cifrado, datetime.utcnow()
                 else:
-                    db.session.add(Conexion(nombre=nombre, valor=cifrado))
+                    db.session.add(Conexion(proyecto_id=_ambito.get(), nombre=nombre, valor=cifrado))
             registrar("guardar", "Conexión", None, f"{serv}: {', '.join(n for n, _ in cambios)}"[:300])
             db.session.commit()
         except Exception as e:
@@ -2015,7 +2191,7 @@ def crear_blueprint(db, registrar):
         try:
             for nombre, (s_, _) in CAMPOS.items():
                 if s_ == serv:
-                    fila = db.session.get(Conexion, nombre)
+                    fila = db.session.get(Conexion, (_ambito.get(), nombre))
                     if fila:
                         db.session.delete(fila)
             registrar("eliminar", "Conexión", None, serv)

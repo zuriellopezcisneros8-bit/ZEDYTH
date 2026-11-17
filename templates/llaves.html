@@ -38,10 +38,11 @@
 </div>
 
 <div class="section-title">Nueva llave</div>
-<form method="post" action="/llaves/nueva" class="luxury-card" style="margin-bottom:20px;" autocomplete="off">
+<form method="post" action="/llaves/nueva{{ qplat }}" class="luxury-card" style="margin-bottom:20px;" autocomplete="off">
     <div class="grid-2" style="gap:12px;">
         <label class="lbl">Proveedor<select class="field" name="proveedor" required>{% for p in proveedores %}<option>{{ p }}</option>{% endfor %}</select></label>
-        <label class="lbl">Plataforma o negocio<select class="field" name="proyecto_id"><option value="">Global (todo el negocio)</option>{% for p in proyectos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}</select></label>
+        {% if act %}<label class="lbl">Plataforma<input class="field" value="{{ act.nombre }}" disabled></label>
+        {% else %}<label class="lbl">Plataforma o negocio<select class="field" name="proyecto_id"><option value="">Global (todo el negocio)</option>{% for p in proyectos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}</select></label>{% endif %}
         <label class="lbl">Etiqueta<input class="field" name="etiqueta" maxlength="80" placeholder="Ej. Chat ZEDITH principal" required></label>
         <label class="lbl">Ambiente<select class="field" name="ambiente">{% for a in ambientes %}<option>{{ a }}</option>{% endfor %}</select></label>
         <label class="lbl">Valor de la llave<input class="field mono" type="password" name="secreto" autocomplete="new-password" required></label>
@@ -70,21 +71,21 @@
             <div>{{ '{:,}'.format(r.tok) }} tok.{% if r.pct_tok is not none %} <span style="color:{{ '#f87171' if r.pct_tok >= 80 else 'var(--text-muted)' }};">({{ r.pct_tok }}%)</span>{% endif %}</div></td>
         <td>
             <div class="toolbar" style="gap:6px; flex-wrap:wrap;">
-                <form method="post" action="/llaves/{{ k.id }}/mover" style="display:inline;"><input type="hidden" name="dir" value="subir"><button class="btn btn-sm" type="submit" title="Subir en el pool">↑</button></form>
-                <form method="post" action="/llaves/{{ k.id }}/mover" style="display:inline;"><input type="hidden" name="dir" value="bajar"><button class="btn btn-sm" type="submit" title="Bajar en el pool">↓</button></form>
+                <form method="post" action="/llaves/{{ k.id }}/mover{{ qplat }}" style="display:inline;"><input type="hidden" name="dir" value="subir"><button class="btn btn-sm" type="submit" title="Subir en el pool">↑</button></form>
+                <form method="post" action="/llaves/{{ k.id }}/mover{{ qplat }}" style="display:inline;"><input type="hidden" name="dir" value="bajar"><button class="btn btn-sm" type="submit" title="Bajar en el pool">↓</button></form>
                 {% if k.estado == 'activa' %}
-                <form method="post" action="/llaves/{{ k.id }}/desactivar" style="display:inline;"><button class="btn btn-sm" type="submit">Desactivar ya</button></form>
+                <form method="post" action="/llaves/{{ k.id }}/desactivar{{ qplat }}" style="display:inline;"><button class="btn btn-sm" type="submit">Desactivar ya</button></form>
                 {% elif k.estado != 'revocada' %}
-                <form method="post" action="/llaves/{{ k.id }}/activar" style="display:inline;"><button class="btn btn-sm" type="submit">Activar</button></form>
+                <form method="post" action="/llaves/{{ k.id }}/activar{{ qplat }}" style="display:inline;"><button class="btn btn-sm" type="submit">Activar</button></form>
                 {% endif %}
             </div>
             <details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px;">Rotar, editar o revocar</summary>
-                <form method="post" action="/llaves/{{ k.id }}/rotar" style="margin-top:8px;" autocomplete="off">
+                <form method="post" action="/llaves/{{ k.id }}/rotar{{ qplat }}" style="margin-top:8px;" autocomplete="off">
                     <label class="lbl">Nuevo valor<input class="field mono" type="password" name="secreto" autocomplete="new-password" required></label>
                     <label class="lbl">Nueva fecha de vencimiento (opcional)<input class="field" type="date" name="vence"></label>
                     <button class="btn btn-sm btn-primary" type="submit">Rotar (reemplaza el valor)</button>
                 </form>
-                <form method="post" action="/llaves/{{ k.id }}/editar" style="margin-top:10px;">
+                <form method="post" action="/llaves/{{ k.id }}/editar{{ qplat }}" style="margin-top:10px;">
                     <label class="lbl">Etiqueta<input class="field" name="etiqueta" value="{{ k.etiqueta }}" maxlength="80" required></label>
                     <label class="lbl">Vence<input class="field" type="date" name="vence" value="{{ k.vence or '' }}"></label>
                     <label class="lbl">Rotar cada (días)<input class="field" name="rotar_cada_dias" value="{{ k.rotar_cada_dias or '' }}" inputmode="numeric"></label>
@@ -93,7 +94,7 @@
                     <button class="btn btn-sm" type="submit">Guardar cambios</button>
                 </form>
                 {% if k.estado != 'revocada' %}
-                <form method="post" action="/llaves/{{ k.id }}/revocar" style="margin-top:10px;">
+                <form method="post" action="/llaves/{{ k.id }}/revocar{{ qplat }}" style="margin-top:10px;">
                     <p style="margin:0 0 6px; font-size:12px; color:#f87171;">Revocar borra el secreto del sistema y no se puede deshacer.</p>
                     <button class="btn btn-sm" type="submit" style="color:#f87171;">Revocar y borrar secreto</button>
                 </form>
