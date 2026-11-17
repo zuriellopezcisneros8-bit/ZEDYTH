@@ -57,6 +57,7 @@
 </tbody></table></div></div>
 </div>
 <div class="mt-panel {{ 'on' if tab == 'finanzas' }}" data-panel="finanzas">
+{% include '_plat_finanzas_kpi.html' %}
 <div class="section-title">Finanzas de la plataforma</div>
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
     <thead><tr><th>Mes</th><th>Ingresos</th><th>Costo de servicios</th><th>Neto</th><th style="width:30%;"></th></tr></thead><tbody>
@@ -103,6 +104,7 @@
         <div><button class="btn btn-primary" type="submit">Guardar</button></div>
     </form></details>
 
+{% include '_plat_finanzas_flujo.html' %}
 </div>
 <div class="mt-panel {{ 'on' if tab == 'servicios' }}" data-panel="servicios">
 {% include '_plat_servicios_resumen.html' %}

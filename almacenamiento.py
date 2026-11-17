@@ -690,6 +690,41 @@ def tablas_locales(db):
     return {"base": int(total or 0), "tablas": [{"nombre": r[0], "bytes": int(r[1])} for r in filas]}
 
 
+def tablas_de_neon(proyecto, clave=None):
+    """Tablas más pesadas de la base de UN proyecto de Neon (el vinculado a la plataforma), no de la app del panel.
+    `proyecto` es el dict de datos_neon(). Pide a la API de Neon la cadena de conexión (rama principal, 1.ª base, 1.er rol
+    que no sea de sistema) y abre una sesión SOLO de lectura con tiempo límite. La cadena nunca sale de aquí."""
+    import psycopg
+    pid = proyecto["id"]
+    ramas = proyecto.get("ramas") or []
+    rama = next((r for r in ramas if r.get("principal")), ramas[0] if ramas else None)
+    if not rama:
+        raise RuntimeError("El proyecto no tiene ramas.")
+    bases = proyecto.get("bases") or []
+    if not bases:
+        raise RuntimeError("No encontré bases de datos en la rama principal.")
+    roles = [r.get("name") for r in _neon(f"/projects/{pid}/branches/{rama['id']}/roles", clave).get("roles", []) if r.get("name")]
+    if not roles:
+        raise RuntimeError("No encontré roles en la rama principal.")
+    q = _uparse.urlencode({"branch_id": rama["id"], "database_name": bases[0], "role_name": roles[0]})
+    uri = _neon(f"/projects/{pid}/connection_uri?{q}", clave).get("uri")
+    if not uri:
+        raise RuntimeError("Neon no entregó la cadena de conexión.")
+    with psycopg.connect(uri, connect_timeout=10, autocommit=True) as con:
+        with con.cursor() as cur:
+            cur.execute("SET statement_timeout = '8s'")
+            cur.execute("SET default_transaction_read_only = on")
+            cur.execute(
+                "SELECT c.relname, pg_total_relation_size(c.oid) FROM pg_class c "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE c.relkind = 'r' AND n.nspname = 'public' ORDER BY 2 DESC LIMIT 10")
+            filas = cur.fetchall()
+            cur.execute("SELECT pg_database_size(current_database())")
+            total = cur.fetchone()[0]
+    return {"base": int(total or 0), "nombre_base": bases[0], "rama": rama.get("nombre"),
+            "tablas": [{"nombre": r[0], "bytes": int(r[1])} for r in filas]}
+
+
 # --- CLOUDFLARE R2 (API compatible con S3) -----------------------------------
 def _r2():
     import boto3
@@ -1861,6 +1896,37 @@ def crear_blueprint(db, registrar):
         d = datos_cacheados(request.args.get("forzar") == "1")
         return jsonify(ok=True, generado=d["generado"],
                        proyectos={str(f["id"]): _por_proyecto(d, f) for f in _filas_de_ambito()})
+
+    _tablas_cache = {}                 # (ámbito, pid) -> (momento, resultado): 5 min, para no abrir una conexión en cada visita
+
+    @bp.route("/api/almacenamiento/proyectos/<int:pid>/tablas")
+    def tablas_proyecto(pid):
+        """Tablas más pesadas de la base de Neon vinculada a ESTE proyecto (solo lectura)."""
+        if not es_admin():
+            return negado()
+        f = next((x for x in _filas_de_ambito() if x["id"] == pid), None)
+        if not f or not f["neon"]:
+            return jsonify(ok=False, error="Este proyecto no tiene una base de Neon vinculada."), 404
+        llave = (_ambito.get(), pid)
+        hit = _tablas_cache.get(llave)
+        if hit and request.args.get("forzar") != "1" and time.time() - hit[0] < CACHE_SEGUNDOS:
+            return jsonify(ok=True, **hit[1])
+        d = datos_cacheados()
+        n = d.get("neon") or {}
+        p = next((x for x in n.get("proyectos", []) if str(x.get("nombre", "")).lower() == f["neon"].lower()), None)
+        if not p:
+            return jsonify(ok=False, error=f"No encontré el proyecto de Neon «{f['neon']}»."), 404
+        clave = next((c[1] for c in _neon_cuentas() if c[0] == p.get("cuenta")), None)
+        try:
+            res = tablas_de_neon(p, clave)
+        except ImportError:
+            return jsonify(ok=False, error="Falta instalar psycopg en el servidor."), 500
+        except Exception as e:
+            # sin detalles internos: el mensaje puede traer el host; se recorta y se quita cualquier cadena postgres
+            msg = re.sub(r"postgres(ql)?://\S+", "[conexión]", str(e))[:200]
+            return jsonify(ok=False, error=msg), 502
+        _tablas_cache[llave] = (time.time(), res)
+        return jsonify(ok=True, **res)
 
     @bp.route("/api/almacenamiento/proyectos/<int:pid>/disponibilidad")
     def disponibilidad_proyecto(pid):

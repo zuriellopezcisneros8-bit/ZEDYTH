@@ -1,0 +1,73 @@
+<!-- templates/_plat_finanzas_flujo.html : flujo de los próximos 12 meses de ESTA plataforma.
+     Si la vista manda `flujo` ({proy:[{mes,ent,sal,neto}], maximo, totales:{ent,sal}, sin_fecha}) se muestra completo (entra y sale);
+     si no, se calcula en el navegador solo lo que SALE, con las fechas de pago y la periodicidad de los servicios. -->
+<style>
+  .fx-barra { height:8px; border-radius:4px; background:rgba(128,128,128,.2); overflow:hidden; margin:3px 0; }
+  .fx-barra > div { height:100%; border-radius:4px; min-width:0; }
+  .fx-in { background:#4ade80; } .fx-out { background:#f5b94c; }
+</style>
+<div class="section-title">Flujo de los próximos 12 meses</div>
+{% if flujo and flujo.proy %}
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Mes</th><th style="width:34%;">Entra / sale</th><th>Entra</th><th>Sale</th><th>Neto</th></tr></thead><tbody>
+    {% for m in flujo.proy %}
+    <tr><td class="mono">{{ m.mes }}</td>
+        <td><div class="fx-barra"><div class="fx-in" style="width:{{ (100 * m.ent / (flujo.maximo or 1))|round(1) }}%;"></div></div>
+            <div class="fx-barra"><div class="fx-out" style="width:{{ (100 * m.sal / (flujo.maximo or 1))|round(1) }}%;"></div></div></td>
+        <td class="mono">{{ '${:,.0f}'.format(m.ent) }}</td><td class="mono" style="color:var(--text-muted);">{{ '${:,.0f}'.format(m.sal) }}</td>
+        <td class="mono {{ 'pos' if m.neto > 0 else 'neg' if m.neto < 0 }}">{{ '${:,.0f}'.format(m.neto) }}</td></tr>
+    {% endfor %}
+    <tr style="font-weight:600;"><td>Total</td><td></td><td class="mono">{{ '${:,.0f}'.format(flujo.totales.ent) }}</td><td class="mono">{{ '${:,.0f}'.format(flujo.totales.sal) }}</td><td class="mono">{{ '${:,.0f}'.format(flujo.totales.ent - flujo.totales.sal) }}</td></tr>
+</tbody></table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin-top:14px; line-height:1.6;">Se proyecta con las próximas fechas de pago y la periodicidad de cada cobro y cada costo. Un pago ya vencido se cuenta una vez en el mes actual.{% if flujo.sin_fecha %} Hay {{ flujo.sin_fecha }} cobro{{ 's' if flujo.sin_fecha > 1 }} o costo{{ 's' if flujo.sin_fecha > 1 }} sin fecha de pago que no entran en la proyección.{% endif %}</p>
+{% else %}
+{% set sin_fecha = costos|rejectattr('proxima_fecha_pago')|list|length %}
+{% set cj = [] %}{% for k in costos %}{% if k.proxima_fecha_pago %}{% set _ = cj.append({'m': (k.monto_periodo or k.monto_mensual or 0)|float, 'per': k.periodicidad or 'Mensual', 'f': k.proxima_fecha_pago.isoformat()}) %}{% endif %}{% endfor %}
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Mes</th><th style="width:50%;">Sale (pagos de servicios)</th><th>Sale</th></tr></thead>
+    <tbody id="fx-filas"><tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Calculando…</td></tr></tbody>
+</table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin-top:14px; line-height:1.6;">Solo muestra lo que sale: las fechas de pago y la periodicidad de «Servicios que pagamos». Un pago ya vencido se cuenta una vez en el mes actual.{% if sin_fecha %} Hay {{ sin_fecha }} servicio{{ 's' if sin_fecha > 1 }} sin fecha de pago que no entra{{ 'n' if sin_fecha > 1 }} en la proyección.{% endif %} Para ver también lo que entra, la vista de esta plataforma debe enviar <span class="mono">flujo</span>.</p>
+<script>
+(function () {
+  var costos = {{ cj|tojson }}, PER = { "Mensual": 1, "Trimestral": 3, "Anual": 12 };
+  var hoy = new Date(); hoy.setHours(12, 0, 0, 0);
+  var base = new Date(hoy.getFullYear(), hoy.getMonth(), 1, 12);
+  function sumar(f, n) {                         // suma n meses sin saltarse de mes (31 → fin de mes)
+    var d = new Date(f.getFullYear(), f.getMonth() + n, 1, 12), ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(f.getDate(), ult)); return d;
+  }
+  var meses = [], i;
+  for (i = 0; i < 12; i++) meses.push({ f: new Date(base.getFullYear(), base.getMonth() + i, 1, 12), sal: 0 });
+  costos.forEach(function (c) {
+    var paso = PER[c.per] || 1, d = new Date(c.f + "T12:00:00"), k = 0;
+    if (isNaN(d)) return;
+    if (d < base) {                              // vencido: una vez en el mes actual y luego sigue su ciclo
+      meses[0].sal += c.m;
+      while (d < meses[1].f) { k++; d = sumar(new Date(c.f + "T12:00:00"), paso * k); }
+    }
+    for (k = 0; k < 400; k++) {
+      var idx = (d.getFullYear() - base.getFullYear()) * 12 + d.getMonth() - base.getMonth();
+      if (idx > 11) break;
+      if (idx >= 0) meses[idx].sal += c.m;
+      d = sumar(d, paso);
+    }
+  });
+  var max = Math.max.apply(null, meses.map(function (m) { return m.sal; })) || 1, total = 0;
+  var fmt = function (n) { return "$" + Math.round(n).toLocaleString("es-MX"); };
+  var cuerpo = document.getElementById("fx-filas"); cuerpo.textContent = "";
+  function fila(a, b, c, neg) {
+    var tr = document.createElement("tr");
+    [a, b, c].forEach(function (x, j) { var td = document.createElement("td"); if (j !== 1) td.className = "mono"; if (typeof x === "string") td.textContent = x; else if (x) td.appendChild(x); tr.appendChild(td); });
+    return tr;
+  }
+  meses.forEach(function (m) {
+    total += m.sal;
+    var barra = document.createElement("div"); barra.className = "fx-barra";
+    var r = document.createElement("div"); r.className = "fx-out"; r.style.width = (100 * m.sal / max).toFixed(1) + "%"; barra.appendChild(r);
+    cuerpo.appendChild(fila(m.f.toLocaleDateString("es-MX", { month: "short", year: "numeric" }), barra, fmt(m.sal)));
+  });
+  var t = fila("Total", "", fmt(total)); t.style.fontWeight = "600"; cuerpo.appendChild(t);
+})();
+</script>
+{% endif %}

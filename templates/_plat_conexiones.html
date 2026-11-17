@@ -11,12 +11,21 @@
   .cx-msg.ok { color:#4ade80; } .cx-msg.mal { color:#f87171; }
   .cx-acc { display:flex; flex-wrap:wrap; gap:8px; }
   .cx-tab input.field, .cx-tab select.field { margin:0; width:auto; min-width:150px; }
+  .cx-resumen { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .cx-origen { margin:-4px 0 4px; font-size:12px; color:var(--text-muted); }
+  .cx-origen.ok { color:#4ade80; } .cx-origen.amb { color:#f5b94c; }
 </style>
 {% if msg_conx %}<div class="luxury-card" style="border-color:#4ade80; margin-bottom:16px;"><p style="margin:0; font-size:14px;">{{ msg_conx }}</p></div>{% endif %}
 
 <div class="section-title">Base de datos y almacenamiento</div>
 <p style="margin:0 0 14px; font-size:13px; color:var(--text-muted); line-height:1.6;">Las cuentas de esta plataforma son solo suyas: no usa las de otras plataformas ni las generales del sistema. Los secretos se guardan cifrados y nunca se vuelven a mostrar; si dejas un secreto vacío se conserva el que ya está.</p>
-<div id="cx-alm" data-pid="{{ p.id }}" class="grid-2" style="gap:20px; margin-bottom:8px;"><div class="luxury-card">Cargando conexiones…</div></div>
+{% if conx and not conx.cifrado %}
+<div class="luxury-card" style="border-color:#f87171; margin-bottom:16px;"><p style="margin:0; font-size:14px;">Sin clave de cifrado no se pueden guardar conexiones: define <span class="mono">SECRET_KEY</span> en Render.</p></div>
+{% elif conx and not conx.mfa %}
+<div class="luxury-card" style="border-color:#f5b94c; margin-bottom:16px;"><p style="margin:0; font-size:14px;">Para guardar, desconectar o copiar conexiones tu usuario necesita la verificación en dos pasos (TOTP). <a href="/cuenta/seguridad" style="text-decoration:underline;">Activarla en Seguridad</a>. Mientras tanto puedes ver el estado y probar.</p></div>
+{% endif %}
+<div id="cx-resumen" class="cx-resumen"></div>
+<div id="cx-alm" data-pid="{{ p.id }}" data-mfa="{{ '0' if (conx and (not conx.mfa or not conx.cifrado)) else '1' }}" class="grid-2" style="gap:20px; margin-bottom:8px;"><div class="luxury-card">Cargando conexiones…</div></div>
 
 <div class="section-title">Llaves de API</div>
 {% if not conx %}
@@ -76,11 +85,20 @@
     </form></details>
 {% endif %}
 
+<div class="section-title">Lo único que sigue en Render</div>
+<div class="luxury-card" style="margin-bottom:24px;">
+    <p style="margin:0 0 8px; font-size:13px; color:var(--text-muted);">Estas tres son del sistema, no de esta plataforma: permiten arrancar el panel y abrir todo lo demás, por eso no viven en la pantalla. Se ponen una vez en Render y no se vuelven a tocar:</p>
+    <p class="mono" style="margin:0; font-size:12px; line-height:1.8;">DATABASE_URL · SECRET_KEY · ADMIN_PASSWORD</p>
+    {% if conx %}<p style="margin:10px 0 0; font-size:13px;">Clave de cifrado (<span class="mono">SECRET_KEY</span> o <span class="mono">LLAVES_MASTER</span>): <span class="badge {{ 'badge-green' if conx.cifrado else 'badge-red' }}">{{ 'Definida' if conx.cifrado else 'Falta' }}</span></p>{% endif %}
+    <p style="margin:10px 0 0; font-size:13px; color:var(--text-muted);">Para llaves con rotación, por plataforma o con límites diarios usa <a href="/llaves?plataforma={{ p.id }}" style="text-decoration:underline;">Llaves de esta plataforma</a>. Las conexiones del panel mismo (avisos al celular y correo, push, respaldos, sitio público y cron) están en <a href="/conexiones" style="text-decoration:underline;">Conexiones del sistema</a>.</p>
+</div>
+
 {% raw %}
 <script>
 (function () {
   var raiz = document.getElementById("cx-alm"); if (!raiz) return;
   var pid = parseInt(raiz.dataset.pid, 10);
+  var sinMfa = raiz.dataset.mfa === "0", franja = document.getElementById("cx-resumen");
   var SERV = [
     { id: "neon", titulo: "Neon · base de datos", campos: [["NEON_API_KEY", "Llave de API"], ["NEON_ORG_ID", "ID de organización (opcional)"], ["NEON_PLAN", "Plan"], ["NEON_LIMITE_GB", "Límite por proyecto (GB)"], ["NEON_LIMITE_CU", "Límite de horas de cómputo"]] },
     { id: "r2", titulo: "Cloudflare R2 · archivos", campos: [["R2_ACCOUNT_ID", "Account ID"], ["R2_ACCESS_KEY_ID", "Access Key ID"], ["R2_SECRET_ACCESS_KEY", "Secret Access Key"], ["R2_BUCKETS", "Buckets (opcional)"], ["R2_LIMITE_GB", "Límite (GB)"]] },
@@ -102,12 +120,17 @@
   }
   function pintar(datos, mensajes) {
     var porNombre = {}; (datos.campos || []).forEach(function (c) { porNombre[c.nombre] = c; });
-    raiz.textContent = "";
+    raiz.textContent = ""; if (franja) franja.textContent = "";
     SERV.forEach(function (sv) {
       var conectado = !!(datos.conectado || {})[sv.id], inputs = {}, msg = el("div", { className: "cx-msg" });
       var m = (mensajes || {})[sv.id]; if (m) { msg.textContent = m.texto; msg.className = "cx-msg " + (m.ok ? "ok" : "mal"); }
+      var llenos = sv.campos.filter(function (par) { return (porNombre[par[0]] || {}).origen; }).length;
+      var estado = conectado ? "ok" : (llenos ? "parcial" : "falta");
+      var txtEstado = { ok: "Conectado", parcial: "Incompleto", falta: "Sin conectar" }[estado];
+      var clsEstado = { ok: "badge-green", parcial: "badge-amber", falta: "badge-red" }[estado];
+      if (franja) franja.appendChild(el("span", { className: "badge " + clsEstado, text: sv.titulo.split(" · ")[0] + " · " + txtEstado }));
       var cab = el("div", { className: "cx-cab" }, [el("h3", { className: "stat-label", text: sv.titulo, style: "margin:0;" }),
-        el("span", { className: "badge " + (conectado ? "badge-green" : "badge-amber"), text: conectado ? "Conectado" : "Sin conexión propia" })]);
+        el("span", { className: "badge " + clsEstado, text: txtEstado })]);
       var card = el("div", { className: "luxury-card cx-card" }, [cab]);
       sv.campos.forEach(function (par) {
         var info = porNombre[par[0]] || {}, secreto = !!info.secreto;
@@ -116,6 +139,10 @@
         else inp.value = info.valor || "";
         inputs[par[0]] = inp;
         card.appendChild(el("label", { className: "lbl" }, [document.createTextNode(par[1]), inp]));
+        var enPanel = info.origen === "panel", enEnt = info.origen === "entorno";
+        card.appendChild(el("p", { className: "cx-origen " + (enPanel ? "ok" : enEnt ? "amb" : ""),
+          text: enPanel ? "● Guardada desde aquí" + (secreto && info.vista ? ": " + info.vista : "")
+              : enEnt ? "● Viene de las variables de Render (si la pegas aquí, esta manda)" : "○ Sin configurar" }));
       });
       card.appendChild(msg);
       function aviso(ok, texto) { msg.textContent = texto; msg.className = "cx-msg " + (ok ? "ok" : "mal"); }
@@ -125,7 +152,7 @@
         var v = {}; Object.keys(inputs).forEach(function (n) { v[n] = inputs[n].value.trim(); });
         bG.disabled = true;
         api("/api/almacenamiento/conexiones/guardar", { servicio: sv.id, valores: v, confirmar: true }).then(function (d) {
-          bG.disabled = false; if (d.ok) recargar(true, "Guardado (cifrado)."); else aviso(false, d.error || "No se pudo guardar.");
+          bG.disabled = sinMfa; if (d.ok) recargar(true, "Guardado (cifrado)."); else aviso(false, d.error || "No se pudo guardar.");
         });
       };
       var bP = el("button", { className: "btn btn-sm", type: "button", text: "Probar" });
@@ -134,6 +161,7 @@
         api("/api/almacenamiento/conexiones/probar", { servicio: sv.id }).then(function (d) { aviso(!!d.ok, d.ok ? (d.mensaje || "Funciona.") : (d.error || "Falló la prueba.")); });
       };
       var acc = el("div", { className: "cx-acc" }, [bG, bP]);
+      if (sinMfa) bG.disabled = true;
       if (conectado) {
         var bD = el("button", { className: "btn btn-sm", type: "button", text: "Desconectar" });
         bD.onclick = function () {
@@ -142,6 +170,7 @@
             if (d.ok) recargar(true, "Desconectado."); else aviso(false, d.error || "No se pudo desconectar.");
           });
         };
+        if (sinMfa) bD.disabled = true;
         acc.appendChild(bD);
       } else {
         var bC = el("button", { className: "btn btn-sm", type: "button", text: "Copiar las generales" });
@@ -152,6 +181,7 @@
             if (d.ok) recargar(true, "Copiadas (" + d.copiados + " campo(s))."); else aviso(false, d.error || "No se pudo copiar.");
           });
         };
+        if (sinMfa) bC.disabled = true;
         acc.appendChild(bC);
       }
       card.appendChild(acc);
