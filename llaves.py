@@ -73,6 +73,8 @@ MODELO_PRUEBA = lambda: os.environ.get("LLAVES_MODELO_PRUEBA") or "gemini-3.5-fl
 ETIQ_PRUEBA = {"valida": "válida", "con_cuota": "válida y con cuota", "sin_cuota": "sin cuota ahora", "invalida": "inválida",
                "rechazada": "rechazada", "sin_red": "sin conexión", "error": "error"}
 _RE_ENTORNO = re.compile(r"^GEMINI_KEY_?\d+$")
+_RE_NOMBRE_VAR = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,60}$")
+TIPO_PLATAFORMA = "Plataforma propia"      # Proyecto.tipo de las plataformas (las llaves se asignan solo a plataformas)
 
 MENSAJES = {
     "importada": "Importación terminada. Las llaves quedaron cifradas; las variables de Render no se tocaron.",
@@ -149,6 +151,26 @@ def llaves_del_entorno(entorno=None):
     for nombre in ("GEMINI_KEYS", "GEMINI_API_KEYS", "GEMINI_API_KEY"):
         for i, parte in enumerate(re.split(r"[,;\r\n]+", e.get(nombre) or ""), 1):
             agregar(f"{nombre} #{i}", parte)
+    return salida
+
+
+def llaves_de_texto(texto):
+    """[(nombre o '', valor)] de un texto pegado: una llave por línea o separadas por coma/punto y coma. Acepta el formato de
+    Render (GEMINI_KEY_7=AIza...), con o sin comillas. Sin repetidas."""
+    vistas, salida = set(), []
+    for trozo in re.split(r"[\r\n,;]+", str(texto or "")[:400000]):
+        t = trozo.strip()
+        if not t:
+            continue
+        nombre, valor = "", t
+        if "=" in t:
+            izq, _, der = t.partition("=")
+            if _RE_NOMBRE_VAR.match(izq.strip()):
+                nombre, valor = izq.strip(), der
+        valor = valor.strip().strip('"').strip("'").strip()
+        if 8 <= len(valor) <= 4000 and not any(c.isspace() for c in valor) and valor not in vistas:
+            vistas.add(valor)
+            salida.append((nombre, valor))
     return salida
 
 
@@ -334,7 +356,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         __tablename__ = "llave_meta"
         llave_id = db.Column(db.Integer, primary_key=True)
         huella = db.Column(db.String(16), index=True)
-        origen = db.Column(db.String(20), default="manual")                    # manual | entorno
+        origen = db.Column(db.String(20), default="manual")                    # manual | entorno | pegada | render
         prueba_fecha = db.Column(db.DateTime)
         prueba_resultado = db.Column(db.String(16))
         prueba_detalle = db.Column(db.String(240))
@@ -386,6 +408,9 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         else:
             m.huella = huella(secreto)
 
+    def nombre_visible(p):
+        return p.nombre if p.tipo == TIPO_PLATAFORMA else f"{p.nombre} (proyecto de cliente)"
+
     def ids_asignadas(pid):
         return [a.llave_id for a in LlavePlat.query.filter_by(proyecto_id=pid).all()]
 
@@ -401,7 +426,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         """{llave_id: [nombres de plataformas]} (dueña + asignadas) para mostrar «también en»."""
         if not ids:
             return {}
-        nombres = {p.id: p.nombre for p in Proyecto.query.all()}
+        nombres = {p.id: nombre_visible(p) for p in Proyecto.query.all()}
         r = {}
         for a in LlavePlat.query.filter(LlavePlat.llave_id.in_(ids)).all():
             if a.proyecto_id in nombres:
@@ -860,7 +885,8 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             cons = cons.where(UsoIA.proyecto_id == act.id)
         mes = db.session.execute(cons.group_by(UsoIA.proyecto_id, UsoIA.proveedor).order_by(db.func.sum(UsoIA.costo).desc())).all()
         proyectos = Proyecto.query.order_by(Proyecto.nombre).all()
-        nombres = {p.id: p.nombre for p in proyectos}
+        nombres = {p.id: nombre_visible(p) for p in proyectos}
+        plataformas = [p for p in proyectos if p.tipo == TIPO_PLATAFORMA]
         malas = ("invalida", "rechazada", "sin_cuota")
         resumen = {
             "activas": sum(1 for f in filas if f["estado"] == "activa"),
@@ -891,7 +917,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             mensaje = (f"Importé {request.args.get('n', '0')} llave(s) nuevas; {request.args.get('d', '0')} ya estaban registradas"
                        + (f"; {request.args.get('r')} se omitieron porque las revocaste antes." if request.args.get("r", "0") != "0" else ".")
                        + " Quedaron cifradas; las variables de Render no se tocaron.")
-        return render_template("llaves.html", filas=filas, resumen=resumen, mes=mes, nombres=nombres, proyectos=proyectos,
+        return render_template("llaves.html", filas=filas, resumen=resumen, mes=mes, nombres=nombres, proyectos=proyectos, plataformas=plataformas,
                                proveedores=PROVEEDORES, ambientes=AMBIENTES, bitacora=bitacora,
                                cifrado=cifrado_listo(), mfa=mfa_ok(), enfriar=ENFRIAR_MIN, mensaje=mensaje,
                                act=act, qplat=(f"?plataforma={act.id}" if act else ""), entorno=entorno,
@@ -1061,20 +1087,16 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         return volver("movida")
 
     # --- Gemini: importar del entorno, asignar a plataformas, probar ------------------------------------
-    @bp.route("/llaves/importar-entorno", methods=["POST"])
-    @escribe
-    def importar_entorno():
-        """Copia (cifradas) a este registro las llaves GEMINI_KEY_N de las variables de Render de ESTE servidor. Es idempotente:
-        las que ya están (misma huella) no se duplican. Las variables de Render no se modifican."""
-        asegurar()
+    def destinos_pedidos(campo="asignar"):
+        pedidas = [int(x) for x in request.form.getlist(campo) if x.isdigit()]
+        if not pedidas:
+            return set()
+        return {p.id for p in Proyecto.query.filter(Proyecto.id.in_(pedidas), Proyecto.tipo == TIPO_PLATAFORMA).all()}
+
+    def importar_lista(candidatas, destinos, origen):
+        """Registra (cifradas) las llaves que no existan (se reconocen por su huella) y las asigna a `destinos`.
+        Una llave que ya estaba y se vuelve a importar para otra plataforma solo suma esa plataforma. Sin commit."""
         rellenar_huellas()
-        if not cifrado_listo():
-            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
-        candidatas = llaves_del_entorno()
-        if not candidatas:
-            return mal("No encontré llaves GEMINI_KEY_1, GEMINI_KEY_2... en las variables de este servidor.")
-        pedidas = [int(x) for x in request.form.getlist("asignar") if x.isdigit()]
-        destinos = {p.id for p in Proyecto.query.filter(Proyecto.id.in_(pedidas)).all()} if pedidas else set()
         conocidas = {m.huella: m.llave_id for m in LlaveMeta.query.all() if m.huella}
         ultimo = db.session.scalar(db.select(db.func.max(LlaveApi.orden)).where(
             LlaveApi.proveedor == GEMINI, LlaveApi.ambiente == "Producción", LlaveApi.proyecto_id.is_(None)))
@@ -1092,12 +1114,14 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                     if k.proyecto_id is None:
                         afectadas.append(k.id)
                 continue
-            k = LlaveApi(proveedor=GEMINI, proyecto_id=None, etiqueta=nombre[:80], ambiente="Producción", ultimos4=valor[-4:],
+            etiqueta = (f"{nombre} ····{valor[-4:]}" if origen == "pegada" and nombre else
+                        f"Gemini ····{valor[-4:]}" if origen == "pegada" else nombre)[:80]
+            k = LlaveApi(proveedor=GEMINI, proyecto_id=None, etiqueta=etiqueta, ambiente="Producción", ultimos4=valor[-4:],
                          secreto=cifrar(valor), orden=siguiente, creado_por=current_user.username)
             siguiente += 1
             db.session.add(k)
             db.session.flush()
-            db.session.add(LlaveMeta(llave_id=k.id, huella=h, origen="entorno"))
+            db.session.add(LlaveMeta(llave_id=k.id, huella=h, origen=origen))
             conocidas[h] = k.id
             afectadas.append(k.id)
             nuevas += 1
@@ -1110,10 +1134,108 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
                         db.session.add(LlavePlat(llave_id=lid, proyecto_id=pid))
                         asignaciones += 1
         registrar("importar_llaves", "LlaveApi", None,
-                  f"{nuevas} nuevas, {repetidas} ya estaban, {omitidas} revocadas omitidas desde las variables de entorno · "
+                  f"{nuevas} nuevas, {repetidas} ya estaban, {omitidas} revocadas omitidas · origen: {origen} · "
                   f"{asignaciones} asignaciones a {len(destinos)} plataforma(s)")
+        return nuevas, repetidas, omitidas
+
+    @bp.route("/llaves/importar-entorno", methods=["POST"])
+    @escribe
+    def importar_entorno():
+        """Copia (cifradas) a este registro las llaves GEMINI_KEY_N de las variables de Render de ESTE servidor (el admin solo ve
+        las suyas; las de otras apps se pegan con /llaves/importar-pegadas). Idempotente. Las variables de Render no se modifican."""
+        asegurar()
+        if not cifrado_listo():
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
+        candidatas = llaves_del_entorno()
+        if not candidatas:
+            return mal("No encontré llaves GEMINI_KEY_1, GEMINI_KEY_2... en las variables de este servidor.")
+        n, d, r = importar_lista(candidatas, destinos_pedidos(), "entorno")
         db.session.commit()
-        return volver("importada", n=nuevas, d=repetidas, r=omitidas)
+        return volver("importada", n=n, d=d, r=r)
+
+    @bp.route("/llaves/importar-pegadas", methods=["POST"])
+    @escribe
+    def importar_pegadas():
+        """Llaves pegadas desde otra app (Zelecte, Zmarthket...): se asignan a las plataformas marcadas. Si una llave ya estaba
+        registrada (por ejemplo porque otra app también la tiene), solo se le suma esa plataforma: así se arma «dónde se usa»."""
+        asegurar()
+        if not cifrado_listo():
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
+        candidatas = llaves_de_texto(request.form.get("pegadas"))
+        if not candidatas:
+            return mal("no encontré llaves en lo que pegaste (una por línea, o NOMBRE=valor como en Render).")
+        destinos = destinos_pedidos()
+        if not destinos:
+            return mal("marca al menos una plataforma: es la que usa esas llaves.")
+        n, d, r = importar_lista(candidatas, destinos, "pegada")
+        db.session.commit()
+        return volver("importada", n=n, d=d, r=r)
+
+    # --- Gemini: leer las variables de cada servicio por la API de Render ---------------------------------
+    def leer_de_render():
+        """(fuentes, error, avisos). Lee con las llaves generales de Render las GEMINI_KEY_N de cada servicio y grupo de
+        variables, y a cada fuente le calcula sus plataformas (por repositorio, dirección o nombre: render_panel.vincular).
+        Las fuentes traen secretos: no se devuelven al navegador ni se guardan. Necesita contexto de petición."""
+        import render_panel
+        llaves_render = render_panel._llaves()
+        if not llaves_render:
+            return [], "No hay ninguna llave de la API de Render guardada: agrégala en Conexiones.", []
+        fuentes, avisos = render_panel.fuentes_gemini(llaves_render)
+        plataformas_ = Proyecto.query.filter_by(tipo=TIPO_PLATAFORMA).all()
+        for f in fuentes:
+            f["plataformas"] = [p for p in plataformas_
+                                if render_panel.vincular(p, f["servicios"], [x.nombre for x in p.subdominios])]
+        return fuentes, None, avisos
+
+    @bp.route("/llaves/render-detectar")
+    @escribe
+    def render_detectar():
+        """Vista previa SIN secretos: por servicio, qué llaves de Gemini hay (solo últimos 4), cuáles son nuevas y a qué plataforma
+        se asignarían solas. No escribe nada."""
+        asegurar()
+        if not cifrado_listo():
+            return jsonify(ok=False, error="No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER)."), 400
+        try:
+            fuentes, error, avisos = leer_de_render()
+        except Exception:
+            return jsonify(ok=False, error="No se pudo leer Render."), 502
+        if error:
+            return jsonify(ok=False, error=error), 400
+        rellenar_huellas()
+        conocidas = {m.huella for m in LlaveMeta.query.all() if m.huella}
+        salida = [{"nombre": f["nombre"], "cuenta": f["cuenta"], "tipo": f["tipo"],
+                   "plataformas": [p.nombre for p in f["plataformas"]],
+                   "llaves": [{"variable": n, "final": v[-4:], "nueva": huella(v) not in conocidas} for n, v in f["llaves"]]}
+                  for f in fuentes]
+        return jsonify(ok=True, fuentes=salida, avisos=avisos,
+                       nuevas=len({huella(v) for f in fuentes for _, v in f["llaves"]} - conocidas))
+
+    @bp.route("/llaves/importar-render", methods=["POST"])
+    @escribe
+    def importar_render():
+        """Copia (cifradas) a este registro las llaves de Gemini que Render guarda en las variables de tus servicios. Cada una
+        se asigna sola a la plataforma ligada a su servicio; si un servicio no se pudo ligar, a las plataformas marcadas en el
+        formulario (o a ninguna). Idempotente (se reconocen por huella). Render solo se LEE: sus variables no se modifican."""
+        asegurar()
+        if not cifrado_listo():
+            return mal("No hay clave de cifrado: define SECRET_KEY (o LLAVES_MASTER).")
+        try:
+            fuentes, error, avisos = leer_de_render()
+        except Exception:
+            return mal("no se pudo leer Render.")
+        if error:
+            return mal(error)
+        if not fuentes:
+            return mal("no encontré variables GEMINI_KEY_1, GEMINI_KEY_2... en los servicios de Render." + (f" ({avisos[0]})" if avisos else ""))
+        manuales = destinos_pedidos()
+        n = d = r = 0
+        for f in fuentes:
+            destinos = {p.id for p in f["plataformas"]} or manuales
+            candidatas = [(f"{var} · {f['nombre']} ····{valor[-4:]}", valor) for var, valor in f["llaves"]]
+            a, b, c = importar_lista(candidatas, destinos, "render")
+            n, d, r = n + a, d + b, r + c
+        db.session.commit()
+        return volver("importada", n=n, d=d, r=r)
 
     @bp.route("/llaves/asignar-masivo", methods=["POST"])
     @escribe
@@ -1127,8 +1249,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
         if accion not in ("agregar", "quitar"):
             return mal("acción desconocida.")
         act = plat_activa()
-        pedidas = [act.id] if act else [int(x) for x in request.form.getlist("proyecto_ids") if x.isdigit()]
-        destinos = {p.id for p in Proyecto.query.filter(Proyecto.id.in_(pedidas)).all()} if pedidas else set()
+        destinos = {act.id} if act else destinos_pedidos("proyecto_ids")
         if not destinos:
             return mal("elige al menos una plataforma.")
         ids = [k.id for k in LlaveApi.query.filter(LlaveApi.proveedor == proveedor, LlaveApi.proyecto_id.is_(None),
@@ -1161,11 +1282,12 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, Auditoria):
             return mal("esta llave pertenece a una sola plataforma; solo las globales se comparten.")
         act = plat_activa()
         pid = act.id if act else (int(request.form["proyecto_id"]) if (request.form.get("proyecto_id") or "").isdigit() else None)
-        if pid is None or db.session.get(Proyecto, pid) is None:
+        pr = db.session.get(Proyecto, pid) if pid is not None else None
+        accion = request.form.get("accion")
+        if pr is None or (accion == "agregar" and pr.tipo != TIPO_PLATAFORMA):
             db.session.rollback()
             return mal("plataforma no encontrada.")
         a = db.session.get(LlavePlat, (k.id, pid))
-        accion = request.form.get("accion")
         if accion == "agregar" and a is None:
             db.session.add(LlavePlat(llave_id=k.id, proyecto_id=pid))
         elif accion == "quitar" and a is not None:

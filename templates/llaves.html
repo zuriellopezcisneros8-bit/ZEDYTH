@@ -47,11 +47,11 @@
         <form method="post" action="/llaves/importar-entorno" onsubmit="return confirm('¿Importar y cifrar las llaves de Gemini de este servidor?')">
             <p style="margin:0 0 6px; font-size:13px; color:var(--text-muted);">Marca las plataformas que usan estas llaves (puedes cambiarlo después):</p>
             <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:12px;">
-                {% for pr in proyectos %}<label style="font-size:13px;"><input type="checkbox" name="asignar" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
+                {% for pr in plataformas %}<label style="font-size:13px;"><input type="checkbox" name="asignar" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
             </div>
             <button class="btn btn-primary btn-sm" type="submit">Importar y cifrar</button>
         </form>
-        <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Se copian cifradas a este registro; las variables de Render no se tocan y se puede repetir sin duplicar (se reconocen por su huella, no por el nombre). A partir de aquí el chat de este panel reparte la carga entre ellas al azar.</p>
+        <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Solo ve las variables de ESTE servidor (el admin); las de Zelecte, Zmarthket y demás viven en sus propios servicios de Render: pégalas con la tarjeta de al lado. Se copian cifradas; las variables de Render no se tocan y se puede repetir sin duplicar (se reconocen por su huella, no por el nombre). A partir de aquí el chat de este panel reparte la carga entre ellas al azar.</p>
         {% else %}
         <p style="margin:0; font-size:13px; color:var(--text-muted);">Este servidor no trae variables <span class="mono">GEMINI_KEY_N</span>{% if resumen.total %}; las que ya registraste se administran abajo{% endif %}.</p>
         {% endif %}
@@ -71,13 +71,68 @@
             <input type="hidden" name="proveedor" value="{{ gemini }}">
             <details><summary style="cursor:pointer; font-size:13px;">Asignar o quitar TODAS las de Gemini a plataformas</summary>
                 <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0;">
-                    {% for pr in proyectos %}<label style="font-size:13px;"><input type="checkbox" name="proyecto_ids" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
+                    {% for pr in plataformas %}<label style="font-size:13px;"><input type="checkbox" name="proyecto_ids" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
                 </div>
                 <button class="btn btn-sm" type="submit" name="accion" value="agregar">Agregar a las marcadas</button>
                 <button class="btn btn-sm" type="submit" name="accion" value="quitar">Quitar de las marcadas</button>
             </details>
         </form>
     </div>
+</div>
+<div class="luxury-card" style="margin-bottom:20px;">
+    <h3 class="stat-label">Leer de Render (sin pegar nada)</h3>
+    <p style="margin:0 0 10px; font-size:13px; color:var(--text-muted);">Con tu llave de la API de Render lee las variables <span class="mono">GEMINI_KEY_N</span> de cada servicio (y de sus grupos de variables) y las registra cifradas. Cada llave se asigna sola a la plataforma ligada a ese servicio (por repositorio, dirección o nombre). Primero detecta; no se guarda nada hasta que importes.</p>
+    <div class="toolbar" style="gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn btn-sm" type="button" id="rdDetectar">Detectar en Render</button>
+    </div>
+    <div id="rdResultado" style="font-size:13px; margin-bottom:10px;"></div>
+    <form method="post" action="/llaves/importar-render" id="rdForm" autocomplete="off" style="display:none;" onsubmit="return confirm('¿Importar y cifrar las llaves nuevas encontradas en Render?')">
+        <p style="margin:0 0 6px; font-size:13px; color:var(--text-muted);">Si algún servicio no se pudo ligar a una plataforma, se asigna a las que marques aquí (opcional):</p>
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:12px;">
+            {% for pr in plataformas %}<label style="font-size:13px;"><input type="checkbox" name="asignar" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
+        </div>
+        <button class="btn btn-primary btn-sm" type="submit">Importar y cifrar</button>
+    </form>
+    <p style="margin:10px 0 0; font-size:12px; color:var(--text-muted);">Render solo se lee: sus variables no se modifican. Los valores nunca llegan a esta pantalla (solo los últimos 4 caracteres) ni a la bitácora, y las demás variables de tus servicios se descartan sin guardarse. Se puede repetir sin duplicar.</p>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById("rdDetectar"), out = document.getElementById("rdResultado"), form = document.getElementById("rdForm");
+  if (!btn) return;
+  function linea(texto, color) { var p = document.createElement("p"); p.style.margin = "0 0 6px"; if (color) p.style.color = color; p.textContent = texto; out.appendChild(p); }
+  btn.addEventListener("click", async function () {
+    btn.disabled = true; out.textContent = "Leyendo Render…"; form.style.display = "none";
+    try {
+      var r = await fetch("/llaves/render-detectar", {headers: {"Accept": "application/json"}});
+      var j = await r.json().catch(function () { return null; });
+      out.textContent = "";
+      if (!j || !j.ok) { linea((j && j.error) || "No se pudo leer Render.", "#f87171"); return; }
+      if (!j.fuentes.length) { linea("No encontré variables GEMINI_KEY_N en tus servicios de Render."); }
+      j.fuentes.forEach(function (f) {
+        var nuevas = f.llaves.filter(function (k) { return k.nueva; }).length;
+        linea(f.nombre + " (" + f.cuenta + "): " + f.llaves.length + " llave(s), " + nuevas + " nueva(s) → " +
+              (f.plataformas.length ? f.plataformas.join(", ") : "sin plataforma ligada") +
+              " · " + f.llaves.map(function (k) { return k.variable + " ····" + k.final; }).join(", "));
+      });
+      (j.avisos || []).forEach(function (a) { linea("Aviso: " + a, "#fbbf24"); });
+      if (j.nuevas) { linea(j.nuevas + " llave(s) nueva(s) por importar."); form.style.display = ""; }
+      else if (j.fuentes.length) { linea("Todo lo que hay en Render ya está registrado."); }
+    } catch (e) { out.textContent = ""; linea("No se pudo leer Render.", "#f87171"); }
+    finally { btn.disabled = false; }
+  });
+})();
+</script>
+<div class="luxury-card" style="margin-bottom:20px;">
+    <h3 class="stat-label">Pegar las llaves de otra plataforma</h3>
+    <form method="post" action="/llaves/importar-pegadas" autocomplete="off" onsubmit="return confirm('¿Registrar estas llaves y asignarlas a las plataformas marcadas?')">
+        <p style="margin:0 0 8px; font-size:13px; color:var(--text-muted);">En Render abre el servicio (por ejemplo Zelecte) → Environment, copia las variables <span class="mono">GEMINI_KEY_N</span> y pégalas aquí: una por línea, o tal cual <span class="mono">GEMINI_KEY_7=AIza…</span>. Marca la plataforma a la que pertenecen. Si una llave ya estaba (porque otra app también la tiene), solo se le suma esa plataforma: así queda «en cuáles se usa». Hazlo una plataforma a la vez.</p>
+        <textarea class="field mono" name="pegadas" rows="6" placeholder="GEMINI_KEY_1=AIza...&#10;GEMINI_KEY_2=AIza..." spellcheck="false" autocomplete="off" required style="width:100%;"></textarea>
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0;">
+            {% for pr in plataformas %}<label style="font-size:13px;"><input type="checkbox" name="asignar" value="{{ pr.id }}"> {{ pr.nombre }}</label>{% endfor %}
+        </div>
+        <button class="btn btn-primary btn-sm" type="submit">Registrar cifradas</button>
+        <span style="font-size:12px; color:var(--text-muted); margin-left:8px;">Los valores no se muestran ni se guardan en la bitácora; solo los últimos 4 caracteres.</span>
+    </form>
 </div>
 {% endif %}
 
@@ -114,7 +169,7 @@
         <td style="font-size:13px;">{{ k.proyecto.nombre if k.proyecto else 'Global' }}
             {% if not k.proyecto and r.asig %}<div style="font-size:12px;">En: {% for pid in r.asig %}{{ nombres.get(pid, '?') }}{{ ', ' if not loop.last }}{% endfor %}</div>
             {% elif not k.proyecto %}<div style="font-size:12px; color:var(--text-muted);">sin plataformas asignadas</div>{% endif %}
-            <div style="font-size:12px; color:var(--text-muted);">{{ k.ambiente }} · pool #{{ (k.orden or 0) + 1 }}{% if r.origen == 'entorno' %} · de Render{% endif %}</div></td>
+            <div style="font-size:12px; color:var(--text-muted);">{{ k.ambiente }} · pool #{{ (k.orden or 0) + 1 }}{% if r.origen in ('entorno', 'render') %} · de Render{% endif %}</div></td>
         <td><span class="badge {{ 'badge-green' if r.estado == 'activa' else ('badge-amber' if r.estado in ('en descanso', 'desactivada') else 'badge-red') }}">{{ r.estado }}</span>
             {% if k.fallos %}<div style="font-size:12px; color:var(--text-muted);">{{ k.fallos }} fallo(s)</div>{% endif %}</td>
         <td style="font-size:12px;">{% if r.prueba %}<span class="badge {{ 'badge-green' if r.prueba in ('valida', 'con_cuota') else ('badge-amber' if r.prueba in ('sin_cuota', 'sin_red', 'error') else 'badge-red') }}">{{ r.prueba_txt }}</span>
@@ -138,7 +193,7 @@
             {% if not k.proyecto_id and k.estado != 'revocada' %}<details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px;">Plataformas ({{ r.asig|length }})</summary>
                 <form method="post" action="/llaves/{{ k.id }}/plataformas" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
                     <input type="hidden" name="accion" value="agregar">
-                    <select class="field" name="proyecto_id" style="width:auto; min-width:140px; margin:0;">{% for pr in proyectos if pr.id not in r.asig %}<option value="{{ pr.id }}">{{ pr.nombre }}</option>{% endfor %}</select>
+                    <select class="field" name="proyecto_id" style="width:auto; min-width:140px; margin:0;">{% for pr in plataformas if pr.id not in r.asig %}<option value="{{ pr.id }}">{{ pr.nombre }}</option>{% endfor %}</select>
                     <button class="btn btn-sm" type="submit">Agregar</button>
                 </form>
                 {% for pid in r.asig %}<form method="post" action="/llaves/{{ k.id }}/plataformas" style="margin-top:6px;"><input type="hidden" name="accion" value="quitar"><input type="hidden" name="proyecto_id" value="{{ pid }}"><button class="btn btn-sm" type="submit">Quitar de {{ nombres.get(pid, '?') }}</button></form>{% endfor %}

@@ -166,6 +166,95 @@ def _ultimo_deploy(llave, sid):
             "creado": d.get("createdAt"), "terminado": d.get("finishedAt")}
 
 
+# --- Variables de entorno: llaves de Gemini ------------------------------------------------------------------------
+# Lee GET /services/{id}/env-vars (y los grupos de variables) y se queda SOLO con las llaves de Gemini.
+# Los VALORES son secretos: viven en memoria durante la petición. No van a la caché de 5 min, ni a la pantalla,
+# ni a la bitácora, y las demás variables (bases de datos, SECRET_KEY...) se descartan sin guardarse.
+def _variables_servicio(llave, sid):
+    """{nombre: valor} de las variables de entorno de un servicio."""
+    out = {}
+    for it in _paginar(f"/services/{sid}/env-vars", llave):
+        v = it.get("envVar") if isinstance(it, dict) else None
+        if isinstance(v, dict) and v.get("key") and isinstance(v.get("value"), str):
+            out[v["key"]] = v["value"]
+    return out
+
+
+def _grupos(llave, owner_id):
+    """[{id, nombre, vars{}, servicios[ids]}] de los grupos de variables de un workspace. Si el listado no trae las
+    variables, se pide el detalle del grupo (una consulta más)."""
+    out = []
+    for it in _paginar("/env-groups", llave, {"ownerId": owner_id}):
+        g = it.get("envGroup") if isinstance(it, dict) else None
+        if not isinstance(g, dict) or not g.get("id"):
+            continue
+        if not isinstance(g.get("envVars"), list):
+            det = _get(f"/env-groups/{g['id']}", llave)
+            g = det if isinstance(det, dict) else g
+        vars_ = {v["key"]: v["value"] for v in (g.get("envVars") or [])
+                 if isinstance(v, dict) and v.get("key") and isinstance(v.get("value"), str)}
+        out.append({"id": g["id"], "nombre": g.get("name") or g["id"], "vars": vars_,
+                    "servicios": [x.get("id") for x in (g.get("serviceLinks") or []) if isinstance(x, dict) and x.get("id")]})
+    return out
+
+
+def fuentes_gemini(llaves=None):
+    """Recorre tus servicios de Render (y sus grupos de variables) y devuelve solo lo de Gemini:
+        (fuentes, errores)   fuente = {"nombre", "cuenta", "tipo": "servicio"|"grupo", "servicios": [servicio...],
+                                       "llaves": [(variable, valor)]}
+    `servicios` sirve para ligar la fuente con una plataforma (vincular). Solo entran fuentes que tengan alguna llave.
+    CONTIENE SECRETOS: úsala dentro de la petición y descártala. Necesita contexto de petición si `llaves` es None."""
+    import llaves as _ll      # import tardío: llaves.py también importa este módulo desde sus rutas
+    errores, svs, grupos, vistos = [], [], [], set()
+    for i, llave in (_llaves() if llaves is None else llaves):
+        try:
+            owners = [o["owner"] for o in _paginar("/owners", llave)
+                      if isinstance(o, dict) and isinstance(o.get("owner"), dict)] or [{"id": None, "name": f"Cuenta {i}"}]
+            for o in owners:
+                nombre = o.get("name") or o.get("email") or f"Cuenta {i}"
+                for it in _paginar("/services", llave, {"ownerId": o["id"]} if o.get("id") else {}):
+                    s = _servicio(it, nombre)
+                    if s and s["id"] not in vistos:
+                        vistos.add(s["id"])
+                        svs.append((llave, s))
+                if o.get("id"):
+                    try:
+                        grupos += [(llave, nombre, g) for g in _grupos(llave, o["id"])]
+                    except RuntimeError as e:        # sin grupos no se cae nada: se avisa y se sigue con los servicios
+                        errores.append(f"Grupos de variables de {nombre}: {e}")
+        except RuntimeError as e:
+            errores.append(f"Llave ····{llave[-4:]}: {e}")
+    if len(svs) > MAX_SERVICIOS:
+        errores.append(f"Hay {len(svs)} servicios; solo se leen los primeros {MAX_SERVICIOS}.")
+        svs = svs[:MAX_SERVICIOS]
+
+    def _leer_vars(par):
+        llave, s = par
+        try:
+            return s, _variables_servicio(llave, s["id"]), None
+        except RuntimeError as e:
+            return s, {}, str(e)
+
+    fuentes = []
+    if svs:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            resultados = list(ex.map(_leer_vars, svs))
+        for s, vars_, err in resultados:
+            if err:
+                errores.append(f"Variables de «{s['nombre']}»: {err}")
+                continue
+            ll = _ll.llaves_del_entorno(vars_)
+            if ll:
+                fuentes.append({"nombre": s["nombre"], "cuenta": s["cuenta"], "tipo": "servicio", "servicios": [s], "llaves": ll})
+    por_id = {s["id"]: s for _, s in svs}
+    for _, cuenta, g in grupos:
+        ll = _ll.llaves_del_entorno(g["vars"])
+        if ll:
+            fuentes.append({"nombre": f"grupo {g['nombre']}", "cuenta": cuenta, "tipo": "grupo",
+                            "servicios": [por_id[x] for x in g["servicios"] if x in por_id], "llaves": ll})
+    return fuentes, errores
+
+
 # --- RAM y CPU -------------------------------------------------------------------------------------------------
 TIPOS_CON_METRICAS = {"web_service", "private_service", "background_worker"}
 UMBRAL_RAM_AVISO = 90      # % de la memoria del plan a partir del cual se avisa
