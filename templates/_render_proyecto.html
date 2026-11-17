@@ -35,11 +35,11 @@
 </style>
 <div class="section-title">Render</div>
 {% if not render_p.conectado %}
-<div class="luxury-card"><div style="color:var(--text-muted);">Render no está conectado. Pega tu llave en <a href="/conexiones#render" style="text-decoration:underline;">Conexiones</a> para ver aquí el estado, la memoria y los deploys.</div></div>
+<div class="luxury-card"><div style="color:var(--text-muted);">{% if render_p.aislada %}Esta plataforma no tiene llave de Render propia y el sistema está configurado para que no use las generales.{% else %}Render no está conectado para esta plataforma.{% endif %} Agrega una llave de Render (proveedor «Render») en <a href="/plataformas/{{ p.id }}?tab=conexiones" style="text-decoration:underline;">Conexiones</a> para ver aquí el estado, la memoria y los deploys.</div></div>
 {% elif render_p.pendiente %}
 <div class="luxury-card"><div style="color:var(--text-muted);">Leyendo Render… recarga la página en unos segundos.</div></div>
 {% elif not render_p.servicios %}
-<div class="luxury-card"><div style="color:var(--text-muted);">No encontré servicios de Render ligados a esta plataforma. Se ligan por el repositorio, la dirección de producción o un nombre idéntico: completa alguno en «Editar datos». <a href="/render" style="text-decoration:underline;">Ver todos los servicios</a></div></div>
+<div class="luxury-card"><div style="color:var(--text-muted);">{% if render_p.propio %}La llave de Render de esta plataforma no ve ningún servicio. Revisa que sea de la cuenta correcta en <a href="/plataformas/{{ p.id }}?tab=conexiones" style="text-decoration:underline;">Conexiones</a>.{% else %}No encontré servicios de Render ligados a esta plataforma. Se ligan por el repositorio, la dirección de producción o un nombre idéntico: completa alguno en «Editar datos», o agrega una llave de Render propia en <a href="/plataformas/{{ p.id }}?tab=conexiones" style="text-decoration:underline;">Conexiones</a>.{% if es_admin %} <a href="/render" style="text-decoration:underline;">Ver todos los servicios</a>{% endif %}{% endif %}</div></div>
 {% else %}
 {% set tipos = {'web_service':'Web','static_site':'Sitio estático','private_service':'Privado','background_worker':'Worker','cron_job':'Cron','workflow':'Workflow'} %}
 <div class="rd-lista">
@@ -72,6 +72,6 @@
   {% endfor %}
 </div>
 {% for e in render_p.errores %}<p class="rd-pie" style="color:#f5b94c;">⚠ {{ e }}</p>{% endfor %}
-<p class="rd-pie">Leído {{ (render_p.actualizado or '')[:16]|replace('T',' ') }} UTC · se guarda 5 min · <a href="/render" style="text-decoration:underline;">Ver todas las cuentas</a></p>
+<p class="rd-pie">Leído {{ (render_p.actualizado or '')[:16]|replace('T',' ') }} UTC · se guarda 5 min · {% if render_p.propio %}cuenta propia de esta plataforma{% elif es_admin %}<a href="/render" style="text-decoration:underline;">Ver todas las cuentas</a>{% endif %}</p>
 {% endif %}
 {% endif %}

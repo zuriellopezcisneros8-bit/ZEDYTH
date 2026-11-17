@@ -302,6 +302,7 @@ def crear_blueprint(app, db, registrar, avisar):
         estado = db.Column(db.String(10), default="nuevo")
         desde = db.Column(db.DateTime)
         creado = db.Column(db.DateTime, default=datetime.utcnow)
+        proyecto_id = db.Column(db.Integer)     # plataforma a la que pertenece este sitio (None = sin ligar: se empareja por dirección o nombre)
 
     class MonitorCaida(db.Model):
         __tablename__ = "monitor_caida"
@@ -328,13 +329,48 @@ def crear_blueprint(app, db, registrar, avisar):
     def asegurar_tablas():
         for m in (MonitorSitio, MonitorCaida, MonitorDia):
             m.__table__.create(db.engine, checkfirst=True)
+        if estado.get("col"):
+            return
+        from sqlalchemy import inspect as sa_inspect, text as sa_text
+        if "proyecto_id" not in {c["name"] for c in sa_inspect(db.engine).get_columns("monitor_sitio")}:
+            try:                                   # tabla creada antes de las plataformas: se añade la columna (lo existente queda en None)
+                with db.engine.begin() as cx:
+                    cx.execute(sa_text("ALTER TABLE monitor_sitio ADD COLUMN proyecto_id INTEGER"))
+            except Exception:                      # otro worker pudo añadirla al mismo tiempo
+                if "proyecto_id" not in {c["name"] for c in sa_inspect(db.engine).get_columns("monitor_sitio")}:
+                    raise
+        estado["col"] = True
+
+    def plataforma_valida(raw):
+        """(id o None, error). Vacío = sin plataforma. Solo se acepta una plataforma propia que exista."""
+        if raw in (None, ""):
+            return None, None
+        try:
+            pid = int(raw)
+        except (TypeError, ValueError):
+            return None, "Plataforma no válida."
+        from sqlalchemy import text as sa_text
+        try:
+            tipo = db.session.execute(sa_text("SELECT tipo FROM proyecto WHERE id = :i"), {"i": pid}).scalar()
+        except Exception:
+            db.session.rollback()
+            return None, "No se pudo verificar la plataforma."
+        if tipo != "Plataforma propia":
+            return None, "Plataforma no encontrada."
+        return pid, None
+
+    def url_de(sid):
+        """Los avisos de un sitio ligado a una plataforma abren la ficha de ESA plataforma, no el monitor general."""
+        with lock:
+            pid = (sitios.get(sid) or {}).get("proyecto_id")
+        return f"/plataformas/{pid}?tab=monitor" if pid else "/monitor"
 
     def runtime(f, dia=None):
         return {"id": f.id, "nombre": f.nombre, "url": f.url, "metodo": f.metodo or "GET",
                 "intervalo_min": f.intervalo_min or 5, "timeout_s": f.timeout_s or 10,
                 "cod_min": f.cod_min or 200, "cod_max": f.cod_max or 399, "texto": f.texto or "",
                 "activo": bool(f.activo), "estado": f.estado if f.estado in ("arriba", "abajo") else "nuevo",
-                "desde": f.desde, "fallos": 0, "ultimo": None, "codigo": None, "ms": None, "error": None,
+                "desde": f.desde, "proyecto_id": getattr(f, "proyecto_id", None), "fallos": 0, "ultimo": None, "codigo": None, "ms": None, "error": None,
                 "ssl_dias": None, "ssl_avisado": None, "hist": deque(maxlen=HIST_MEM),
                 "dia": dia or {"fecha": _hoy(), "n": 0, "ok": 0, "ms": 0.0, "sucio": False},
                 "pend": [], "proximo": 0.0, "en_curso": False}
@@ -365,7 +401,7 @@ def crear_blueprint(app, db, registrar, avisar):
                     c = MonitorCaida(sitio_id=sid, inicio=ahora, motivo=(error or "Sin respuesta")[:300])
                     db.session.add(c)
                     db.session.commit()
-                    avisar("Monitor", f"Caído: {nombre}", f"{url} · {error or 'Sin respuesta'}", "/monitor",
+                    avisar("Monitor", f"Caído: {nombre}", f"{url} · {error or 'Sin respuesta'}", url_de(sid),
                            urgente=True, clave=f"monitor-caida-{c.id}")
                 else:
                     f.estado, f.desde = "arriba", ahora
@@ -376,7 +412,7 @@ def crear_blueprint(app, db, registrar, avisar):
                         c.fin = ahora
                         dur = f"Estuvo caído {_dur((ahora - c.inicio).total_seconds())}."
                     db.session.commit()
-                    avisar("Monitor", f"Recuperado: {nombre}", f"{url} · {dur}".strip(" ·"), "/monitor",
+                    avisar("Monitor", f"Recuperado: {nombre}", f"{url} · {dur}".strip(" ·"), url_de(sid),
                            urgente=True, clave=f"monitor-ok-{c.id if c else sid}-{int(time.time())}")
         except Exception as e:
             try:
@@ -389,7 +425,7 @@ def crear_blueprint(app, db, registrar, avisar):
         try:
             with app.app_context():
                 avisar("Vencimiento", f"Certificado SSL por vencer: {nombre}",
-                       f"Vence en {dias} día(s)." if dias >= 0 else "El certificado ya venció.", "/monitor",
+                       f"Vence en {dias} día(s)." if dias >= 0 else "El certificado ya venció.", url_de(sid),
                        urgente=True, clave=f"monitor-ssl-{sid}-{_hoy()}")
         except Exception as e:
             app.logger.error("Monitor: aviso de SSL: %s", e)
@@ -510,7 +546,7 @@ def crear_blueprint(app, db, registrar, avisar):
         return {"id": s["id"], "nombre": s["nombre"], "url": s["url"], "metodo": s["metodo"],
                 "intervalo_min": s["intervalo_min"], "timeout_s": s["timeout_s"], "cod_min": s["cod_min"],
                 "cod_max": s["cod_max"], "texto": s["texto"], "activo": s["activo"], "estado": s["estado"],
-                "fallos": s["fallos"], "desde": _iso(s["desde"]), "ultimo": _iso(s["ultimo"]), "codigo": s["codigo"],
+                "fallos": s["fallos"], "proyecto_id": s.get("proyecto_id"), "desde": _iso(s["desde"]), "ultimo": _iso(s["ultimo"]), "codigo": s["codigo"],
                 "ms": s["ms"], "error": s["error"], "ssl_dias": s["ssl_dias"],
                 "hoy": round(ok * 100 / n, 2) if n else None, "checks_hoy": n,
                 "serie": [[1 if o else 0, ms] for (_, o, ms) in list(s["hist"])[-60:]]}
@@ -527,8 +563,12 @@ def crear_blueprint(app, db, registrar, avisar):
         if not es_admin():
             return negado()
         _iniciar()
+        plat = request.args.get("plataforma")
+        if plat is not None and not plat.isdigit():
+            return jsonify(ok=False, error="Plataforma no válida."), 400
         with lock:
-            lista = sorted((publico(s) for s in sitios.values()), key=lambda x: x["nombre"].lower())
+            vistos = [s for s in sitios.values() if plat is None or s.get("proyecto_id") == int(plat)]
+            lista = sorted((publico(s) for s in vistos), key=lambda x: x["nombre"].lower())
         return jsonify(ok=True, listo=estado["listo"], sitios=lista, ahora=_iso(datetime.utcnow()))
 
     @bp.route("/api/monitor/resumen")
@@ -587,6 +627,8 @@ def crear_blueprint(app, db, registrar, avisar):
         clave = re.sub(r"[^a-z0-9]", "", (fila[0] or "").lower())
 
         def es_mio(s):
+            if s.get("proyecto_id") is not None:        # ligado a una plataforma: manda sobre el emparejamiento por dirección/nombre
+                return s["proyecto_id"] == pid
             h = _host(s["url"])
             por_host = bool(h) and any(h == x or h.endswith("." + x) for x in hosts)
             por_nombre = len(clave) >= 4 and clave in re.sub(r"[^a-z0-9]", "", str(s["nombre"] or "").lower())
@@ -652,9 +694,12 @@ def crear_blueprint(app, db, registrar, avisar):
             return jsonify(ok=False, error=str(e)), 400
         try:
             asegurar_tablas()
+            plat, e_plat = plataforma_valida(d.get("plataforma"))
+            if e_plat:
+                return jsonify(ok=False, error=e_plat), 400
             if MonitorSitio.query.count() >= MAX_SITIOS:
                 return jsonify(ok=False, error=f"Máximo {MAX_SITIOS} sitios."), 400
-            f = MonitorSitio(**cfg, activo=True, estado="nuevo")
+            f = MonitorSitio(**cfg, proyecto_id=plat, activo=True, estado="nuevo")
             db.session.add(f)
             db.session.flush()
             registrar("crear", "Monitor", f.id, cfg["url"][:200])
@@ -680,6 +725,13 @@ def crear_blueprint(app, db, registrar, avisar):
             f = db.session.get(MonitorSitio, sid)
             if f is None:
                 return jsonify(ok=False, error="No existe ese sitio."), 404
+            cambia_plat = "plataforma" in d             # solo se toca la liga si el cuerpo la trae
+            plat = f.proyecto_id
+            if cambia_plat:
+                plat, e_plat = plataforma_valida(d.get("plataforma"))
+                if e_plat:
+                    return jsonify(ok=False, error=e_plat), 400
+                f.proyecto_id = plat
             cambio_url = (f.url, f.metodo) != (cfg["url"], cfg["metodo"])
             for k, v in cfg.items():
                 setattr(f, k, v)
@@ -694,6 +746,8 @@ def crear_blueprint(app, db, registrar, avisar):
             s = sitios.get(sid)
             if s:
                 s.update(cfg)
+                if cambia_plat:
+                    s["proyecto_id"] = plat
                 if cambio_url:
                     s.update(estado="nuevo", desde=None, fallos=0, error=None, codigo=None)
                 s["proximo"] = 0.0

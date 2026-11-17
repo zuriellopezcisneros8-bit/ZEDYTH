@@ -16,11 +16,16 @@ Cuidado con los límites:
 RAM y CPU: se leen de /v1/metrics/{cpu,memory,cpu-limit,memory-limit} (última hora, 4 consultas por llave sin importar
 cuántos servicios haya). El % sale de uso ÷ límite del plan. Si Render no entrega algo, se muestra «—», nunca un dato inventado.
 
+POR PLATAFORMA: una plataforma puede tener SU llave de Render (pool de llaves.py, proveedor «Render»). Con llave propia
+lee solo esa cuenta, con su propia caché y avisos que abren su ficha. Sin llave propia usa las generales (salvo que
+LLAVES_HEREDAR_GLOBAL=0, y entonces queda sin Render).
+
 Conexión en app.py (ya aplicada en este paquete):
     import render_panel
     app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))
     ... y render_panel.revisar() dentro de push_revisar (junto a servicios.revisar()).
 """
+import hashlib
 import json
 import re
 import threading
@@ -50,9 +55,20 @@ EN_CURSO = {"created", "build_in_progress", "update_in_progress", "pre_deploy_in
 MOTIVOS = {401: "llave rechazada (¿la borraste en Render o está mal copiada?)",
            403: "la llave no tiene permiso", 429: "Render pidió esperar (demasiadas consultas)"}
 
-_cache = {"t": 0.0, "datos": None, "cargando": False}
-_lock = threading.Lock()
+_caches = {}   # ámbito -> caché. 0 = cuentas generales; N = plataforma N con SU(S) llave(s) propia(s)
+_caches_lock = threading.Lock()
 _api = {}      # lo llena crear_blueprint
+
+
+def _cache_de(pid=0):
+    with _caches_lock:
+        return _caches.setdefault(pid or 0, {"t": 0.0, "datos": None, "cargando": False, "huella": None,
+                                              "lock": threading.Lock()})
+
+
+def _huella(llaves):
+    """Identifica el juego de llaves sin guardarlas: si cambian (rotación, llave nueva), la caché deja de valer."""
+    return hashlib.sha256("|".join(k for _, k in llaves).encode()).hexdigest()[:16]
 
 
 # --- Llaves y HTTP -------------------------------------------------------------------------------------------
@@ -64,6 +80,29 @@ def _llaves():
         if k:
             out.append((i, k))
     return out
+
+
+def _propias(pid):
+    """[(n, llave)] de Render guardadas SOLO para la plataforma `pid` (pool de llaves.py; jamás las generales).
+    Necesita contexto de petición (lee la base): no llamarla desde un hilo."""
+    if not pid:
+        return []
+    try:
+        import llaves
+        lista = llaves.obtener_llaves("Render", pid, heredar=False)
+    except Exception:
+        return []
+    out = [(i, (k.secreto or "").strip()) for i, k in enumerate(lista, 1)]
+    return [(i, k) for i, k in out if k][:MAX_LLAVES]
+
+
+def _heredar():
+    """¿Una plataforma sin llave propia puede usar las generales? Lo decide LLAVES_HEREDAR_GLOBAL (por defecto sí)."""
+    try:
+        import llaves
+        return bool(llaves.HEREDAR_GLOBAL)
+    except Exception:
+        return True
 
 
 def _get(ruta, llave, params=None):
@@ -245,9 +284,9 @@ def _estado(s):
     return (e.replace("_", " ") or "Desconocido"), "gris"
 
 
-def _leer():
+def _leer(llaves=None):
     llaves_info, servicios, errores, origen = [], {}, [], {}
-    for i, llave in _llaves():
+    for i, llave in (_llaves() if llaves is None else llaves):
         info = {"final": "····" + llave[-4:], "cuentas": [], "error": None}
         llaves_info.append(info)
         try:
@@ -317,49 +356,63 @@ def _leer():
             "cuentas": list(cuentas.values()), "errores": errores}
 
 
-def datos(forzar=False):
-    """Lectura (con caché de 5 min). Bloquea mientras lee; para pantallas pesadas usa solo_cache()."""
-    with _lock:
-        if not forzar and _cache["datos"] is not None and time.time() - _cache["t"] < CACHE_SEG:
-            return _cache["datos"]
-        if not _llaves():
-            _cache.update(datos=None, t=0.0)
+def datos(forzar=False, pid=0, llaves=None):
+    """Lectura (con caché de 5 min POR ÁMBITO). Bloquea mientras lee; para pantallas pesadas usa solo_cache().
+    pid=0: cuentas generales. pid=N: las llaves propias de la plataforma N (pásalas en `llaves` si se llama desde un hilo)."""
+    if llaves is None:
+        llaves = _propias(pid) if pid else _llaves()
+    c = _cache_de(pid)
+    with c["lock"]:
+        if not llaves:
+            c.update(datos=None, t=0.0, huella=None)
             return None
-        nuevo = _leer()
+        h = _huella(llaves)
+        if not forzar and c["datos"] is not None and c["huella"] == h and time.time() - c["t"] < CACHE_SEG:
+            return c["datos"]
+        nuevo = _leer(llaves)
         todo_fallo = nuevo["llaves"] and all(i["error"] for i in nuevo["llaves"])
-        _cache["datos"] = nuevo
-        _cache["t"] = time.time() - (CACHE_SEG - 30 if todo_fallo else 0)   # si todo falló, reintenta en 30 s
+        c["datos"] = nuevo
+        c["huella"] = h
+        c["t"] = time.time() - (CACHE_SEG - 30 if todo_fallo else 0)   # si todo falló, reintenta en 30 s
         return nuevo
 
 
-def solo_cache():
-    return _cache["datos"]
+def solo_cache(pid=0):
+    return _cache_de(pid)["datos"]
 
 
-def _leer_en_segundo_plano():
-    if _cache["cargando"]:
+def _leer_en_segundo_plano(pid=0, llaves=None):
+    c = _cache_de(pid)
+    if c["cargando"]:
         return
-    _cache["cargando"] = True
+    c["cargando"] = True
 
     def _t():
         try:
-            datos()
+            datos(pid=pid, llaves=llaves)
         except Exception:
             pass
         finally:
-            _cache["cargando"] = False
+            c["cargando"] = False
     threading.Thread(target=_t, daemon=True).start()
 
 
-def invalidar():
-    _cache["t"] = 0.0
+def invalidar(pid=None):
+    """Sin argumento vacía todos los ámbitos; con pid, solo el de esa plataforma (0 = generales)."""
+    if pid is None:
+        with _caches_lock:
+            todos = list(_caches.values())
+        for c in todos:
+            c["t"] = 0.0
+    else:
+        _cache_de(pid)["t"] = 0.0
 
 
-def probar():
+def probar(pid=0):
     """(ok, mensaje) para el botón «Probar conexión» de /conexiones. Una consulta mínima por llave."""
-    llaves = _llaves()
+    llaves = _propias(pid) if pid else _llaves()
     if not llaves:
-        return False, "No hay ninguna llave de Render guardada."
+        return False, "No hay ninguna llave de Render guardada" + (" para esta plataforma." if pid else ".")
     partes, buenas = [], 0
     for _, k in llaves:
         try:
@@ -370,7 +423,7 @@ def probar():
             buenas += 1
         except RuntimeError as e:
             partes.append(f"····{k[-4:]}: {e}")
-    invalidar()
+    invalidar(pid)
     return buenas == len(llaves), f"{buenas} de {len(llaves)} llaves funcionan. " + " · ".join(partes)
 
 
@@ -417,14 +470,29 @@ def vincular(proyecto, servicios, dominios=()):
 
 
 def por_proyecto(p):
-    """Para la pestaña de una plataforma. NUNCA espera a Render: usa la caché y, si está vacía, la llena de fondo."""
+    """Para la pestaña de una plataforma. NUNCA espera a Render: usa la caché y, si hace falta, la llena de fondo.
+    Con llave propia lee solo esa cuenta (todos sus servicios son de esta plataforma). Sin ella, el modo de siempre:
+    las cuentas generales y se ligan los servicios por repositorio, dirección o nombre."""
+    propias = _propias(p.id)
+    if propias:
+        c = _cache_de(p.id)
+        if c["datos"] is None or c["huella"] != _huella(propias):
+            _leer_en_segundo_plano(p.id, propias)
+            return {"conectado": True, "propio": True, "servicios": [], "pendiente": True, "errores": []}
+        if time.time() - c["t"] >= CACHE_SEG:               # vencida: se muestra lo guardado y se refresca de fondo
+            _leer_en_segundo_plano(p.id, propias)
+        d = c["datos"]
+        return {"conectado": True, "propio": True, "pendiente": False, "errores": d["errores"],
+                "actualizado": d["actualizado"], "servicios": [_con_hace(s) for s in d["servicios"]]}
+    if not _heredar():
+        return {"conectado": False, "propio": False, "aislada": True, "servicios": [], "pendiente": False, "errores": []}
     if not _llaves():
-        return {"conectado": False, "servicios": [], "pendiente": False, "errores": []}
+        return {"conectado": False, "propio": False, "servicios": [], "pendiente": False, "errores": []}
     d = solo_cache()
     if d is None:
         _leer_en_segundo_plano()
-        return {"conectado": True, "servicios": [], "pendiente": True, "errores": []}
-    return {"conectado": True, "pendiente": False, "errores": d["errores"], "actualizado": d["actualizado"],
+        return {"conectado": True, "propio": False, "servicios": [], "pendiente": True, "errores": []}
+    return {"conectado": True, "propio": False, "pendiente": False, "errores": d["errores"], "actualizado": d["actualizado"],
             "servicios": [_con_hace(s) for s in vincular(p, d["servicios"], [x.nombre for x in p.subdominios])]}
 
 
@@ -459,35 +527,50 @@ def _reciente(iso, horas=AVISO_FALLO_HORAS):
     return t is not None and datetime.now(timezone.utc) - t <= timedelta(hours=horas)
 
 
-def alertar(d, notificar):
+def alertar(d, notificar, url="/render", plataforma=""):
     """Manda los avisos pendientes. `notificar` = crear_notificacion de app.py (ya evita repetir por `clave`)."""
     if not d:
         return 0
     n = 0
+    suf = f" · plataforma {plataforma}" if plataforma else ""
     sem = datetime.now(timezone.utc).isocalendar()
     for s in d["servicios"]:
         if s["suspendido"]:
-            notificar("Render", f"Render: «{s['nombre']}» está suspendido", f"Cuenta {s['cuenta']}. Revisa su plan o pagos en Render.",
-                      "/render", urgente=True, clave=f"render-susp-{s['id']}-{sem[0]}-{sem[1]}")      # 1 aviso por semana
+            notificar("Render", f"Render: «{s['nombre']}» está suspendido", f"Cuenta {s['cuenta']}{suf}. Revisa su plan o pagos en Render.",
+                      url, urgente=True, clave=f"render-susp-{s['id']}-{sem[0]}-{sem[1]}")      # 1 aviso por semana
             n += 1
         dep = s.get("deploy")
         if dep and dep["estado"] in FALLIDOS and _reciente(dep["terminado"] or dep["creado"]):
-            notificar("Render", f"Deploy fallido: {s['nombre']}", (dep["commit"] or "Sin mensaje de commit") + f" · cuenta {s['cuenta']}",
-                      "/render", urgente=True, clave=f"render-fallo-{s['id']}-{dep['id']}")
+            notificar("Render", f"Deploy fallido: {s['nombre']}", (dep["commit"] or "Sin mensaje de commit") + f" · cuenta {s['cuenta']}{suf}",
+                      url, urgente=True, clave=f"render-fallo-{s['id']}-{dep['id']}")
             n += 1
         ram = (s.get("metricas") or {}).get("ram")
         if ram and ram["pct"] is not None and ram["pct"] >= UMBRAL_RAM_AVISO and not s["suspendido"]:
-            notificar("Render", f"Render: «{s['nombre']}» casi sin memoria", f"RAM al {ram['pct']:.0f}% del plan ({ram['texto']}). Puede reiniciarse por falta de memoria.",
-                      "/render", urgente=False, clave=f"render-ram-{s['id']}-{sem[0]}-{sem[1]}")        # 1 aviso por semana
+            notificar("Render", f"Render: «{s['nombre']}» casi sin memoria", f"RAM al {ram['pct']:.0f}% del plan ({ram['texto']}). Puede reiniciarse por falta de memoria.{suf}",
+                      url, urgente=False, clave=f"render-ram-{s['id']}-{sem[0]}-{sem[1]}")        # 1 aviso por semana
             n += 1
     return n
 
 
 def revisar():
-    """Para push_revisar (cron): lee Render si la caché venció y avisa. Nunca lanza error."""
+    """Para push_revisar (cron): lee Render si la caché venció y avisa. Nunca lanza error.
+    Primero las plataformas con llave propia (su aviso abre su ficha), luego las cuentas generales."""
+    notificar = _api.get("notificar")
+    if not notificar:
+        return
     try:
-        if _llaves() and _api.get("notificar"):
-            alertar(datos(), _api["notificar"])
+        for pid, nombre in (_api.get("plataformas") or (lambda: []))():
+            try:
+                propias = _propias(pid)
+                if propias:
+                    alertar(datos(pid=pid, llaves=propias), notificar, f"/plataformas/{pid}?tab=infra", nombre)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        if _llaves():
+            alertar(datos(), notificar)
     except Exception:
         pass
 
@@ -496,23 +579,58 @@ def revisar():
 def crear_blueprint(app, db, crear_notificacion, Proyecto):
     bp = Blueprint("render_panel", __name__)
     _api["notificar"] = crear_notificacion
+    _api["plataformas"] = lambda: [(p.id, p.nombre) for p in Proyecto.query.filter_by(tipo=PLATAFORMA).all()]
 
     def es_admin():
         return current_user.is_authenticated and (getattr(current_user, "rol", "") or "").lower() == "admin"
 
-    def publico(d):
-        """Lo que ve la pantalla: servicios con el nombre de la plataforma ligada. Sin llaves."""
-        plats = Proyecto.query.filter_by(tipo=PLATAFORMA).all()
+    def ambito():
+        """(plataforma o None, respuesta de error o None). ?plataforma=N (o "plataforma" en el JSON) trabaja con las
+        llaves propias de esa plataforma; sin eso, con las cuentas generales."""
+        raw = request.args.get("plataforma")
+        if raw is None and request.is_json:
+            j = request.get_json(silent=True)
+            raw = j.get("plataforma") if isinstance(j, dict) else None
+        if raw in (None, ""):
+            return None, None
+        try:
+            p = db.session.get(Proyecto, int(raw))
+        except (TypeError, ValueError):
+            return None, (jsonify(ok=False, error="Plataforma no válida."), 400)
+        if p is None or p.tipo != PLATAFORMA:
+            return None, (jsonify(ok=False, error="Plataforma no encontrada."), 404)
+        return p, None
+
+    def publico(d, plat=None):
+        """Lo que ve la pantalla: servicios con el nombre de la plataforma ligada. Sin llaves.
+        Con `plat`, todo lo que lee su llave propia es de esa plataforma."""
         dueno = {}
-        for p in plats:
-            for s in vincular(p, d["servicios"], [x.nombre for x in p.subdominios]):
-                dueno.setdefault(s["id"], p)
+        if not plat:
+            for p in Proyecto.query.filter_by(tipo=PLATAFORMA).all():
+                for s in vincular(p, d["servicios"], [x.nombre for x in p.subdominios]):
+                    dueno.setdefault(s["id"], p)
         servicios = []
         for s in d["servicios"]:
-            p = dueno.get(s["id"])
+            p = plat or dueno.get(s["id"])
             servicios.append(dict(_con_hace(s), plataforma=p.nombre if p else None, plataforma_id=p.id if p else None))
         return {"ok": True, "conectado": True, "actualizado": d["actualizado"], "llaves": d["llaves"],
                 "cuentas": d["cuentas"], "servicios": servicios, "errores": d["errores"]}
+
+    def responder(forzar):
+        plat, err = ambito()
+        if err:
+            return err
+        try:
+            if plat:
+                propias = _propias(plat.id)
+                d = datos(forzar=forzar, pid=plat.id, llaves=propias) if propias else None
+            else:
+                d = datos(forzar=forzar)
+        except Exception:
+            return jsonify(ok=False, error="No se pudo leer Render."), 502
+        if d is None:
+            return jsonify(ok=True, conectado=False)
+        return jsonify(publico(d, plat))
 
     @bp.route("/render")
     def pagina():
@@ -524,13 +642,7 @@ def crear_blueprint(app, db, crear_notificacion, Proyecto):
     def api_resumen():
         if not es_admin():
             return jsonify(ok=False, error="Solo administradores."), 403
-        try:
-            d = datos()
-        except Exception:
-            return jsonify(ok=False, error="No se pudo leer Render."), 502
-        if d is None:
-            return jsonify(ok=True, conectado=False)
-        return jsonify(publico(d))
+        return responder(False)
 
     @bp.route("/api/render/actualizar", methods=["POST"])
     def api_actualizar():
@@ -538,12 +650,6 @@ def crear_blueprint(app, db, crear_notificacion, Proyecto):
             return jsonify(ok=False, error="Solo administradores."), 403
         if not isinstance(request.get_json(silent=True), dict):
             return jsonify(ok=False, error="Solicitud no válida."), 400
-        try:
-            d = datos(forzar=True)
-        except Exception:
-            return jsonify(ok=False, error="No se pudo leer Render."), 502
-        if d is None:
-            return jsonify(ok=True, conectado=False)
-        return jsonify(publico(d))
+        return responder(True)
 
     return bp
