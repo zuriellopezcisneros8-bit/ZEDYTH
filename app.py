@@ -1945,7 +1945,7 @@ def plataforma_nueva():
     return render_template('plataforma_form.html')
 
 
-TABS_PLATAFORMA = ["resumen", "finanzas", "servicios", "infra", "almacenamiento", "monitor", "seguridad", "alertas", "inteligencia"]
+TABS_PLATAFORMA = ["resumen", "finanzas", "servicios", "infra", "almacenamiento", "conexiones", "monitor", "seguridad", "alertas", "inteligencia"]
 
 
 def alertas_plataforma(p):
@@ -1976,6 +1976,18 @@ def alertas_plataforma(p):
                           "grave": i.gravedad in ("Alta", "Crítica"), "tab": "seguridad"})
     lista.sort(key=lambda a: a["dias"])
     return lista
+
+
+def _conexiones_de(p):
+    """Llaves y avisos de ESTA plataforma para la pestaña Conexiones (solo administradores; nunca lleva secretos).
+    Si llaves.py falla, la pestaña muestra su aviso en vez de tumbar toda la ficha."""
+    if rol_actual() != "admin":
+        return None
+    try:
+        return llaves.panel_plataforma(p.id)
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudieron leer las llaves: %s", p.id, e)
+        return None
 
 
 def _render_de(p):
@@ -2019,6 +2031,7 @@ def plataforma_detalle(pid):
         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
         cumplidos=sum(1 for c in p.checks if c.cumplido),
         alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
+        conx=_conexiones_de(p), msg_conx=llaves.MENSAJES.get(request.args.get('m', '')),
         intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
         intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
         intel_estados=INTEL_ESTADOS)
