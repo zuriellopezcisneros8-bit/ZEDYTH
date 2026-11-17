@@ -87,7 +87,7 @@
     <tr id="s{{ s.id }}" style="{{ 'opacity:.55;' if not s.activo }}">
         <td><strong>{{ s.nombre }}</strong>{% if not s.activo %} <span class="badge">Pausado</span>{% endif %}{% if r.dup %} <span class="badge badge-amber" title="Ya hay un costo de plataforma de un proveedor parecido: revisa que no cuentes el mismo gasto dos veces.">¿Duplicado?</span>{% endif %}
             <div style="font-size:12px; color:var(--text-muted);">{{ s.proveedor }} · {{ s.categoria or 'Otro' }}{% if s.plan %} · {{ s.plan }}{% endif %}</div>
-            <div style="font-size:12px; color:var(--text-muted);">{{ s.proyecto.nombre if s.proyecto else 'Compartido' }}{% if s.url_panel %} · <a href="{{ s.url_panel }}" target="_blank" rel="noopener noreferrer">Consola ↗</a>{% endif %}</div></td>
+            <div style="font-size:12px; color:var(--text-muted);">{% if s.proyecto and s.proyecto.tipo == plat_tipo %}<a href="/plataformas/{{ s.proyecto_id }}?tab=servicios" title="Abrir la ficha de {{ s.proyecto.nombre }}" style="font-weight:600; text-decoration:underline;">{{ s.proyecto.nombre }}</a>{% else %}{{ s.proyecto.nombre if s.proyecto else 'Compartido' }}{% endif %}{% if s.url_panel %} · <a href="{{ s.url_panel }}" target="_blank" rel="noopener noreferrer">Consola ↗</a>{% endif %}</div></td>
         <td>{{ badge(r.nivel if s.activo else 'sin') }}<div style="font-size:12px; color:var(--text-muted); max-width:260px;">{{ r.texto if s.activo else 'Pausado' }}</div></td>
         <td style="font-size:13px;">{% if s.monto %}{{ s.moneda }} {{ '{:,.2f}'.format(s.monto) }} <span style="color:var(--text-muted);">/ {{ s.periodicidad|lower }}</span>
             <div style="font-size:12px; color:var(--text-muted);">≈ {{ '${:,.0f}'.format(r.mes) }} MXN al mes</div>{% else %}<span class="badge badge-green">Gratis</span>{% endif %}</td>
@@ -119,7 +119,7 @@
 <div class="grid-2" style="gap:20px;">
     <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
         <thead><tr><th>IA por plataforma</th><th>MXN</th><th>USD</th></tr></thead><tbody>
-        {% for i in ia_filas %}<tr><td>{{ i.nombre }}</td><td>{{ '${:,.2f}'.format(i.mxn) }}</td><td style="color:var(--text-muted);">{{ '${:,.2f}'.format(i.usd) }}</td></tr>
+        {% for i in ia_filas %}<tr><td>{% if i.plat_id %}<a href="/plataformas/{{ i.plat_id }}" style="font-weight:600; text-decoration:underline;">{{ i.nombre }}</a>{% else %}{{ i.nombre }}{% endif %}</td><td>{{ '${:,.2f}'.format(i.mxn) }}</td><td style="color:var(--text-muted);">{{ '${:,.2f}'.format(i.usd) }}</td></tr>
         {% else %}<tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Aún no hay costo de IA registrado este mes.</td></tr>{% endfor %}
         <tr style="font-weight:600;"><td>Total IA</td><td>{{ '${:,.2f}'.format(costos.ia) }}</td><td></td></tr>
     </tbody></table></div></div>
@@ -145,7 +145,7 @@
         <td class="mono" style="font-size:12px; color:{{ '#f87171' if r.dias < 0 else ('#f5b94c' if r.dias <= 7 else 'var(--text-muted)') }};">{{ 'vencido hace ' ~ (-r.dias) ~ ' d' if r.dias < 0 else ('hoy' if r.dias == 0 else 'en ' ~ r.dias ~ ' d') }}</td>
         <td><a href="{{ r.enlace }}" style="font-weight:500;">{{ r.nombre }}</a>{% if r.detalle %}<div style="font-size:12px; color:var(--text-muted);">{{ r.detalle }}</div>{% endif %}
             {% if r.dup %}<span class="badge badge-amber" title="Aparece en dos fuentes con fechas cercanas: puede ser la misma renovación.">¿Repetida?</span>{% endif %}</td>
-        <td style="font-size:13px;">{{ r.proyecto }}</td>
+        <td style="font-size:13px;">{% if r.plat_id %}<a href="/plataformas/{{ r.plat_id }}" style="font-weight:600; text-decoration:underline;">{{ r.proyecto }}</a>{% else %}{{ r.proyecto }}{% endif %}</td>
         <td><span class="badge">{{ r.tipo }}</span></td>
         <td>{% if r.monto %}{{ '${:,.0f}'.format(r.monto) }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}</td>
     </tr>

@@ -18,7 +18,7 @@
   .mon-botones { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   .mon-msg { margin-top:10px; font-size:13px; min-height:18px; }
   .mon-msg.ok { color:#4ade80; } .mon-msg.mal { color:#f87171; }
-  .mon-tabla table { min-width:760px; }
+  .mon-tabla table { min-width:900px; }
   td.num, th.num { text-align:right; white-space:nowrap; }
   .mon-acc { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
   .mon-acc .btn { padding:4px 10px; font-size:12px; }
@@ -28,6 +28,12 @@
   details.mon-alta { margin-bottom:12px; }
   details.mon-alta summary { cursor:pointer; font-weight:600; }
   svg.mon-spark { display:block; margin-left:auto; }
+  .mon-plat a { font-weight:600; text-decoration:underline; }
+  .mon-plat select { margin-top:6px; max-width:170px; font-size:12px; padding:3px 6px; }
+  .mon-sug { margin-top:4px; font-size:12px; }
+  .mon-sug .btn { padding:2px 8px; font-size:12px; }
+  .mon-filtro { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:0 0 10px; }
+  .mon-filtro select { max-width:240px; }
 </style>
 
 <section class="hero">
@@ -66,6 +72,9 @@
       <label>Texto que debe aparecer en la página (opcional)
         <input class="field" id="f-texto" maxlength="100" placeholder="ej. ZEDYTH">
       </label>
+      <label>Plataforma a la que pertenece
+        <select class="field" id="f-plat"><option value="">— Sin plataforma —</option></select>
+      </label>
     </div>
     <div class="mon-botones">
       <button class="btn" type="button" id="btn-probar">Probar ahora</button>
@@ -77,6 +86,12 @@
   </div>
 </details>
 
+<div class="mon-filtro" id="filtro" style="display:none">
+  <label class="mon-mut">Ver
+    <select class="field" id="f-ver" style="margin-left:6px"></select>
+  </label>
+  <span id="sug-aviso"></span>
+</div>
 <div class="luxury-card mon-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap" id="tabla"></div></div>
 
 <div class="section-title">Últimas caídas</div>
@@ -88,7 +103,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const JSONH = { "Content-Type": "application/json" };
-let sitios = [], resumen = {}, editId = null;
+let sitios = [], resumen = {}, editId = null, plats = [], sug = {}, ver = "todas";
 
 async function post(url, cuerpo) {
   const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: JSONH, body: JSON.stringify(cuerpo || {}) });
@@ -146,14 +161,52 @@ function tarjetas() {
   ].join("");
 }
 
+const nomPlat = id => (plats.find(p => p.id === id) || {}).nombre;
+function celdaPlat(s) {
+  const opciones = `<option value="">— Sin plataforma —</option>` + plats.map(p => `<option value="${p.id}" ${p.id === s.proyecto_id ? "selected" : ""}>${esc(p.nombre)}</option>`).join("");
+  const cambiar = plats.length ? `<select class="field" data-plat="${s.id}" title="Cambiar la plataforma de este sitio" aria-label="Plataforma de ${esc(s.nombre)}">${opciones}</select>` : "";
+  if (s.proyecto_id != null) {
+    const n = nomPlat(s.proyecto_id);
+    const cab = n ? `<a href="/plataformas/${s.proyecto_id}?tab=monitor" title="Abrir la ficha de ${esc(n)}">${esc(n)}</a>`
+                  : `<span class="mon-ambar-t">Plataforma eliminada</span>`;
+    return `<div class="mon-plat">${cab}${cambiar}</div>`;
+  }
+  const pid = sug[String(s.id)], np = pid != null ? nomPlat(pid) : null;
+  const pista = np ? `<div class="mon-sug">¿Es de <a href="/plataformas/${pid}?tab=monitor">${esc(np)}</a>? <button class="btn" type="button" data-ligar="${s.id}" data-pid="${pid}">Ligar</button></div>` : "";
+  return `<div class="mon-plat"><span class="mon-mut">Sin ligar</span>${pista}${cambiar}</div>`;
+}
+
+function filtrar(lista) {
+  if (ver === "todas") return lista;
+  if (ver === "sin") return lista.filter(s => s.proyecto_id == null);
+  return lista.filter(s => String(s.proyecto_id) === ver);
+}
+function barraFiltro() {
+  const hay = sitios.length > 0 && (plats.length > 0 || sitios.some(s => s.proyecto_id != null));
+  $("#filtro").style.display = hay ? "" : "none";
+  if (!hay) return;
+  const sinLigar = sitios.filter(s => s.proyecto_id == null).length;
+  const opts = [`<option value="todas">Todos los sitios (${sitios.length})</option>`, `<option value="sin">Sin plataforma (${sinLigar})</option>`]
+    .concat(plats.map(p => `<option value="${p.id}">${esc(p.nombre)} (${sitios.filter(s => s.proyecto_id === p.id).length})</option>`));
+  if (!opts.some(o => o.includes(`value="${ver}"`))) ver = "todas";
+  const sel = $("#f-ver");
+  if (document.activeElement !== sel) { sel.innerHTML = opts.join(""); sel.value = ver; }
+  const n = Object.keys(sug).length;
+  $("#sug-aviso").innerHTML = n ? `<span class="mon-mut">${n} sitio(s) sin plataforma parecen de una.</span> <button class="btn" type="button" id="btn-ligar-todos">Ligar los ${n} sugeridos</button>` : "";
+}
+
 function tabla() {
+  barraFiltro();
+  const visibles = filtrar(sitios);
+  if (sitios.length && !visibles.length) { $("#tabla").innerHTML = `<div class="mon-vacio">Ningún sitio en esta vista.</div>`; return; }
   if (!sitios.length) { $("#tabla").innerHTML = `<div class="mon-vacio">Aún no vigilas nada. Abre «Registrar una dirección» y agrega la primera (por ejemplo, <code>${esc(location.origin)}/healthz</code>).</div>`; return; }
-  const filas = sitios.map(s => {
+  const filas = visibles.map(s => {
     const r = resumen[String(s.id)] || {};
     const u7 = r.u7 ?? s.hoy, u30 = r.u30;
     const detalle = s.estado === "abajo" || s.fallos > 0 ? `<div class="mon-rojo-t" style="font-size:12px">${esc(s.error || "")}</div>` : "";
     return `<tr>
       <td><strong>${esc(s.nombre)}</strong><div class="mon-url mon-mut">${esc(s.metodo)} ${esc(s.url)}</div>${detalle}</td>
+      <td>${celdaPlat(s)}</td>
       <td>${etiqueta(s)}<div class="mon-mut">${s.estado === "abajo" && s.desde ? "desde " + hace(s.desde) : "revisado " + hace(s.ultimo)}</div></td>
       <td class="num">${s.codigo ?? "—"}<div class="mon-mut">${s.ms != null ? s.ms + " ms" : ""}</div></td>
       <td class="num"><span class="${clsPct(s.hoy)}">${pct(s.hoy)}</span><div class="mon-mut">hoy</div></td>
@@ -167,8 +220,8 @@ function tabla() {
         <button class="btn mon-del" data-a="eliminar" data-id="${s.id}">Eliminar</button>
       </div></td></tr>`;
   });
-  const th = ["Sitio", "Estado", "Código", "Hoy", "Disponibilidad", "SSL", "Respuestas recientes", ""];
-  $("#tabla").innerHTML = `<table class="table-luxury"><thead><tr>${th.map((t, i) => `<th class="${i >= 2 && i <= 6 ? "num" : ""}">${t}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
+  const th = ["Sitio", "Plataforma", "Estado", "Código", "Hoy", "Disponibilidad", "SSL", "Respuestas recientes", ""];
+  $("#tabla").innerHTML = `<table class="table-luxury"><thead><tr>${th.map((t, i) => `<th class="${i >= 3 && i <= 7 ? "num" : ""}">${t}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
 }
 
 function caidas(lista) {
@@ -188,6 +241,18 @@ async function cargarEstado() {
     tarjetas(); tabla();
   } catch (e) { $("#estado").textContent = "No se pudo cargar (¿sesión vencida?). Recarga la página."; }
 }
+async function cargarPlats() {
+  try {
+    const r = await fetch("/api/monitor/plataformas", { credentials: "same-origin" });
+    const d = await r.json();
+    if (!d.ok) return;
+    plats = d.plataformas; sug = d.sugeridos || {};
+    const sel = $("#f-plat"), actual = sel.value;
+    sel.innerHTML = `<option value="">— Sin plataforma —</option>` + plats.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join("");
+    sel.value = actual;
+    tabla();
+  } catch (e) { /* sin plataformas la tabla sigue funcionando */ }
+}
 async function cargarResumen() {
   try {
     const r = await fetch("/api/monitor/resumen", { credentials: "same-origin" });
@@ -199,11 +264,11 @@ async function cargarResumen() {
 
 /* ---- formulario ---- */
 const leerForm = () => ({ nombre: $("#f-nombre").value, url: $("#f-url").value.trim(), intervalo_min: $("#f-intervalo").value, metodo: $("#f-metodo").value,
-  timeout_s: $("#f-timeout").value, cod_min: $("#f-cmin").value, cod_max: $("#f-cmax").value, texto: $("#f-texto").value });
+  timeout_s: $("#f-timeout").value, cod_min: $("#f-cmin").value, cod_max: $("#f-cmax").value, texto: $("#f-texto").value, plataforma: $("#f-plat").value });
 function llenarForm(s) {
   $("#f-nombre").value = s ? s.nombre : ""; $("#f-url").value = s ? s.url : ""; $("#f-intervalo").value = s ? s.intervalo_min : 5;
   $("#f-metodo").value = s ? s.metodo : "GET"; $("#f-timeout").value = s ? s.timeout_s : 10; $("#f-cmin").value = s ? s.cod_min : 200;
-  $("#f-cmax").value = s ? s.cod_max : 399; $("#f-texto").value = s ? s.texto : "";
+  $("#f-cmax").value = s ? s.cod_max : 399; $("#f-texto").value = s ? s.texto : ""; $("#f-plat").value = s && s.proyecto_id != null ? String(s.proyecto_id) : "";
   editId = s ? s.id : null;
   $("#alta-titulo").textContent = s ? "Editando: " + s.nombre : "Registrar una dirección";
   $("#btn-cancelar").style.display = s ? "" : "none";
@@ -230,12 +295,41 @@ $("#btn-guardar").addEventListener("click", async e => {
     const d = await post(editId ? `/api/monitor/sitios/${editId}/editar` : "/api/monitor/sitios", leerForm());
     if (!d.ok) { decir(d.error || "No se pudo guardar.", false); b.disabled = false; return; }
     llenarForm(null); decir("Guardado. La primera visita se hace en unos segundos.", true);
-    await cargarEstado(); cargarResumen();
+    await cargarEstado(); cargarResumen(); cargarPlats();
     setTimeout(cargarEstado, 8000);
   } catch (err) { decir("Error de conexión. Intenta de nuevo.", false); }
   b.disabled = false;
 });
 
+$("#f-ver").addEventListener("change", e => { ver = e.target.value; tabla(); });
+document.addEventListener("change", async e => {
+  const sel = e.target.closest("[data-plat]");
+  if (!sel) return;
+  sel.disabled = true;
+  try {
+    const d = await post(`/api/monitor/sitios/${sel.dataset.plat}/plataforma`, { plataforma: sel.value });
+    if (!d.ok) { alert(d.error || "No se pudo cambiar la plataforma."); }
+    await cargarEstado(); cargarPlats();
+  } catch (err) { alert("Error de conexión."); }
+  sel.disabled = false;
+});
+document.addEventListener("click", async e => {
+  const l = e.target.closest("[data-ligar]");
+  if (l) {
+    l.disabled = true;
+    const d = await post(`/api/monitor/sitios/${l.dataset.ligar}/plataforma`, { plataforma: l.dataset.pid });
+    if (!d.ok) { alert(d.error || "No se pudo ligar."); l.disabled = false; return; }
+    await cargarEstado(); cargarPlats(); return;
+  }
+  const t = e.target.closest("#btn-ligar-todos");
+  if (t) {
+    if (!confirm(`¿Ligar los ${Object.keys(sug).length} sitio(s) sugeridos a su plataforma?\n\nSe emparejan por dirección o por nombre; puedes cambiar cualquiera después.`)) return;
+    t.disabled = true;
+    const d = await post("/api/monitor/ligar-sugeridos", { confirmar: true });
+    if (!d.ok) { alert(d.error || "No se pudo ligar."); t.disabled = false; return; }
+    await cargarEstado(); cargarPlats(); return;
+  }
+});
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-a]");
   if (!b) return;
@@ -255,7 +349,7 @@ document.addEventListener("click", async e => {
   } catch (err) { alert("Error de conexión."); b.disabled = false; }
 });
 
-cargarEstado(); cargarResumen();
+cargarEstado(); cargarResumen(); cargarPlats();
 setInterval(() => { if (!document.hidden) cargarEstado(); }, 30000);   // solo memoria del servidor: no despierta la base
 </script>
 {% endraw %}

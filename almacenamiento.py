@@ -1004,14 +1004,14 @@ def _filas_proyectos(db):
     from sqlalchemy import text
     try:
         filas = db.session.execute(text(
-            "SELECT id, nombre, neon_proyecto, r2_buckets, cloudinary_prefijo FROM proyecto")).all()
+            "SELECT id, nombre, neon_proyecto, r2_buckets, cloudinary_prefijo, tipo FROM proyecto")).all()
     except Exception:
         db.session.rollback()
         return []
     out = []
     for r in filas:
         f = {"id": r[0], "nombre": r[1], "neon": (r[2] or "").strip(), "r2": (r[3] or "").strip(),
-             "cld": (r[4] or "").strip().strip("/")}
+             "cld": (r[4] or "").strip().strip("/"), "plat": r[5] == "Plataforma propia"}
         if f["neon"] or f["r2"] or f["cld"]:
             out.append(f)
     return out
@@ -1030,8 +1030,10 @@ def _entradas_r2(texto):
 
 def _vinculos(filas):
     """Para la página global: qué proyecto usa cada proyecto de Neon / bucket de R2."""
-    v = {"neon": {}, "r2": {}}
+    v = {"neon": {}, "r2": {}, "enlaces": {}}      # enlaces: nombre del proyecto -> ficha de la plataforma (solo plataformas propias)
     for f in filas:
+        if f.get("plat"):
+            v["enlaces"][f["nombre"]] = f"/plataformas/{f['id']}?tab=almacenamiento"
         if f["neon"]:
             v["neon"].setdefault(f["neon"].lower(), []).append(f["nombre"])
         for b, _c in _entradas_r2(f["r2"]):

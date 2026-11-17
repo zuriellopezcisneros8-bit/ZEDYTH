@@ -63,6 +63,19 @@ def _host(u):
         return ""
 
 
+def _clave_nombre(t):
+    """Nombre reducido a letras y números en minúsculas, para comparar «Mi App» con «mi-app»."""
+    return re.sub(r"[^a-z0-9]", "", str(t or "").lower())
+
+
+def _empareja(url, nombre, hosts, clave):
+    """¿Esta dirección o este nombre parecen de la plataforma? (mismo host/subdominio, o el nombre la contiene)."""
+    h = _host(url)
+    por_host = bool(h) and any(h == x or h.endswith("." + x) for x in hosts)
+    por_nombre = len(clave) >= 4 and clave in _clave_nombre(nombre)
+    return por_host or por_nombre
+
+
 def _iso(dt):
     return dt.isoformat() + "Z" if dt else None
 
@@ -624,15 +637,12 @@ def crear_blueprint(app, db, registrar, avisar):
         if not fila:
             return jsonify(ok=False, error="Proyecto no encontrado."), 404
         hosts = {x for x in [_host(fila[1])] + [_host(z) for z in subs] if x}
-        clave = re.sub(r"[^a-z0-9]", "", (fila[0] or "").lower())
+        clave = _clave_nombre(fila[0])
 
         def es_mio(s):
             if s.get("proyecto_id") is not None:        # ligado a una plataforma: manda sobre el emparejamiento por dirección/nombre
                 return s["proyecto_id"] == pid
-            h = _host(s["url"])
-            por_host = bool(h) and any(h == x or h.endswith("." + x) for x in hosts)
-            por_nombre = len(clave) >= 4 and clave in re.sub(r"[^a-z0-9]", "", str(s["nombre"] or "").lower())
-            return por_host or por_nombre
+            return _empareja(s["url"], s["nombre"], hosts, clave)
 
         with lock:
             mios = [s for s in sitios.values() if es_mio(s)]
@@ -670,6 +680,99 @@ def crear_blueprint(app, db, registrar, avisar):
                "fin": _iso(c.fin), "motivo": c.motivo,
                "duracion_s": ((c.fin or datetime.utcnow()) - c.inicio).total_seconds()} for c in caidas]
         return jsonify(ok=True, estado="ok", url=fila[1] or "", sitios=lista, caidas=cl, listo=estado["listo"])
+
+    def leer_plataformas():
+        """Tus plataformas propias con lo necesario para emparejar sitios (host de producción, subdominios, nombre)."""
+        from sqlalchemy import text as sa_text
+        filas = db.session.execute(sa_text("SELECT id, nombre, url_produccion FROM proyecto WHERE tipo = :t ORDER BY nombre"),
+                                   {"t": "Plataforma propia"}).all()
+        subs = {}
+        for pid, nom in db.session.execute(sa_text("SELECT proyecto_id, nombre FROM subdominio")).all():
+            subs.setdefault(pid, []).append(nom)
+        return [{"id": pid, "nombre": nombre, "clave": _clave_nombre(nombre),
+                 "hosts": {x for x in [_host(url)] + [_host(z) for z in subs.get(pid, [])] if x}}
+                for pid, nombre, url in filas]
+
+    def sugerir(plats):
+        """{sitio: plataforma} solo para sitios sin ligar que coinciden con UNA sola plataforma (si hay duda, no se sugiere)."""
+        with lock:
+            libres = [(s["id"], s["url"], s["nombre"]) for s in sitios.values() if s.get("proyecto_id") is None]
+        res = {}
+        for sid, url, nombre in libres:
+            c = [p["id"] for p in plats if _empareja(url, nombre, p["hosts"], p["clave"])]
+            if len(c) == 1:
+                res[sid] = c[0]
+        return res
+
+    @bp.route("/api/monitor/plataformas")
+    def api_plataformas():
+        """Para el tablero: qué plataformas hay y a cuál parece pertenecer cada sitio sin ligar. Lee la base (se llama al
+        abrir la página y al cambiar una liga, no cada 30 s)."""
+        if not es_admin():
+            return negado()
+        _iniciar()
+        try:
+            plats = leer_plataformas()
+        except Exception:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudieron leer las plataformas."), 500
+        return jsonify(ok=True, plataformas=[{"id": p["id"], "nombre": p["nombre"]} for p in plats],
+                       sugeridos={str(k): v for k, v in sugerir(plats).items()})
+
+    @bp.route("/api/monitor/sitios/<int:sid>/plataforma", methods=["POST"])
+    def api_plataforma(sid):
+        """Liga (o desliga, con vacío) un sitio ya registrado a una plataforma, sin tocar el resto de su configuración."""
+        d, err = cuerpo()
+        if err:
+            return err
+        try:
+            asegurar_tablas()
+            plat, e_plat = plataforma_valida(d.get("plataforma"))
+            if e_plat:
+                return jsonify(ok=False, error=e_plat), 400
+            f = db.session.get(MonitorSitio, sid)
+            if f is None:
+                return jsonify(ok=False, error="No existe ese sitio."), 404
+            f.proyecto_id = plat
+            registrar("editar", "Monitor", sid, (f"plataforma {plat}" if plat else "sin plataforma")[:200])
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo guardar: " + str(e)[:150]), 500
+        with lock:
+            s = sitios.get(sid)
+            if s:
+                s["proyecto_id"] = plat
+        return jsonify(ok=True)
+
+    @bp.route("/api/monitor/ligar-sugeridos", methods=["POST"])
+    def api_ligar_sugeridos():
+        """Liga de una vez los sitios sin plataforma que coinciden con una sola (por dirección o por nombre)."""
+        d, err = cuerpo()
+        if err:
+            return err
+        if d.get("confirmar") is not True:
+            return jsonify(ok=False, error="Falta la confirmación."), 400
+        try:
+            asegurar_tablas()
+            sug = sugerir(leer_plataformas())
+            hechos = {}
+            for sid, pid in sug.items():
+                f = db.session.get(MonitorSitio, sid)
+                if f is not None and f.proyecto_id is None:
+                    f.proyecto_id = pid
+                    hechos[sid] = pid
+            if hechos:
+                registrar("editar", "Monitor", next(iter(hechos)), f"{len(hechos)} sitio(s) ligado(s) a su plataforma"[:200])
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify(ok=False, error="No se pudo guardar: " + str(e)[:150]), 500
+        with lock:
+            for sid, pid in hechos.items():
+                if sid in sitios:
+                    sitios[sid]["proyecto_id"] = pid
+        return jsonify(ok=True, ligados=len(hechos))
 
     @bp.route("/api/monitor/probar", methods=["POST"])
     def api_probar():

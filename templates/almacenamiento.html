@@ -312,9 +312,10 @@ function tarjetas(d) {
   $("#tarjetas").innerHTML = h.join("");
 }
 
+const linkProy = (d, n) => { const u = ((d.vinculos || {}).enlaces || {})[n]; return u ? `<a href="${esc(u)}" title="Abrir la ficha de ${esc(n)}" style="text-decoration:underline">${esc(n)}</a>` : esc(n); };
 const proyDe = (d, tipo, nombre) => {
   const l = ((d.vinculos || {})[tipo] || {})[String(nombre || "").toLowerCase()];
-  return l && l.length ? `<div class="alm-mut">Proyecto: ${l.map(esc).join(", ")}</div>`
+  return l && l.length ? `<div class="alm-mut">Proyecto: ${l.map(n => linkProy(d, n)).join(", ")}</div>`
     : `<div class="alm-mut" style="color:#b45309">Sin proyecto asignado — vincúlalo en «Editar proyecto»</div>`;
 };
 
@@ -402,7 +403,7 @@ function verR2(d) {
     if (b.error) return `<div class="luxury-card" style="margin-bottom:12px"><strong>${esc(b.nombre)}</strong>: ${esc(b.error)}</div>`;
     const filas = b.grandes.map(o => `<tr><td><code>${esc(o.key)}</code></td><td class="num">${fmt(o.bytes)}</td>
       <td class="num"><button class="btn alm-del" data-del="r2" data-bucket="${esc(b.nombre)}" data-key="${esc(o.key)}" data-nombre="${esc(b.nombre + "/" + o.key)}">Eliminar</button></td></tr>`);
-    return `<div style="margin-bottom:14px"><div class="alm-mut" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong>${(((d.vinculos || {}).r2 || {})[String(b.nombre).toLowerCase()] || []).length ? " (" + d.vinculos.r2[String(b.nombre).toLowerCase()].map(esc).join(", ") + ")" : ""} · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
+    return `<div style="margin-bottom:14px"><div class="alm-mut" style="margin-bottom:4px"><strong>${esc(b.nombre)}</strong>${(((d.vinculos || {}).r2 || {})[String(b.nombre).toLowerCase()] || []).length ? " (" + d.vinculos.r2[String(b.nombre).toLowerCase()].map(n => linkProy(d, n)).join(", ") + ")" : ""} · ${fmt(b.bytes)} · ${b.objetos}${b.estimado ? "+" : ""} objetos${b.estimado ? " (conteo parcial)" : ""}</div>
       <div class="luxury-card alm-tabla" style="padding:0;overflow:hidden"><div class="table-wrap">${tabla([{t:"Archivo"},{t:"Tamaño",num:1},{t:"",num:1}], filas, "Bucket vacío.")}</div></div></div>`;
   }).join("") || `<div class="luxury-card">No hay buckets.</div>`;
 }

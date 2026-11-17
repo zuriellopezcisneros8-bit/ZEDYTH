@@ -446,24 +446,28 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
         hoy = date.today()
         items = []
 
-        def agregar(fecha, tipo, nombre, det, p, monto, enlace, clave):
+        def agregar(fecha, tipo, nombre, det, p, monto, enlace, clave, tab=None):
+            es_plat = p is not None and p.tipo == PLATAFORMA
+            if es_plat and tab:                     # lo de una plataforma abre SU ficha, en la pestaña que corresponde
+                enlace = f"/plataformas/{p.id}?tab={tab}"
             items.append({"fecha": fecha, "dias": (fecha - hoy).days, "tipo": tipo, "nombre": nombre, "detalle": det,
                           "proyecto": p.nombre if p else "Compartido", "pid": p.id if p else None,
+                          "plat_id": p.id if es_plat else None,
                           "monto": monto, "enlace": enlace, "clave": clave, "dup": False})
 
         for s in activos():
             if s.proxima_renovacion:
                 agregar(s.proxima_renovacion, "Catálogo", s.nombre, s.proveedor, s.proyecto,
-                        _a_mxn(s.monto, s.moneda, tc) or None, "/servicios", _clave_prov(s.proveedor))
+                        _a_mxn(s.monto, s.moneda, tc) or None, "/servicios", _clave_prov(s.proveedor), tab="servicios")
         for k in CostoServicio.query.filter(CostoServicio.proxima_fecha_pago.isnot(None)).all():
             p = k.proyecto
             enlace = (f"/plataformas/{p.id}?tab=finanzas" if p.tipo == PLATAFORMA else f"/clientes/{p.cliente_id}")
             agregar(k.proxima_fecha_pago, "Costo de plataforma", k.proveedor, k.concepto or "", p,
-                    float(k.monto_periodo or k.monto_mensual or 0) or None, enlace, _clave_prov(k.proveedor))
+                    float(k.monto_periodo or k.monto_mensual or 0) or None, enlace, _clave_prov(k.proveedor), tab="finanzas")
         for v in Vencimiento.query.all():
             if v.fecha:
                 agregar(v.fecha, v.tipo or "Vencimiento", v.nombre, v.notas or "", v.proyecto, None,
-                        f"/proyectos/{v.proyecto_id}/seguridad", (v.nombre or "").lower())
+                        f"/proyectos/{v.proyecto_id}/seguridad", (v.nombre or "").lower(), tab="seguridad")
         items.sort(key=lambda i: (i["fecha"], i["nombre"].lower()))
         # posible duplicado: misma plataforma y un proveedor que se parece, en fechas cercanas
         for i, a in enumerate(items[:500]):
@@ -617,7 +621,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
         for p in proyectos:
             usd = ia_mes_usd(p.id)
             if usd > 0:
-                ia_filas.append({"nombre": p.nombre, "mxn": usd * tc, "usd": usd})
+                ia_filas.append({"nombre": p.nombre, "mxn": usd * tc, "usd": usd, "plat_id": p.id if p.tipo == PLATAFORMA else None})
                 total_asignado += usd
         resto = ia_mes_usd() - total_asignado
         if resto > 0.000001:
@@ -643,7 +647,7 @@ def crear_blueprint(app, db, registrar, avisar, Proyecto, CostoServicio, Vencimi
             renovaciones=visibles, hay_mas=len(ren) > len(visibles), todas=todas,
             vencidas=sum(1 for r in ren if r["dias"] < 0), siguiente=(proximas[0] if proximas else None),
             avisos=avisos, bitacora=bitacora, proyectos=proyectos, proveedores=PROVEEDORES, categorias=CATEGORIAS,
-            periodos=list(PERIODOS), monedas=MONEDAS, fuentes=FUENTES, tc=tc, hay_monitor=monitor is not None,
+            periodos=list(PERIODOS), monedas=MONEDAS, fuentes=FUENTES, tc=tc, hay_monitor=monitor is not None, plat_tipo=PLATAFORMA,
             alm_edad=_hace(edad) if edad is not None else None,
             mensaje=MENSAJES.get(request.args.get("m", "")))
 
