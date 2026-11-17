@@ -1054,7 +1054,8 @@ def inicializacion_y_seguridad():
 
     # 4. Roles: un rol desconocido se trata como "lectura" (falla cerrado)
     rol = rol_actual()
-    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "conectores.", "respaldos.", "servicios.", "ajustes."))) and rol != "admin":
+    if (request.endpoint in ENDPOINTS_ADMIN or (request.endpoint or "").startswith(("llaves.", "conectores.", "respaldos.", "servicios.", "ajustes.", "whatsapp."))) and rol != "admin" \
+            and request.endpoint != "whatsapp.webhook":
         abort(403)
     if rol not in ("admin", "operador") and request.method not in ("GET", "HEAD", "OPTIONS") \
             and request.endpoint not in ('logout', 'seguridad', 'vault.vault_desbloquear', 'vault.vault_bloquear', 'vault.vault_latido'):
@@ -2586,7 +2587,9 @@ RUTAS_PUBLICAS = {'login', 'static', 'inicio', 'resena_enviar', 'opinion_enviar'
                   'zedith_chat', 'privacidad', 'terminos', 'sitemap', 'robots', 'configurador', 'configurador_enviar', 'zedith_analisis',
                   'manifest_publico', 'manifest_admin', 'service_worker', 'pwa_offline', 'push_clave', 'push_revisar', 'healthz',
                   # API de llaves para otras plataformas: sin sesión, protegida por su token Bearer propio (llaves.py)
-                  'llaves.api_pedir', 'llaves.api_reportar', 'llaves.api_uso'}
+                  'llaves.api_pedir', 'llaves.api_reportar', 'llaves.api_uso',
+                  # webhook de WhatsApp (Meta): sin sesión, protegido por la firma X-Hub-Signature-256 (whatsapp_bot.py)
+                  'whatsapp.webhook'}
 # Datos de contacto (WhatsApp con lada de país, sin "+" ni espacios).
 CONTACTO = {"whatsapp": "524427972122", "telefono": "442 797 2122", "tel_link": "+524427972122",
             "email": "zedythtechnologies@gmail.com"}
@@ -3672,6 +3675,8 @@ app.register_blueprint(conectores.crear_blueprint(app, db, registrar, crear_noti
 app.register_blueprint(ajustes.crear_blueprint(registrar, vapid_diagnostico))     # /conexiones: llaves desde la pantalla
 app.register_blueprint(servicios.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto, CostoServicio, Vencimiento, Auditoria))
 import render_panel
+import whatsapp_bot
+app.register_blueprint(whatsapp_bot.crear_blueprint(app, db, registrar, crear_notificacion, limitar, llaves))     # /whatsapp: bot de WhatsApp (Meta) que contesta con tus fichas; webhook en /webhook/whatsapp
 app.register_blueprint(render_panel.crear_blueprint(app, db, crear_notificacion, Proyecto))     # /render: servicios de Render (varias cuentas)
 app.register_blueprint(operaciones.crear_blueprint(app, db, registrar, crear_notificacion, Proyecto))     # /mantenimientos, /atajos y centro de alertas
 import vault
@@ -3684,7 +3689,7 @@ zedith.AL_USAR = llaves.registrar_uso
 
 
 # Endpoints públicos y anónimos (sin sesión que proteger; ya tienen límite por IP) y el cron con token propio.
-for _nombre in ('zedith_chat', 'zedith_analisis', 'configurador_enviar', 'resena_enviar', 'opinion_enviar', 'push_revisar'):
+for _nombre in ('zedith_chat', 'zedith_analisis', 'configurador_enviar', 'resena_enviar', 'opinion_enviar', 'push_revisar', 'whatsapp.webhook'):
     csrf.exempt(app.view_functions[_nombre])
 
 
