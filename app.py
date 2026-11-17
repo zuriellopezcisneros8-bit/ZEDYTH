@@ -2011,6 +2011,12 @@ def _render_de(p):
         return None
 
 
+def _filtro_notifs_plataforma(p):
+    """Notificaciones cuya liga apunta a UNA plataforma (su ficha o sus pantallas de proyecto)."""
+    return db.or_(Notificacion.url.like(f"/proyectos/{p.id}/%"), Notificacion.url == f"/plataformas/{p.id}",
+                  Notificacion.url.like(f"/plataformas/{p.id}?%"), Notificacion.url.like(f"/plataformas/{p.id}/%"))
+
+
 @app.route('/plataformas/<int:pid>')
 def plataforma_detalle(pid):
     """Sistema maestro de control: todo lo de una plataforma propia en una sola pantalla con pestañas."""
@@ -2025,9 +2031,36 @@ def plataforma_detalle(pid):
         app.logger.warning("Plataforma %s: no se pudo leer Servicios: %s", p.id, e)
         serv_p, serv_tc = None, None
     venc = sorted(p.vencimientos, key=lambda v: v.fecha or date.max)
-    notifs = (Notificacion.query.filter(db.or_(Notificacion.url.like(f"/proyectos/{p.id}/%"),
-                                                Notificacion.url.like(f"/plataformas/{p.id}%")))
-              .order_by(Notificacion.id.desc()).limit(15).all())
+    q_notif = Notificacion.query.filter(_filtro_notifs_plataforma(p))
+    notifs = q_notif.order_by(Notificacion.id.desc()).limit(15).all()
+    vista_alertas = request.args.get('v', 'todas')
+    if vista_alertas not in ('todas', 'criticas', 'avisos', 'sinleer'):
+        vista_alertas = 'todas'
+    qv = q_notif
+    if vista_alertas == 'criticas':
+        qv = qv.filter(Notificacion.urgente.is_(True))
+    elif vista_alertas == 'avisos':
+        qv = qv.filter(Notificacion.urgente.is_(False))
+    elif vista_alertas == 'sinleer':
+        qv = qv.filter(Notificacion.leida.is_(False))
+    cuentas_alertas = {"todas": q_notif.count(),
+                       "criticas": q_notif.filter(Notificacion.urgente.is_(True)).count(),
+                       "avisos": q_notif.filter(Notificacion.urgente.is_(False)).count(),
+                       "sinleer": q_notif.filter(Notificacion.leida.is_(False)).count()}
+    try:
+        grupos_alertas = operaciones.agrupar(qv.order_by(Notificacion.hora.desc()).limit(100).all())
+    except Exception as e:
+        app.logger.warning("Plataforma %s: no se pudieron agrupar sus alertas: %s", p.id, e)
+        grupos_alertas = None
+    por_cobrar_p = [a for a in calcular_avisos()[0] if a["cliente"].id == p.cliente_id]
+    intel_p = intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).limit(60).all()
+    intel_det = []
+    for r in intel_p:
+        vinc = intel_vinculos(r)
+        ya = {v["otro"].id for v in vinc} | {r.id}
+        intel_det.append({"r": r, "vinculos": vinc, "ya": ya, "sugeridos": intel_sugeridos(r, ya)})
+    intel_candidatos = (intel_visibles(Inteligencia.query).order_by(Inteligencia.tipo, Inteligencia.titulo).limit(500).all()
+                        if intel_det else [])
     return render_template(
         'plataforma_detalle.html', p=p, hoy=date.today(), hoy_iso=date.today().isoformat(), tab=tab,
         serv_p=serv_p, serv_tc=serv_tc, es_admin=(rol_actual() == "admin"),
@@ -2042,11 +2075,24 @@ def plataforma_detalle(pid):
         abiertos=sum(1 for i in p.incidentes if i.estado == "Abierto"),
         cumplidos=sum(1 for c in p.checks if c.cumplido),
         alertas=alertas_plataforma(p), notifs=notifs, render_p=_render_de(p),
+        vista_alertas=vista_alertas, cuentas_alertas=cuentas_alertas, grupos_alertas=grupos_alertas,
+        por_cobrar=por_cobrar_p, dias_aviso=DIAS_AVISO, dias_venc=DIAS_VENCIMIENTO, dias_respaldo=DIAS_RESPALDO,
         conx=_conexiones_de(p), msg_conx=llaves.MENSAJES.get(request.args.get('m', '')),
         serv_panel=_servicios_de(p), msg_serv=servicios.MENSAJES.get(request.args.get('m', '')),
-        intel_p=intel_visibles(Inteligencia.query).filter_by(plataforma_id=p.id).order_by(Inteligencia.actualizado_en.desc()).all(),
+        intel_p=intel_p, intel_det=intel_det, intel_candidatos=intel_candidatos, intel_tipos=INTEL_TIPOS,
+        intel_prioridades=INTEL_PRIORIDADES, intel_relaciones=list(INTEL_RELACIONES),
         intel_libres=intel_visibles(Inteligencia.query).filter(Inteligencia.plataforma_id.is_(None)).order_by(Inteligencia.titulo).limit(300).all(),
         intel_estados=INTEL_ESTADOS)
+
+
+@app.route('/plataformas/<int:pid>/alertas/leer', methods=['POST'])
+def plataforma_alertas_leer(pid):
+    """Marca como leídas solo las notificaciones de ESTA plataforma (la de /notificaciones marca todas)."""
+    p = db.get_or_404(Proyecto, pid)
+    Notificacion.query.filter(_filtro_notifs_plataforma(p), Notificacion.leida.is_(False)).update(
+        {"leida": True}, synchronize_session=False)
+    db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=pid, tab='alertas')))
 
 
 @app.route('/plataformas/<int:pid>/vinculo', methods=['POST'])
@@ -2070,6 +2116,23 @@ def plataforma_vinculo(pid):
             registrar("vincular", modelo.__name__, r.id, p.nombre)
         db.session.commit()
     return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab=tipo if tipo in TABS_PLATAFORMA else None)))
+
+
+@app.route('/plataformas/<int:pid>/inteligencia/nuevo', methods=['POST'])
+def plataforma_intel_nueva(pid):
+    """Alta rápida de una idea, tecnología u otro registro ya ligado a esta plataforma (el detalle completo se edita en /inteligencia)."""
+    p = db.get_or_404(Proyecto, pid)
+    titulo = campo('titulo')
+    if titulo:
+        r = Inteligencia(titulo=titulo[:200], plataforma_id=p.id, estado="Abierto",
+                         tipo=campo('tipo') if campo('tipo') in INTEL_TIPOS else "Idea",
+                         prioridad=campo('prioridad') if campo('prioridad') in INTEL_PRIORIDADES else "Media",
+                         resumen=campo('resumen') or None, referencia=campo('referencia')[:200] or None)
+        db.session.add(r)
+        db.session.flush()
+        registrar("crear", "Inteligencia", r.id, f"{r.tipo}: {r.titulo} · {p.nombre}")
+        db.session.commit()
+    return redirect(_destino(url_for('plataforma_detalle', pid=p.id, tab='inteligencia')))
 
 
 @app.route('/plataformas/<int:pid>/subdominio', methods=['POST'])
@@ -2433,7 +2496,7 @@ def intel_visibles(q):
 
 
 def _intel_o_404(iid):
-    r = _intel_o_404(iid)
+    r = db.get_or_404(Inteligencia, iid)
     if r.confidencial and not es_admin():
         abort(404)
     return r
@@ -2491,7 +2554,7 @@ def inteligencia_vincular(iid):
             r.actualizado_en = otro.actualizado_en = datetime.utcnow()
             registrar("vincular", "Inteligencia", r.id, f"{origen.titulo} · {relacion} · {destino.titulo}")
             db.session.commit()
-    return redirect(url_for('inteligencia_detalle', iid=r.id))
+    return redirect(_destino(url_for('inteligencia_detalle', iid=r.id)))
 
 
 @app.route('/inteligencia/vinculo/<int:vid>/eliminar', methods=['POST'])
@@ -2501,7 +2564,7 @@ def inteligencia_desvincular(vid):
     registrar("desvincular", "Inteligencia", v.origen_id, f"{v.origen.titulo} · {v.relacion} · {v.destino.titulo}")
     db.session.delete(v)
     db.session.commit()
-    return redirect(url_for('inteligencia_detalle', iid=volver))
+    return redirect(_destino(url_for('inteligencia_detalle', iid=volver)))
 
 
 # --- WEB PÚBLICA -----------------------------------------------------------
@@ -2837,7 +2900,7 @@ def configurador_enviar():
     return {"ok": True, "wa": f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"}
 
 
-INTEL_TIPOS = ("Incidente", "Empresa", "Patente", "Tecnología", "Amenaza", "Otro")
+INTEL_TIPOS = ("Incidente", "Empresa", "Patente", "Tecnología", "Idea", "Amenaza", "Otro")
 INTEL_ESTADOS = ("Abierto", "En investigación", "Cerrado")
 INTEL_PRIORIDADES = ("Baja", "Media", "Alta", "Crítica")
 
@@ -2909,7 +2972,7 @@ def inteligencia_nota(iid):
         r.actualizado_en = datetime.utcnow()
         registrar("nota", "Inteligencia", r.id, r.titulo)
         db.session.commit()
-    return redirect(url_for('inteligencia_detalle', iid=r.id))
+    return redirect(_destino(url_for('inteligencia_detalle', iid=r.id)))
 
 
 @app.route('/inteligencia/<int:iid>/estado', methods=['POST'])

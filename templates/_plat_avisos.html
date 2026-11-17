@@ -1,0 +1,34 @@
+<!-- templates/_plat_avisos.html : por cobrar y por pagar de UNA plataforma (pestaña Alertas) -->
+{% set dias_av = dias_aviso|default(30) %}
+{% set puede = (current_user.rol or '')|lower in ['admin', 'operador'] %}
+<div class="section-title">Por cobrar al cliente</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Cliente</th><th>Plan</th><th>Fecha</th><th>Monto</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead><tbody>
+    {% for a in por_cobrar|default([]) %}
+    <tr><td><a href="/clientes/{{ a.cliente.id }}" style="font-weight:500;">{{ a.cliente.nombre_comercial }}</a></td>
+        <td style="color:var(--text-muted);">{{ a.plan }} · {{ a.periodicidad }}</td>
+        <td class="mono">{{ a.fecha }}</td>
+        <td class="mono">{{ '${:,.0f}'.format(a.monto) }}</td>
+        <td>{% if a.dias < 0 %}<span class="badge badge-red">Vencido hace {{ -a.dias }} d</span>{% elif a.dias == 0 %}<span class="badge badge-amber">Hoy</span>{% else %}<span class="badge">En {{ a.dias }} d</span>{% endif %}</td>
+        <td style="text-align:right;"><div class="mt-acc" style="justify-content:flex-end;">
+            {% if a.wa %}<a class="btn btn-sm" href="{{ a.wa }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+            {% if a.mail %}<a class="btn btn-sm" href="{{ a.mail }}">Correo</a>{% endif %}
+            {% if puede %}<form method="post" action="/clientes/{{ a.cliente.id }}/cobrar"><input type="hidden" name="periodo" value="{{ a.fecha }}"><button class="btn btn-sm btn-primary" type="submit">Registrar cobro</button></form>{% endif %}
+        </div></td></tr>
+    {% else %}<tr><td colspan="6" style="text-align:center; padding:28px; color:var(--text-muted);">Nada por cobrar en los próximos {{ dias_av }} días.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-title">Por pagar a proveedores</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Proveedor</th><th>Fecha</th><th>Monto</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead><tbody>
+    {% set ns = namespace(n=0) %}
+    {% for k in costos if k.proxima_fecha_pago and (k.proxima_fecha_pago - hoy).days <= dias_av %}
+    {% set ns.n = ns.n + 1 %}{% set d = (k.proxima_fecha_pago - hoy).days %}
+    <tr><td style="font-weight:500;">{{ k.proveedor }}<div class="mono" style="color:var(--text-muted);">{{ k.concepto or '' }} · {{ k.periodicidad or 'Mensual' }}</div></td>
+        <td class="mono">{{ k.proxima_fecha_pago }}</td>
+        <td class="mono">{{ '${:,.0f}'.format(k.monto_periodo or k.monto_mensual or 0) }}</td>
+        <td>{% if d < 0 %}<span class="badge badge-red">Vencido hace {{ -d }} d</span>{% elif d == 0 %}<span class="badge badge-red">Vence hoy</span>{% elif d <= 7 %}<span class="badge badge-amber">En {{ d }} d</span>{% else %}<span class="badge">En {{ d }} d</span>{% endif %}</td>
+        <td style="text-align:right;">{% if puede %}<form method="post" action="/costos/{{ k.id }}/pagar" style="display:inline;" onsubmit='return confirm({{ ("¿Marcar como pagado: " ~ k.proveedor ~ "? La próxima fecha de pago avanzará un periodo.")|tojson }})'><button class="btn btn-sm btn-primary" type="submit">Marcar pagado</button></form>{% endif %}</td></tr>
+    {% endfor %}
+    {% if not ns.n %}<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Nada por pagar en los próximos {{ dias_av }} días.</td></tr>{% endif %}
+</tbody></table></div></div>

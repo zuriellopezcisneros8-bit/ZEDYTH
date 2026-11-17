@@ -1,22 +1,134 @@
-<!-- templates/_plat_negocio.html : inteligencia ligada a esta plataforma -->
+<!-- templates/_plat_negocio.html : inteligencia de esta plataforma, con el detalle completo de cada registro -->
 <div class="mt-panel {{ 'on' if tab == 'inteligencia' }}" data-panel="inteligencia">
+<style>
+  .it-det > summary { list-style:none; cursor:pointer; }
+  .it-det > summary::-webkit-details-marker { display:none; }
+  .it-sec { margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,.08); }
+  .it-sec h4 { margin:0 0 10px; font:600 12px Inter,sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted,#9aa3b2); }
+  .it-txt { margin:0; white-space:pre-wrap; font-size:14px; line-height:1.6; }
+  .it-sub { color:var(--text-muted,#9aa3b2); font-size:13px; margin-top:4px; }
+  .it-item { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:10px 0; border-top:1px solid rgba(255,255,255,.06); }
+  .it-item:first-of-type { border-top:0; }
+  .it-form { display:grid; gap:10px; margin-top:12px; }
+  .it-form textarea.field { min-height:80px; resize:vertical; }
+</style>
 <div class="section-title">Inteligencia</div>
-<div class="luxury-card">
-    {% for r in intel_p %}
-    <div class="mt-fila">
-        <div style="min-width:240px;"><a href="/inteligencia/{{ r.id }}" style="font-weight:500;">{{ r.titulo }}</a>
-            <div style="color:var(--text-muted); font-size:13px; margin-top:4px;">{{ r.tipo }} · {{ r.prioridad }}{% if r.confidencial %} · Confidencial{% endif %}{% if r.entidad %} · {{ r.entidad }}{% endif %}{% if r.referencia %} · {{ r.referencia }}{% endif %} · {{ r.actualizado_en.strftime('%d/%m/%Y') }}</div></div>
+
+{% set conteo = namespace(abiertos=0, altas=0) %}
+{% for d in intel_det %}{% if d.r.estado != 'Cerrado' %}{% set conteo.abiertos = conteo.abiertos + 1 %}{% endif %}{% if d.r.prioridad in ['Alta','Crítica'] and d.r.estado != 'Cerrado' %}{% set conteo.altas = conteo.altas + 1 %}{% endif %}{% endfor %}
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card"><h3 class="stat-label">Registros</h3><div class="stat-value">{{ intel_det|length }}</div></div>
+    <div class="luxury-card"><h3 class="stat-label">Abiertos o en investigación</h3><div class="stat-value">{{ conteo.abiertos }}</div>{% if conteo.altas %}<div class="mono" style="font-size:12px; color:#f87171; margin-top:6px;">{{ conteo.altas }} de prioridad alta o crítica</div>{% endif %}</div>
+</div>
+
+<div class="stack">
+{% for d in intel_det %}{% set r = d.r %}
+<details class="luxury-card it-det">
+    <summary>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:flex-start;">
+            <div style="min-width:240px; flex:1;">
+                <strong style="font-weight:500; font-size:16px;">{{ r.titulo }}</strong>
+                <div class="it-sub">{{ r.tipo }}{% if r.entidad %} · {{ r.entidad }}{% endif %}{% if r.referencia %} · {{ r.referencia }}{% endif %} · {{ r.actualizado_en.strftime('%d/%m/%Y') }}</div>
+            </div>
+            <div class="mt-acc">
+                <span class="badge {{ 'badge-red' if r.prioridad in ['Alta','Crítica'] else 'badge-amber' if r.prioridad == 'Media' else '' }}">{{ r.prioridad }}</span>
+                <span class="badge {{ 'badge-green' if r.estado == 'Cerrado' }}">{{ r.estado }}</span>
+                {% if r.confidencial %}<span class="badge badge-amber">Confidencial</span>{% endif %}
+                <span class="mono" style="color:var(--text-muted); font-size:12px;">{{ d.vinculos|length }} vínculo{{ '' if d.vinculos|length == 1 else 's' }} · {{ r.notas|length }} nota{{ '' if r.notas|length == 1 else 's' }}</span>
+            </div>
+        </div>
+    </summary>
+
+    <div class="mt-acc" style="margin-top:16px; justify-content:space-between;">
+        <form method="post" action="/inteligencia/{{ r.id }}/estado" class="mt-acc">
+            <select class="field" name="estado" style="margin:0; width:auto;">{% for e in intel_estados %}<option {{ 'selected' if e == r.estado }}>{{ e }}</option>{% endfor %}</select>
+            <button class="btn btn-sm" type="submit">Cambiar estado</button>
+        </form>
         <div class="mt-acc">
-            <form method="post" action="/inteligencia/{{ r.id }}/estado" class="mt-acc"><select class="field" name="estado" style="margin:0; width:auto;">{% for e in intel_estados %}<option {{ 'selected' if e == r.estado }}>{{ e }}</option>{% endfor %}</select><button class="btn btn-sm" type="submit">Guardar</button></form>
-            <form method="post" action="/plataformas/{{ p.id }}/vinculo"><input type="hidden" name="tipo" value="inteligencia"><input type="hidden" name="registro_id" value="{{ r.id }}"><input type="hidden" name="accion" value="quitar"><button class="btn btn-sm" type="submit">Quitar</button></form>
+            <a class="btn btn-sm" href="/inteligencia/{{ r.id }}">Abrir completo</a>
+            <a class="btn btn-sm btn-primary" href="/inteligencia/{{ r.id }}/editar">Editar</a>
+            <form method="post" action="/plataformas/{{ p.id }}/vinculo"><input type="hidden" name="tipo" value="inteligencia"><input type="hidden" name="registro_id" value="{{ r.id }}"><input type="hidden" name="accion" value="quitar"><button class="btn btn-sm" type="submit">Quitar de esta plataforma</button></form>
         </div>
     </div>
-    {% else %}<p style="color:var(--text-muted); margin:0;">Esta plataforma no tiene registros de inteligencia asignados.</p>{% endfor %}
-    <form method="post" action="/plataformas/{{ p.id }}/vinculo" class="mt-vinc">
-        <input type="hidden" name="tipo" value="inteligencia">
-        <select class="field" name="registro_id" required><option value="">Asignar registro existente…</option>{% for r in intel_libres %}<option value="{{ r.id }}">{{ r.tipo }} · {{ r.titulo }}</option>{% endfor %}</select>
-        <button class="btn btn-sm btn-primary" type="submit">Asignar a esta plataforma</button>
-        <a class="btn btn-sm" href="/inteligencia/nuevo">Nuevo registro</a>
-    </form>
+
+    {% set datos = [('Empresa / titular', r.entidad), ('Referencia', r.referencia), ('Jurisdicción', r.jurisdiccion), ('Fuente', r.fuente), ('Fecha del hecho', r.fecha_evento.strftime('%d/%m/%Y') if r.fecha_evento else None)] %}
+    {% if datos|selectattr('1')|list %}
+    <div class="grid-2 it-sec" style="font-size:14px; gap:10px 24px;">
+        {% for t, v in datos if v %}<div><span style="color:var(--text-muted);">{{ t }}</span><div>{{ v }}</div></div>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if r.resumen %}<div class="it-sec"><h4>Resumen</h4><p class="it-txt">{{ r.resumen }}</p></div>{% endif %}
+    {% if r.hallazgos %}<div class="it-sec"><h4>Hallazgos</h4><p class="it-txt">{{ r.hallazgos }}</p></div>{% endif %}
+
+    <div class="it-sec">
+        <h4>Registros vinculados ({{ d.vinculos|length }})</h4>
+        {% for v in d.vinculos %}
+        <div class="it-item">
+            <a href="/inteligencia/{{ v.otro.id }}" style="flex:1; min-width:220px;"><span style="font-weight:500;">{{ v.otro.titulo }}</span>
+                <div class="it-sub"><span class="badge">{{ v.etiqueta }}</span> {{ v.otro.tipo }} · {{ v.otro.estado }}{% if v.otro.referencia %} · {{ v.otro.referencia }}{% endif %}{% if v.nota %} · {{ v.nota }}{% endif %}</div></a>
+            {% if es_admin %}<form method="post" action="/inteligencia/vinculo/{{ v.id }}/eliminar" onsubmit="return confirm('¿Quitar este vínculo?')"><button class="btn btn-sm" type="submit">Quitar</button></form>{% endif %}
+        </div>
+        {% else %}<p class="it-sub" style="margin:0;">Sin vínculos todavía. Relaciona este registro con una empresa, patente, tecnología o amenaza.</p>{% endfor %}
+
+        {% if d.sugeridos %}
+        <h4 style="margin-top:18px;">Sugeridos (comparten empresa o titular)</h4>
+        {% for s in d.sugeridos %}
+        <form method="post" action="/inteligencia/{{ r.id }}/vincular" class="it-item">
+            <input type="hidden" name="otro_id" value="{{ s.r.id }}"><input type="hidden" name="relacion" value="{{ s.relacion }}"><input type="hidden" name="sentido" value="{{ s.sentido }}">
+            <span style="flex:1; min-width:200px;"><span style="font-weight:500;">{{ s.r.titulo }}</span><span class="it-sub"> · {{ s.r.tipo }}{% if s.r.referencia %} · {{ s.r.referencia }}{% endif %}</span></span>
+            <button class="btn btn-sm btn-primary" type="submit">Vincular</button>
+        </form>
+        {% endfor %}
+        {% endif %}
+
+        <details style="margin-top:14px;"><summary class="btn btn-sm" style="display:inline-block;">+ Vincular con otro registro</summary>
+            <form method="post" action="/inteligencia/{{ r.id }}/vincular" class="it-form">
+                <select class="field" name="otro_id" required><option value="">Elige un registro…</option>
+                    {% for c in intel_candidatos if c.id not in d.ya %}<option value="{{ c.id }}">{{ c.tipo }} · {{ c.titulo }}{% if c.referencia %} · {{ c.referencia }}{% endif %}</option>{% endfor %}
+                </select>
+                <select class="field" name="relacion">{% for x in intel_relaciones %}<option>{{ x }}</option>{% endfor %}</select>
+                <select class="field" name="sentido"><option value="sale">Este registro → el elegido</option><option value="entra">El elegido → este registro</option></select>
+                <input class="field" type="text" name="nota" maxlength="300" placeholder="Nota (opcional)">
+                <div><button class="btn btn-primary" type="submit">Vincular</button></div>
+            </form>
+        </details>
+    </div>
+
+    <div class="it-sec">
+        <h4>Bitácora de la investigación ({{ r.notas|length }})</h4>
+        <form method="post" action="/inteligencia/{{ r.id }}/nota" class="it-form" style="margin-top:0; margin-bottom:12px;">
+            <textarea class="field" name="texto" required placeholder="Nuevo avance o hallazgo"></textarea>
+            <input class="field" type="text" name="fuente" maxlength="300" placeholder="Fuente (opcional)">
+            <div><button class="btn btn-sm btn-primary" type="submit">Agregar a la bitácora</button></div>
+        </form>
+        {% for n in r.notas[:8] %}
+        <div class="it-item" style="display:block;"><p class="it-txt">{{ n.texto }}</p>
+            <div class="it-sub mono">{{ n.fecha.strftime('%d/%m/%Y %H:%M') }} UTC · {{ n.autor or 'sistema' }}{% if n.fuente %} · {{ n.fuente }}{% endif %}</div></div>
+        {% else %}<p class="it-sub" style="margin:0;">Sin avances registrados todavía.</p>{% endfor %}
+        {% if r.notas|length > 8 %}<p class="it-sub" style="margin:10px 0 0;">Se muestran las 8 más recientes. <a href="/inteligencia/{{ r.id }}" style="text-decoration:underline;">Ver las {{ r.notas|length }}</a></p>{% endif %}
+    </div>
+</details>
+{% else %}
+<div class="luxury-card" style="color:var(--text-muted);">Esta plataforma no tiene registros de inteligencia. Agrega una idea o tecnología abajo, o asigna uno que ya exista.</div>
+{% endfor %}
 </div>
+
+<details class="luxury-card" style="margin-top:16px;"{{ ' open' if not intel_det }}><summary>+ Agregar idea, tecnología u otro registro</summary>
+    <form method="post" action="/plataformas/{{ p.id }}/inteligencia/nuevo" class="grid-2">
+        <label class="lbl">Título<input class="field" type="text" name="titulo" required maxlength="200" placeholder="Ej. Pagos con SPEI, migrar a PostgreSQL 17…"></label>
+        <label class="lbl">Tipo<select class="field" name="tipo">{% for t in intel_tipos %}<option {{ 'selected' if t == 'Idea' }}>{{ t }}</option>{% endfor %}</select></label>
+        <label class="lbl">Prioridad<select class="field" name="prioridad">{% for x in intel_prioridades %}<option {{ 'selected' if x == 'Media' }}>{{ x }}</option>{% endfor %}</select></label>
+        <label class="lbl">Referencia (versión, URL, patente…)<input class="field" type="text" name="referencia" maxlength="200"></label>
+        <label class="lbl" style="grid-column:1/-1;">Resumen<textarea class="field" name="resumen" style="min-height:80px;" placeholder="De qué trata y por qué le sirve a esta plataforma"></textarea></label>
+        <div><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form>
+</details>
+
+<form method="post" action="/plataformas/{{ p.id }}/vinculo" class="mt-vinc">
+    <input type="hidden" name="tipo" value="inteligencia">
+    <select class="field" name="registro_id" required><option value="">Asignar registro existente…</option>{% for r in intel_libres %}<option value="{{ r.id }}">{{ r.tipo }} · {{ r.titulo }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-primary" type="submit">Asignar a esta plataforma</button>
+    <a class="btn btn-sm" href="/inteligencia">Ver toda la división</a>
+</form>
 </div>

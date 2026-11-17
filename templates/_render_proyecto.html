@@ -34,6 +34,23 @@
   .rd-pie { color:var(--text-muted, #9aa3b2); font-size:12px; margin:12px 0 0; }
 </style>
 <div class="section-title">Render</div>
+{% if render_p.conectado and es_admin %}
+<div class="toolbar" style="margin-bottom:12px;">
+  <button class="btn btn-sm btn-primary" id="rd-act" type="button">Actualizar ahora</button>
+  <a class="btn btn-sm" href="/render">Ver todos los servicios</a>
+</div>
+<script>
+(function () {
+  var b = document.getElementById('rd-act'); if (!b) return;
+  b.addEventListener('click', function () {
+    b.disabled = true; b.textContent = 'Actualizando…';
+    fetch('/api/render/actualizar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function () { location.reload(); })
+      .catch(function () { b.disabled = false; b.textContent = 'No se pudo actualizar'; });
+  });
+})();
+</script>
+{% endif %}
 {% if not render_p.conectado %}
 <div class="luxury-card"><div style="color:var(--text-muted);">{% if render_p.aislada %}Esta plataforma no tiene llave de Render propia y el sistema está configurado para que no use las generales.{% else %}Render no está conectado para esta plataforma.{% endif %} Agrega una llave de Render (proveedor «Render») en <a href="/plataformas/{{ p.id }}?tab=conexiones" style="text-decoration:underline;">Conexiones</a> para ver aquí el estado, la memoria y los deploys.</div></div>
 {% elif render_p.pendiente %}

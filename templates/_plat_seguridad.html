@@ -2,6 +2,7 @@
 {% macro entrada(name, label, type='text', req=False, valor='') %}
 <label class="lbl">{{ label }}<input class="field" type="{{ type }}" name="{{ name }}" value="{{ valor }}" {{ 'required' if req }}></label>
 {% endmacro %}
+{% include '_plat_seguridad_kpi.html' %}
 <div class="grid-2" style="gap:20px;">
     <form method="post" action="/proyectos/{{ p.id }}/checklist" class="luxury-card">
         <h3 class="stat-label">Checklist de seguridad</h3>

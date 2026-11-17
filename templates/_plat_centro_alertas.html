@@ -1,0 +1,29 @@
+<!-- templates/_plat_centro_alertas.html : centro de alertas de UNA plataforma, con prioridad y hora de recibido -->
+{% macro fila(n, veces, primera, sin_leer, urgente) %}
+<tr style="{{ 'background:rgba(255,255,255,.04);' if sin_leer }}">
+    <td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 600 if sin_leer else 400 }};">{{ n.titulo }}</a>{% if veces > 1 %} <span class="badge">×{{ veces }}</span>{% endif %}<div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div>
+        {% if veces > 1 and primera %}<div class="mono" style="color:var(--text-muted); font-size:11px;">Desde {{ primera.strftime('%d/%m %H:%M') }} UTC</div>{% endif %}</td>
+    <td><span class="badge {{ 'badge-red' if urgente else 'badge-amber' }}">{{ 'Crítica' if urgente else 'Aviso' }}</span><div style="color:var(--text-muted); font-size:12px;">{{ n.tipo }}</div></td>
+    <td>{% if n.entregada %}<span class="badge badge-green">Sí</span>{% elif n.leida and (n.intentos or 0) >= 10 %}<span class="badge badge-amber">Silenciado</span>{% else %}<span class="badge badge-red">No</span>{% endif %}</td>
+    <td class="mono">{{ n.hora.strftime('%d/%m/%Y %H:%M') }}</td>
+</tr>
+{% endmacro %}
+<div class="toolbar" style="margin-bottom:12px; flex-wrap:wrap;">
+    {% if cuentas_alertas is defined and cuentas_alertas %}
+    {% for clave, texto, n in [('todas','Todas',cuentas_alertas.todas), ('criticas','Críticas',cuentas_alertas.criticas), ('avisos','Avisos',cuentas_alertas.avisos), ('sinleer','Sin leer',cuentas_alertas.sinleer)] %}
+    <a class="btn btn-sm {{ 'btn-primary' if (vista_alertas|default('todas')) == clave }}" href="/plataformas/{{ p.id }}?tab=alertas&v={{ clave }}">{{ texto }} ({{ n }})</a>
+    {% endfor %}
+    {% endif %}
+    <form method="post" action="/plataformas/{{ p.id }}/alertas/leer" style="display:inline;"><button class="btn btn-sm" type="submit">Marcar todo como leído</button></form>
+    <a class="btn btn-sm" href="/notificaciones">Silenciar tipos y dispositivos</a>
+</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Aviso</th><th>Prioridad</th><th>Recibido en el celular</th><th>Último</th></tr></thead><tbody>
+    {% if grupos_alertas is defined and grupos_alertas is not none %}
+        {% for g in grupos_alertas %}{{ fila(g.n, g.veces, g.primera, g.sin_leer, g.urgente) }}
+        {% else %}<tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">No hay notificaciones en esta vista.</td></tr>{% endfor %}
+    {% else %}
+        {% for n in notifs %}{{ fila(n, 1, none, not n.leida, n.urgente) }}
+        {% else %}<tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Sin notificaciones de esta plataforma.</td></tr>{% endfor %}
+    {% endif %}
+</tbody></table></div></div>

@@ -136,6 +136,7 @@
         <div class="toolbar" style="margin:0;">
             {% if p.repo_url %}<a class="btn btn-primary" href="{{ p.repo_url }}" target="_blank" rel="noopener">Abrir en GitHub</a>{% endif %}
             <a class="btn" href="/proyectos/{{ p.id }}/editar">{{ 'Editar datos' if p.repo_url else 'Agregar repositorio' }}</a>
+            <a class="btn" href="/repositorios">Todos los repositorios</a>
         </div>
     </div>
     <div class="grid-2" style="font-size:14px; gap:10px 24px;">
@@ -177,16 +178,11 @@
 {% include '_plat_seguridad.html' %}
 </div>
 <div class="mt-panel {{ 'on' if tab == 'alertas' }}" data-panel="alertas">
-<div class="section-title">Alertas de esta plataforma</div>
+<div class="section-title">Requiere atención</div>
 {% include '_plat_lista_alertas.html' %}
-<div class="section-title">Notificaciones enviadas al celular</div>
-<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
-    <thead><tr><th>Aviso</th><th>Tipo</th><th>Fecha</th></tr></thead><tbody>
-    {% for n in notifs %}<tr><td><a href="{{ n.url or '/panel' }}" style="font-weight:{{ 400 if n.leida else 600 }};">{{ n.titulo }}</a><div style="color:var(--text-muted); font-size:13px;">{{ n.cuerpo or '' }}</div></td>
-        <td><span class="badge {{ 'badge-red' if n.urgente else 'badge-amber' }}">{{ 'Urgente' if n.urgente else n.tipo }}</span></td>
-        <td class="mono">{{ n.hora.strftime('%d/%m/%Y %H:%M') }}</td></tr>
-    {% else %}<tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">Sin notificaciones de esta plataforma.</td></tr>{% endfor %}
-</tbody></table></div></div>
+{% include '_plat_avisos.html' %}
+<div class="section-title">Centro de alertas</div>
+{% include '_plat_centro_alertas.html' %}
 </div>
 {% include '_plat_negocio.html' %}
 {% include '_plat_conexiones.html' %}
