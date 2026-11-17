@@ -21,6 +21,9 @@
 <span class="badge {{ 'badge-green' if f.nivel == 'ok' else 'badge-amber' if f.nivel == 'alerta' else 'badge-red' if f.nivel == 'falla' else '' }}">{{ {'ok': 'Bien', 'alerta': 'Atención', 'falla': 'Falla', 'sin': 'Sin conexión'}[f.nivel] }}</span>
 <div style="color:var(--text-muted); font-size:12px; margin-top:4px;">{{ f.texto }}</div>
 {%- endmacro %}
+{% macro costo(f) -%}
+{% if f.monto is defined %}{% if f.monto %}{{ f.moneda }} {{ '{:,.2f}'.format(f.monto) }} <span style="color:var(--text-muted);">/ {{ (f.periodicidad or 'Mensual')|lower }}</span><div style="color:var(--text-muted); font-size:12px;">≈ {{ '${:,.0f}'.format(f.mes) }} MXN al mes</div>{% else %}<span class="badge badge-green">Gratis</span>{% endif %}{% if f.ultimo_pago %}<div style="color:var(--text-muted); font-size:12px;">pagado {{ f.ultimo_pago }}</div>{% endif %}{% else %}{{ '${:,.0f}'.format(f.mes) }}{% endif %}
+{%- endmacro %}
 {% macro renovacion(f) -%}
 {% if f.fecha or f.proxima_renovacion %}{% set d = f.fecha or f.proxima_renovacion %}<span style="{{ 'color:#f87171;' if f.dias is not none and f.dias <= 7 }}">{{ d }}</span><div style="color:var(--text-muted); font-size:12px;">{{ 'vencido' if f.dias < 0 else 'hoy' if f.dias == 0 else 'en ' ~ f.dias ~ ' día(s)' }}</div>{% else %}—{% endif %}
 {%- endmacro %}
@@ -39,8 +42,8 @@
 <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
     <thead><tr><th>Servicio</th><th>Estado</th><th>Costo / mes</th><th>Renovación</th></tr></thead><tbody>
     {% for f in (serv_p.filas if serv_p else []) %}
-    <tr><td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.plan %} · {{ f.plan }}{% endif %}</div></td>
-        <td>{{ estado(f) }}</td><td class="mono">{{ '${:,.0f}'.format(f.mes) }}</td><td class="mono">{{ renovacion(f) }}</td></tr>
+    <tr><td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.categoria %} · {{ f.categoria }}{% endif %}{% if f.plan %} · {{ f.plan }}{% endif %}</div>{% if f.notas %}<div style="font-size:12px; color:var(--text-muted);">{{ f.notas }}</div>{% endif %}</td>
+        <td>{{ estado(f) }}</td><td class="mono">{{ costo(f) }}</td><td class="mono">{{ renovacion(f) }}</td></tr>
     {% else %}<tr><td colspan="4" style="text-align:center; padding:28px; color:var(--text-muted);">Esta plataforma no tiene servicios en el catálogo.</td></tr>{% endfor %}
 </tbody></table></div></div>
 <p style="color:var(--text-muted); font-size:13px; margin-top:14px;">Solo los administradores pueden agregar o cambiar servicios.</p>
@@ -51,10 +54,10 @@
     <thead><tr><th>Servicio</th><th>Estado</th><th>Costo / mes</th><th>Renovación</th><th></th></tr></thead><tbody>
     {% for f in serv_panel.filas %}
     <tr style="{{ 'opacity:.6;' if not f.activo }}">
-        <td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.plan %} · {{ f.plan }}{% endif %}</div>
+        <td style="font-weight:500;">{{ f.nombre }}<div class="mono" style="color:var(--text-muted);">{{ f.proveedor }}{% if f.categoria %} · {{ f.categoria }}{% endif %}{% if f.plan %} · {{ f.plan }}{% endif %}</div>{% if f.notas %}<div style="font-size:12px; color:var(--text-muted);">{{ f.notas }}</div>{% endif %}
             {% if f.url_panel %}<a href="{{ f.url_panel }}" target="_blank" rel="noopener" style="font-size:12px; text-decoration:underline;">Abrir consola</a>{% endif %}</td>
         <td>{% if f.activo %}{{ estado(f) }}{% else %}<span class="badge">Pausado</span>{% endif %}</td>
-        <td class="mono">{{ '${:,.0f}'.format(f.mes) }}</td>
+        <td class="mono">{{ costo(f) }}</td>
         <td class="mono">{{ renovacion(f) }}</td>
         <td style="text-align:right;">
             <div class="mt-acc" style="justify-content:flex-end;">

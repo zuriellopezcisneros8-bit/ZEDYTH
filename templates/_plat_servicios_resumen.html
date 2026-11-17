@@ -1,0 +1,60 @@
+<!-- templates/_plat_servicios_resumen.html
+     FASE 2 · Resumen de Servicios de ESTA plataforma (tarjetas + costo por categoría).
+     Todo se calcula con serv_p / serv_panel que ya llegan a plataforma_detalle. -->
+{% set filas = serv_panel.filas if (serv_panel is defined and serv_panel) else (serv_p.filas if serv_p else []) %}
+{% set n = namespace(ok=0, alerta=0, falla=0, sin=0, venc=0, sig=none, cat={}, total_cat=0) %}
+{% for f in filas %}
+  {% if f.activo %}
+    {% if f.nivel == 'ok' %}{% set n.ok = n.ok + 1 %}{% elif f.nivel == 'alerta' %}{% set n.alerta = n.alerta + 1 %}{% elif f.nivel == 'falla' %}{% set n.falla = n.falla + 1 %}{% else %}{% set n.sin = n.sin + 1 %}{% endif %}
+    {% if f.dias is not none %}
+      {% if f.dias < 0 %}{% set n.venc = n.venc + 1 %}
+      {% elif n.sig is none or f.dias < n.sig.dias %}{% set n.sig = f %}{% endif %}
+    {% endif %}
+    {% set c = f.categoria or 'Otro' %}
+    {% if n.cat.update({c: (n.cat.get(c, 0) + (f.mes or 0))}) %}{% endif %}
+    {% set n.total_cat = n.total_cat + (f.mes or 0) %}
+  {% endif %}
+{% endfor %}
+{% set catalogo = serv_p.mes if serv_p else 0 %}
+{% set ia = serv_p.ia if serv_p else 0 %}
+{% set alm = serv_p.almacenamiento if (serv_p and serv_p.almacenamiento is defined and serv_p.almacenamiento) else 0 %}
+<div class="grid-2" style="gap:20px; margin-bottom:20px;">
+    <div class="luxury-card">
+        <h3 class="stat-label">Costo mensual de servicios</h3>
+        <div class="stat-value">{{ '${:,.0f}'.format(catalogo + ia + alm) }}</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">Catálogo {{ '${:,.0f}'.format(catalogo) }} · IA {{ '${:,.0f}'.format(ia) }}{% if alm %} · Almacenamiento est. {{ '${:,.0f}'.format(alm) }}{% endif %}</p>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Estado</h3>
+        <div class="stat-value" style="font-size:22px; color:{{ '#f87171' if n.falla else 'inherit' }};">{{ n.falla }} con falla</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">{{ n.alerta }} con atención · {{ n.ok }} operativos · {{ n.sin }} sin datos</p>
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Próxima renovación</h3>
+        {% if n.sig %}
+        <div class="stat-value" style="font-size:22px;">{{ 'hoy' if n.sig.dias == 0 else ('en ' ~ n.sig.dias ~ ' d') }}</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">{{ n.sig.nombre }} · {{ n.sig.fecha or n.sig.proxima_renovacion }}{% if n.venc %} · <span style="color:#f87171;">{{ n.venc }} vencida(s)</span>{% endif %}</p>
+        {% else %}
+        <div class="stat-value" style="font-size:22px;">—</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">Sin fechas registradas{% if n.venc %} · <span style="color:#f87171;">{{ n.venc }} vencida(s)</span>{% endif %}</p>
+        {% endif %}
+    </div>
+    <div class="luxury-card">
+        <h3 class="stat-label">Tipo de cambio usado</h3>
+        <div class="stat-value" style="font-size:22px;">{% if serv_panel is defined and serv_panel %}US$1 = ${{ '%.2f'|format(serv_panel.tc) }}{% else %}—{% endif %}</div>
+        <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">El mismo de Almacenamiento → Costos.</p>
+    </div>
+</div>
+
+{% if n.cat %}
+<div class="section-title">Costo por categoría</div>
+<div class="luxury-card" style="padding:0; overflow:hidden; margin-bottom:24px;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Categoría</th><th>Servicios</th><th>MXN al mes</th><th style="width:35%;"></th></tr></thead><tbody>
+    {% for c, v in n.cat.items()|sort(attribute='1', reverse=True) %}
+    <tr><td>{{ c }}</td>
+        <td class="mono">{{ filas|selectattr('activo')|selectattr('categoria', 'equalto', c)|list|length if c != 'Otro' else filas|selectattr('activo')|rejectattr('categoria')|list|length + filas|selectattr('activo')|selectattr('categoria', 'equalto', 'Otro')|list|length }}</td>
+        <td class="mono">{{ '${:,.0f}'.format(v) }}</td>
+        <td><div style="height:8px;border-radius:4px;background:rgba(255,255,255,.7);width:{{ (100 * v / n.total_cat)|round|int if n.total_cat else 0 }}%;min-width:{{ 2 if v else 0 }}px;"></div></td></tr>
+    {% endfor %}
+</tbody></table></div></div>
+{% endif %}

@@ -1,0 +1,255 @@
+<!-- templates/_monitor_plataforma.html
+     FASE 1 · Monitor detallado de ESTA plataforma (mismo detalle que /monitor, filtrado por plataforma).
+     Usa los endpoints que ya existen: /api/monitor/estado, /resumen, /probar, /sitios/... -->
+<div class="section-title">Sitios vigilados de esta plataforma</div>
+{% raw %}
+<style>
+  .mp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:16px; }
+  .mp-mut { color:var(--text-muted,#9aa3b2); font-size:13px; }
+  .mp-badge { display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:99px; white-space:nowrap; }
+  .mp-ok { background:rgba(74,222,128,.18); color:#4ade80; }
+  .mp-mal { background:rgba(248,113,113,.18); color:#f87171; }
+  .mp-amb { background:rgba(245,185,76,.18); color:#f5b94c; }
+  .mp-gris { background:rgba(128,128,128,.22); color:var(--text-muted,#9aa3b2); }
+  .mp-rojo-t { color:#f87171; } .mp-ambar-t { color:#f5b94c; } .mp-verde-t { color:#4ade80; }
+  .mp-tabla table { min-width:860px; }
+  .mp-tabla td.num, .mp-tabla th.num { text-align:right; white-space:nowrap; }
+  .mp-url { word-break:break-all; font-size:12px; }
+  .mp-acc { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+  .mp-acc .btn { padding:4px 10px; font-size:12px; }
+  .mp-del { color:#f87171; }
+  .mp-vacio { padding:16px; color:var(--text-muted,#9aa3b2); }
+  .mp-form .fila { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:12px; }
+  .mp-form label { display:block; font-size:13px; }
+  .mp-form .field { width:100%; margin-top:4px; }
+  .mp-botones { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .mp-msg { margin-top:10px; font-size:13px; min-height:18px; }
+  .mp-msg.ok { color:#4ade80; } .mp-msg.mal { color:#f87171; }
+  svg.mp-spark { display:block; margin-left:auto; }
+</style>
+{% endraw %}
+<div id="mp-{{ p.id }}" data-pid="{{ p.id }}" data-nombre="{{ p.nombre }}" data-url="{{ p.url_produccion or '' }}">
+  <div class="mp-grid mp-tarjetas"></div>
+  <div class="mp-mut mp-estado" style="margin:-4px 2px 12px;">Cargando…</div>
+
+  <div class="luxury-card mp-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap mp-tabla-sitios"></div></div>
+
+  <details class="luxury-card mp-alta" style="margin-top:16px;">
+    <summary class="mp-alta-titulo" style="cursor:pointer; font-weight:600;">+ Vigilar una dirección de esta plataforma</summary>
+    <div class="mp-form" style="margin-top:12px;">
+      <p class="mp-mut" style="margin:0 0 12px;">El servidor visitará la dirección con el intervalo que elijas. Se declara «caído» tras 2 fallos seguidos y te llega una alerta al celular; cuando vuelve, otra. Para vigilar un servidor sin tocar su base de datos usa su dirección <code>/healthz</code>.</p>
+      <div class="fila">
+        <label>Nombre<input class="field mp-nombre" maxlength="80" placeholder="ej. {{ p.nombre }} (API)"></label>
+        <label>Dirección<input class="field mp-urlf" maxlength="300" placeholder="https://mi-app.onrender.com/healthz" inputmode="url"></label>
+      </div>
+      <div class="fila">
+        <label>Revisar cada
+          <select class="field mp-intervalo">{% for m in [1, 2, 5, 10, 15, 30, 60] %}<option value="{{ m }}" {% if m == 5 %}selected{% endif %}>{{ m }} min</option>{% endfor %}</select>
+        </label>
+        <label>Método<select class="field mp-metodo"><option>GET</option><option>HEAD</option></select></label>
+        <label>Esperar respuesta en máximo (s)<input class="field mp-timeout" type="number" min="1" value="10"></label>
+      </div>
+      <div class="fila">
+        <label>Se considera «en línea» si el código está entre
+          <span style="display:flex;gap:8px;margin-top:4px"><input class="field mp-cmin" type="number" min="100" max="599" value="200" style="margin:0"><input class="field mp-cmax" type="number" min="100" max="599" value="399" style="margin:0"></span>
+        </label>
+        <label>Texto que debe aparecer en la página (opcional)<input class="field mp-texto" maxlength="100" placeholder="ej. {{ p.nombre }}"></label>
+      </div>
+      <div class="mp-botones">
+        <button class="btn mp-probar" type="button">Probar ahora</button>
+        <button class="btn btn-primary mp-guardar" type="button">Guardar</button>
+        {% if p.url_produccion %}<button class="btn mp-usar-prod" type="button">Usar la URL de producción</button>{% endif %}
+        <button class="btn mp-cancelar" type="button" style="display:none">Cancelar edición</button>
+      </div>
+      <div class="mp-msg"></div>
+    </div>
+  </details>
+
+  <div class="section-title">Últimas caídas de esta plataforma</div>
+  <div class="luxury-card mp-tabla" style="padding:0; overflow:hidden;"><div class="table-wrap mp-caidas"></div></div>
+  <p class="mp-mut" style="margin-top:10px;">Editar o pausar los sitios de todas las plataformas a la vez: <a href="/monitor" style="text-decoration:underline;">Monitor general</a>.</p>
+</div>
+{% raw %}
+<script>
+(function () {
+  const raiz = document.currentScript.previousElementSibling;
+  if (!raiz || !raiz.dataset.pid) return;
+  const pid = Number(raiz.dataset.pid), nombrePlat = raiz.dataset.nombre || "", urlProd = raiz.dataset.url || "";
+  const $ = s => raiz.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let sitios = [], resumen = {}, caidasAll = [], editId = null;
+
+  async function api(url, cuerpo) {
+    const r = await fetch(url, cuerpo === undefined ? { credentials: "same-origin" }
+      : { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo || {}) });
+    if (r.status === 403) return { ok: false, error: "Solo administradores." };
+    try { return await r.json(); } catch (e) { return { ok: false, error: "Respuesta no válida (¿sesión vencida?)." }; }
+  }
+  const decir = (t, ok) => { const m = $(".mp-msg"); m.textContent = t; m.className = "mp-msg " + (ok ? "ok" : "mal"); };
+  const hace = iso => {
+    if (!iso) return "—";
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    return s < 60 ? "hace " + Math.round(s) + " s" : s < 3600 ? "hace " + Math.round(s / 60) + " min" : s < 172800 ? "hace " + Math.round(s / 3600) + " h" : "hace " + Math.round(s / 86400) + " d";
+  };
+  const dur = s => {
+    s = Math.round(s || 0);
+    if (s < 60) return s + " s";
+    if (s < 3600) return Math.round(s / 60) + " min";
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+    return h < 48 ? h + " h " + m + " min" : Math.floor(h / 24) + " d " + (h % 24) + " h";
+  };
+  const pct = v => v == null ? "—" : v.toFixed(v >= 99.995 ? 0 : 2) + "%";
+  const clsPct = v => v == null ? "" : v >= 99.5 ? "mp-verde-t" : v >= 97 ? "mp-ambar-t" : "mp-rojo-t";
+
+  const etiqueta = s => !s.activo ? '<span class="mp-badge mp-gris">En pausa</span>'
+    : s.estado === "abajo" ? '<span class="mp-badge mp-mal">Caído</span>'
+    : s.estado === "nuevo" ? '<span class="mp-badge mp-gris">' + (s.ultimo ? "Verificando…" : "Pendiente") + "</span>"
+    : s.fallos > 0 ? '<span class="mp-badge mp-amb">Reintentando</span>'
+    : '<span class="mp-badge mp-ok">En línea</span>';
+
+  function spark(serie) {
+    if (!serie || !serie.length) return '<span class="mp-mut">—</span>';
+    const W = 120, H = 26, n = serie.length, bw = W / Math.max(n, 30);
+    const maxMs = Math.max(200, ...serie.filter(x => x[0]).map(x => x[1] || 0));
+    const barras = serie.map((x, i) => {
+      const alto = x[0] ? Math.max(3, Math.round((x[1] || 0) / maxMs * (H - 2))) : H;
+      return '<rect x="' + (i * bw).toFixed(1) + '" y="' + (H - alto) + '" width="' + Math.max(bw - 0.6, 1).toFixed(1) + '" height="' + alto + '" fill="' + (x[0] ? "#4ade80" : "#f87171") + '" rx="0.5"/>';
+    }).join("");
+    return '<svg class="mp-spark" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Últimas respuestas">' + barras + "</svg>";
+  }
+
+  const mios = () => sitios.filter(s => s.proyecto_id === pid);
+
+  function tarjetas() {
+    const m = mios(), act = m.filter(s => s.activo);
+    const caidos = act.filter(s => s.estado === "abajo").length;
+    const lentos = act.filter(s => s.ms != null).map(s => s.ms);
+    const prom = lentos.length ? Math.round(lentos.reduce((a, b) => a + b, 0) / lentos.length) : null;
+    const ssl = m.filter(s => s.ssl_dias != null).sort((a, b) => a.ssl_dias - b.ssl_dias)[0];
+    const u30s = m.map(s => (resumen[String(s.id)] || {}).u30).filter(v => v != null);
+    const u30 = u30s.length ? u30s.reduce((a, b) => a + b, 0) / u30s.length : null;
+    const card = (t, v, cls, sub) => '<div class="luxury-card"><h3 class="stat-label">' + t + '</h3><div class="stat-value ' + (cls || "") + '">' + v + '</div><div class="mp-mut">' + sub + "</div></div>";
+    $(".mp-tarjetas").innerHTML = [
+      card("Estado general", !m.length ? "—" : caidos ? caidos + " caído(s)" : "Todo en línea", caidos ? "mp-rojo-t" : "mp-verde-t", act.length + " activo(s) de " + m.length),
+      card("Respuesta promedio", prom != null ? prom + " ms" : "—", "", "última visita de cada sitio"),
+      card("Disponibilidad 30 días", pct(u30), clsPct(u30), "promedio de los sitios de esta plataforma"),
+      card("Certificado más próximo", ssl ? ssl.ssl_dias + " días" : "—", ssl && ssl.ssl_dias <= 14 ? "mp-ambar-t" : "", ssl ? esc(ssl.nombre) : "solo sitios https")
+    ].join("");
+  }
+
+  function tabla() {
+    const m = mios(), cont = $(".mp-tabla-sitios");
+    if (!m.length) {
+      cont.innerHTML = '<div class="mp-vacio">Esta plataforma aún no tiene sitios vigilados por el bot propio.' +
+        (urlProd ? ' Puedes empezar con su URL de producción (<code>' + esc(urlProd) + "</code>) desde «+ Vigilar una dirección»." : " Agrega una dirección abajo.") + "</div>";
+      return;
+    }
+    const filas = m.map(s => {
+      const r = resumen[String(s.id)] || {}, u7 = r.u7 ?? s.hoy, u30 = r.u30;
+      const det = s.estado === "abajo" || s.fallos > 0 ? '<div class="mp-rojo-t" style="font-size:12px">' + esc(s.error || "") + "</div>" : "";
+      return "<tr>" +
+        '<td><strong>' + esc(s.nombre) + '</strong><div class="mp-url mp-mut">' + esc(s.metodo) + " " + esc(s.url) + "</div>" + det + "</td>" +
+        "<td>" + etiqueta(s) + '<div class="mp-mut">' + (s.estado === "abajo" && s.desde ? "desde " + hace(s.desde) : "revisado " + hace(s.ultimo)) + "</div></td>" +
+        '<td class="num">' + (s.codigo ?? "—") + '<div class="mp-mut">' + (s.ms != null ? s.ms + " ms" : "") + "</div></td>" +
+        '<td class="num"><span class="' + clsPct(s.hoy) + '">' + pct(s.hoy) + '</span><div class="mp-mut">hoy</div></td>' +
+        '<td class="num"><span class="' + clsPct(u7) + '">' + pct(u7) + '</span> · <span class="' + clsPct(u30) + '">' + pct(u30) + '</span><div class="mp-mut">7 d · 30 d</div></td>' +
+        '<td class="num">' + (s.ssl_dias != null ? '<span class="' + (s.ssl_dias <= 14 ? "mp-ambar-t" : "") + '">' + s.ssl_dias + " d</span>" : "—") + '<div class="mp-mut">SSL</div></td>' +
+        '<td class="num">' + spark(s.serie) + '<div class="mp-mut">cada ' + s.intervalo_min + " min</div></td>" +
+        '<td><div class="mp-acc">' +
+        '<button class="btn" data-a="revisar" data-id="' + s.id + '">Revisar</button>' +
+        '<button class="btn" data-a="editar" data-id="' + s.id + '">Editar</button>' +
+        '<button class="btn" data-a="pausar" data-id="' + s.id + '">' + (s.activo ? "Pausar" : "Reanudar") + "</button>" +
+        '<button class="btn mp-del" data-a="eliminar" data-id="' + s.id + '">Eliminar</button></div></td></tr>';
+    });
+    const th = ["Sitio", "Estado", "Código", "Hoy", "Disponibilidad", "SSL", "Respuestas recientes", ""];
+    cont.innerHTML = '<table class="table-luxury"><thead><tr>' + th.map((t, i) => '<th class="' + (i >= 2 && i <= 6 ? "num" : "") + '">' + t + "</th>").join("") + "</tr></thead><tbody>" + filas.join("") + "</tbody></table>";
+  }
+
+  function caidas() {
+    const nombres = new Set(mios().map(s => s.nombre));
+    const lista = caidasAll.filter(c => nombres.has(c.sitio));
+    const cont = $(".mp-caidas");
+    if (!lista.length) { cont.innerHTML = '<div class="mp-vacio">Sin caídas registradas para esta plataforma.</div>'; return; }
+    cont.innerHTML = '<table class="table-luxury"><thead><tr><th>Sitio</th><th>Inicio</th><th>Estado</th><th class="num">Duró</th><th>Motivo</th></tr></thead><tbody>' +
+      lista.map(c => "<tr><td><strong>" + esc(c.sitio) + "</strong></td><td>" + new Date(c.inicio).toLocaleString("es-MX") + "</td><td>" +
+        (c.fin ? "Recuperado" : '<span class="mp-rojo-t">Sigue caído</span>') + '</td><td class="num">' + dur(c.duracion_s) + '</td><td class="mp-mut">' + esc(c.motivo || "") + "</td></tr>").join("") + "</tbody></table>";
+  }
+
+  async function cargarEstado() {
+    try {
+      const d = await api("/api/monitor/estado");
+      if (!d.ok) throw new Error(d.error || "Error");
+      sitios = d.sitios;
+      $(".mp-estado").textContent = d.listo ? "Actualizado " + new Date().toLocaleTimeString("es-MX") + " · se refresca solo cada 30 s" : "El monitor aún no arranca (reintenta en un minuto).";
+      tarjetas(); tabla(); caidas();
+    } catch (e) { $(".mp-estado").textContent = "No se pudo cargar el monitor (" + e.message + ")."; }
+  }
+  async function cargarResumen() {
+    try {
+      const d = await api("/api/monitor/resumen");
+      if (!d.ok) { $(".mp-caidas").innerHTML = '<div class="mp-vacio">' + esc(d.error || "No se pudo leer el historial.") + "</div>"; return; }
+      resumen = d.sitios; caidasAll = d.caidas || []; tarjetas(); tabla(); caidas();
+    } catch (e) { $(".mp-caidas").innerHTML = '<div class="mp-vacio">No se pudo leer el historial.</div>'; }
+  }
+
+  // ---- formulario (la plataforma queda fija) ----
+  const leerForm = () => ({ nombre: $(".mp-nombre").value, url: $(".mp-urlf").value.trim(), intervalo_min: $(".mp-intervalo").value, metodo: $(".mp-metodo").value,
+    timeout_s: $(".mp-timeout").value, cod_min: $(".mp-cmin").value, cod_max: $(".mp-cmax").value, texto: $(".mp-texto").value, plataforma: pid });
+  function llenarForm(s) {
+    $(".mp-nombre").value = s ? s.nombre : ""; $(".mp-urlf").value = s ? s.url : ""; $(".mp-intervalo").value = s ? s.intervalo_min : 5;
+    $(".mp-metodo").value = s ? s.metodo : "GET"; $(".mp-timeout").value = s ? s.timeout_s : 10; $(".mp-cmin").value = s ? s.cod_min : 200;
+    $(".mp-cmax").value = s ? s.cod_max : 399; $(".mp-texto").value = s ? s.texto : "";
+    editId = s ? s.id : null;
+    $(".mp-alta-titulo").textContent = s ? "Editando: " + s.nombre : "+ Vigilar una dirección de esta plataforma";
+    $(".mp-cancelar").style.display = s ? "" : "none";
+    $(".mp-guardar").textContent = s ? "Guardar cambios" : "Guardar";
+    $(".mp-msg").textContent = "";
+  }
+  $(".mp-cancelar").addEventListener("click", () => { llenarForm(null); $(".mp-alta").open = false; });
+  const bp = $(".mp-usar-prod");
+  if (bp) bp.addEventListener("click", () => { $(".mp-urlf").value = urlProd; if (!$(".mp-nombre").value) $(".mp-nombre").value = nombrePlat; });
+
+  $(".mp-probar").addEventListener("click", async e => {
+    const b = e.currentTarget; b.disabled = true; decir("Visitando la dirección…", true);
+    try {
+      const d = await api("/api/monitor/probar", leerForm());
+      if (!d.ok) decir(d.error || "No se pudo probar.", false);
+      else if (d.resultado.ok) decir("Responde bien: código " + d.resultado.codigo + " en " + d.resultado.ms + " ms" + (d.resultado.ssl_dias != null ? " · certificado vence en " + d.resultado.ssl_dias + " días" : ""), true);
+      else decir("Falla: " + d.resultado.error, false);
+    } catch (err) { decir("Error de conexión. Intenta de nuevo.", false); }
+    b.disabled = false;
+  });
+  $(".mp-guardar").addEventListener("click", async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      const d = await api(editId ? "/api/monitor/sitios/" + editId + "/editar" : "/api/monitor/sitios", leerForm());
+      if (!d.ok) { decir(d.error || "No se pudo guardar.", false); b.disabled = false; return; }
+      llenarForm(null); decir("Guardado. La primera visita se hace en unos segundos.", true);
+      await cargarEstado(); cargarResumen(); setTimeout(cargarEstado, 8000);
+    } catch (err) { decir("Error de conexión. Intenta de nuevo.", false); }
+    b.disabled = false;
+  });
+
+  raiz.addEventListener("click", async e => {
+    const b = e.target.closest("[data-a]"); if (!b) return;
+    const id = Number(b.dataset.id), s = sitios.find(x => x.id === id), a = b.dataset.a;
+    if (!s) return;
+    if (a === "editar") { llenarForm(s); $(".mp-alta").open = true; $(".mp-alta").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (a === "eliminar" && !confirm("¿Eliminar «" + s.nombre + "» y todo su historial?\n\nNo se puede deshacer.")) return;
+    b.disabled = true;
+    try {
+      const d = a === "revisar" ? await api("/api/monitor/sitios/" + id + "/revisar", {})
+        : a === "pausar" ? await api("/api/monitor/sitios/" + id + "/pausar", { activo: !s.activo })
+        : await api("/api/monitor/sitios/" + id + "/eliminar", { confirmar: true });
+      if (!d.ok) { alert(d.error || "No se pudo completar."); b.disabled = false; return; }
+      await cargarEstado();
+      if (a === "revisar") setTimeout(cargarEstado, 6000);
+      if (a === "eliminar") cargarResumen();
+    } catch (err) { alert("Error de conexión."); b.disabled = false; }
+  });
+
+  cargarEstado(); cargarResumen();
+  setInterval(() => { if (!document.hidden) cargarEstado(); }, 30000);
+})();
+</script>
+{% endraw %}

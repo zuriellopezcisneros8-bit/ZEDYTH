@@ -1,0 +1,73 @@
+<!-- templates/_plat_servicios_detalle.html
+     FASE 2 · Detalle inferior de Servicios de ESTA plataforma: costos variables, renovaciones y bitácora.
+     Las partes marcadas "si existe" se llenan cuando el backend manda esas variables (ver pendientes). -->
+{% set filas = serv_panel.filas if (serv_panel is defined and serv_panel) else (serv_p.filas if serv_p else []) %}
+
+<div class="section-title" style="margin-top:24px;">Costos variables de este mes</div>
+<div class="grid-2" style="gap:20px;">
+    <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>IA de esta plataforma</th><th>MXN</th><th>USD</th></tr></thead><tbody>
+        {% for i in (ia_p if ia_p is defined and ia_p else []) %}
+        <tr><td>{{ i.nombre }}</td><td>{{ '${:,.2f}'.format(i.mxn) }}</td><td style="color:var(--text-muted);">{{ '${:,.2f}'.format(i.usd) }}</td></tr>
+        {% else %}
+        <tr><td colspan="3" style="text-align:center; padding:28px; color:var(--text-muted);">{% if serv_p and serv_p.ia %}Sin desglose por proveedor de IA.{% else %}Aún no hay costo de IA registrado este mes.{% endif %}</td></tr>
+        {% endfor %}
+        <tr style="font-weight:600;"><td>Total IA</td><td>{{ '${:,.2f}'.format(serv_p.ia if serv_p else 0) }}</td><td></td></tr>
+    </tbody></table></div></div>
+    <div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+        <thead><tr><th>Almacenamiento (estimado por uso)</th><th>MXN al mes</th></tr></thead><tbody>
+        {% for nombre, e in (alm_est_p.items() if alm_est_p is defined and alm_est_p else []) %}
+        <tr><td>{{ nombre }}</td><td>{% if e is none %}<span style="color:var(--text-muted);">Ya tiene precio en el catálogo, o sin lectura</span>{% elif e.cotizar %}<span class="badge badge-amber">A cotizar</span>{% elif e.paga %}{{ '${:,.0f}'.format(e.mxn) }}{% else %}<span class="badge badge-green">Gratis</span>{% endif %}</td></tr>
+        {% else %}
+        <tr><td colspan="2" style="text-align:center; padding:28px; color:var(--text-muted);">El estimado de esta plataforma se ve en la pestaña Almacenamiento.</td></tr>
+        {% endfor %}
+    </tbody></table></div></div>
+</div>
+<p style="color:var(--text-muted); font-size:13px; margin:8px 2px 0; line-height:1.6;">El estimado usa tus lecturas y tarifas de Almacenamiento; solo cuenta lo que pasaría de su plan gratis y solo para servicios sin precio en el catálogo. El costo de IA suma lo que registra cada llamada (convertido a MXN).</p>
+<div class="toolbar" style="margin:12px 0 0; gap:8px; flex-wrap:wrap;">
+    <button class="btn btn-sm" type="button" id="plat-btn-alm">Actualizar lecturas</button>
+    <span style="font-size:12px; color:var(--text-muted); align-self:center;">{% if alm_edad is defined and alm_edad %}Última lectura de Almacenamiento: {{ alm_edad }}.{% else %}Vuelve a leer Neon, R2 y Cloudinary para refrescar el estado y el estimado.{% endif %}</span>
+</div>
+
+<div class="section-title" style="margin-top:24px;">Renovaciones de esta plataforma</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Fecha</th><th>Cuándo</th><th>Qué</th><th>Origen</th><th>Monto</th></tr></thead><tbody>
+    {% if renov_p is defined and renov_p %}
+        {% for r in renov_p %}
+        <tr><td class="mono" style="font-size:12px;">{{ r.fecha.strftime('%d/%m/%Y') }}</td>
+            <td class="mono" style="font-size:12px; color:{{ '#f87171' if r.dias < 0 else ('#f5b94c' if r.dias <= 7 else 'var(--text-muted)') }};">{{ 'vencido hace ' ~ (-r.dias) ~ ' d' if r.dias < 0 else ('hoy' if r.dias == 0 else 'en ' ~ r.dias ~ ' d') }}</td>
+            <td><a href="{{ r.enlace }}" style="font-weight:500;">{{ r.nombre }}</a>{% if r.detalle %}<div style="font-size:12px; color:var(--text-muted);">{{ r.detalle }}</div>{% endif %}{% if r.dup %} <span class="badge badge-amber" title="Aparece en dos fuentes con fechas cercanas: puede ser la misma renovación.">¿Repetida?</span>{% endif %}</td>
+            <td><span class="badge">{{ r.tipo }}</span></td>
+            <td>{% if r.monto %}{{ '${:,.0f}'.format(r.monto) }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}</td></tr>
+        {% endfor %}
+    {% else %}
+        {% for f in filas|rejectattr('dias', 'none')|sort(attribute='dias') %}{% if f.activo %}
+        <tr><td class="mono" style="font-size:12px;">{{ f.fecha or f.proxima_renovacion }}</td>
+            <td class="mono" style="font-size:12px; color:{{ '#f87171' if f.dias < 0 else ('#f5b94c' if f.dias <= 7 else 'var(--text-muted)') }};">{{ 'vencido hace ' ~ (-f.dias) ~ ' d' if f.dias < 0 else ('hoy' if f.dias == 0 else 'en ' ~ f.dias ~ ' d') }}</td>
+            <td style="font-weight:500;">{{ f.nombre }}<div style="font-size:12px; color:var(--text-muted);">{{ f.proveedor }}{% if f.plan %} · {{ f.plan }}{% endif %}</div></td>
+            <td><span class="badge">Catálogo</span></td>
+            <td>{% if f.monto is defined and f.monto %}{{ f.moneda }} {{ '{:,.2f}'.format(f.monto) }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}</td></tr>
+        {% endif %}{% else %}
+        <tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-muted);">No hay renovaciones con fecha registrada.</td></tr>
+        {% endfor %}
+    {% endif %}
+</tbody></table></div></div>
+<p style="color:var(--text-muted); font-size:13px; margin:8px 2px 0; line-height:1.6;">{% if renov_p is defined and renov_p %}Junta el catálogo, los costos de la plataforma y los vencimientos de dominio, SSL y hosting.{% else %}Por ahora solo se muestran las renovaciones del catálogo; los costos de Finanzas y los vencimientos de Ciberseguridad están en sus pestañas.{% endif %}</p>
+
+{% if bitacora_p is defined and bitacora_p %}
+<div class="section-title" style="margin-top:24px;">Últimos cambios de esta plataforma</div>
+<div class="luxury-card" style="padding:0; overflow:hidden;"><div class="table-wrap"><table class="table-luxury">
+    <thead><tr><th>Fecha (UTC)</th><th>Quién</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>
+    {% for b in bitacora_p %}<tr><td class="mono" style="font-size:12px;">{{ b.fecha.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ b.usuario }}</td><td>{{ b.accion }}</td><td style="font-size:13px;">{{ b.detalle }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
+<script>
+(function () {
+  var b = document.getElementById('plat-btn-alm'); if (!b) return;
+  b.addEventListener('click', async function () {
+    b.disabled = true; b.textContent = 'Actualizando…';
+    try { await fetch('/api/almacenamiento/resumen?forzar=1', { credentials: 'same-origin' }); } catch (e) {}
+    var u = new URL(location.href); u.searchParams.set('tab', 'servicios'); location.href = u.href;
+  });
+})();
+</script>

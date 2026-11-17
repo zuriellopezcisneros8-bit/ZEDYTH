@@ -105,6 +105,7 @@
 
 </div>
 <div class="mt-panel {{ 'on' if tab == 'servicios' }}" data-panel="servicios">
+{% include '_plat_servicios_resumen.html' %}
 <div class="section-title">Pagos de servicios de esta plataforma</div>
 <div class="luxury-card" style="padding:0; overflow:hidden; margin-bottom:24px;"><div class="table-wrap"><table class="table-luxury">
     <thead><tr><th>Servicio</th><th>Monto</th><th>Próximo pago</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -119,6 +120,7 @@
 </tbody></table></div></div>
 <div class="section-title">Servicios de esta plataforma</div>
 {% include '_plat_servicios.html' %}
+{% include '_plat_servicios_detalle.html' %}
 </div>
 <div class="mt-panel {{ 'on' if tab == 'infra' }}" data-panel="infra">
 <div class="section-title">Repositorio</div>
@@ -166,6 +168,7 @@
 {% include '_almacenamiento_proyecto.html' %}
 </div>
 <div class="mt-panel {{ 'on' if tab == 'monitor' }}" data-panel="monitor">
+{% include '_monitor_plataforma.html' %}
 {% include '_uptime_proyecto.html' %}
 </div>
 <div class="mt-panel {{ 'on' if tab == 'seguridad' }}" data-panel="seguridad">
