@@ -33,6 +33,50 @@
   .ap-ctl input { width:90px; }
   .ap-umbral { font-size:22px; font-weight:700; margin:6px 0 2px; }
   .ap-acciones { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+
+  /* ====== Diseño de las tarjetas: borde degradado verde→violeta, bien centradas en PC y móvil ====== */
+  .alm-proy { max-width:100%; min-width:0; box-sizing:border-box; }
+  .alm-proy *, .alm-proy *::before, .alm-proy *::after { box-sizing:border-box; }
+  .alm-proy .luxury-card { position:relative; isolation:isolate; min-width:0; max-width:100%; overflow:hidden;
+    padding:clamp(16px,3.2vw,26px); margin-left:0; margin-right:0; border:0; border-radius:20px;
+    background:radial-gradient(900px 260px at 0% 0%,rgba(74,222,128,.12),transparent 60%),radial-gradient(700px 260px at 100% 100%,rgba(167,139,250,.14),transparent 60%),#07090b;
+    box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  .alm-proy .luxury-card::before { content:""; position:absolute; inset:0; border-radius:inherit; padding:1px; pointer-events:none; z-index:1;
+    background:linear-gradient(135deg,rgba(74,222,128,.55),rgba(255,255,255,.08) 38%,rgba(255,255,255,.04) 62%,rgba(167,139,250,.5));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; }
+  .alm-proy .luxury-card > h3.stat-label { margin:0 0 12px; overflow-wrap:anywhere; }
+  .alm-proy .ap-tile { transition:transform .18s ease, box-shadow .18s ease; }
+  .alm-proy .ap-tile:hover { transform:translateY(-3px); box-shadow:0 16px 36px rgba(0,0,0,.45); }
+  .alm-proy .ap-tiles { grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); }
+  .alm-proy .ap-tile .ap-big { font-size:clamp(24px,7vw,32px); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+  .alm-proy .ap-datos { grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr)); }
+  .alm-proy .ap-datos > div { min-width:0; }
+  .alm-proy .ap-datos > div > strong { overflow-wrap:anywhere; }
+  .alm-proy .ap-cab { padding:0 2px; }
+  .alm-proy .ap-tabla { max-width:100%; -webkit-overflow-scrolling:touch; border-radius:12px; }
+  .alm-proy .ap-tabla table { min-width:420px; }
+  .alm-proy .ap-tabla tbody tr:hover td { background:rgba(255,255,255,.03); }
+  .alm-proy .ap-chip { white-space:nowrap; }
+  @media (prefers-reduced-motion:reduce) { .alm-proy .ap-tile { transition:none; } .alm-proy .ap-tile:hover { transform:none; } }
+
+  /* ====== Móvil: cada fila de tabla se vuelve una mini-tarjeta (sin scroll lateral) ====== */
+  @media (max-width:640px) {
+    .alm-proy .luxury-card { border-radius:16px; }
+    .alm-proy .ap-tabla { overflow-x:visible; }
+    .alm-proy .ap-tabla table.ap-resp { min-width:0; display:block; }
+    .alm-proy .ap-tabla table.ap-resp thead { display:none; }
+    .alm-proy .ap-tabla table.ap-resp tbody { display:grid; gap:10px; }
+    .alm-proy .ap-tabla table.ap-resp tr { display:block; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.09); }
+    .alm-proy .ap-tabla table.ap-resp td { display:block; border:0; padding:4px 0; text-align:left !important; min-width:0 !important; overflow-wrap:anywhere; }
+    .alm-proy .ap-tabla table.ap-resp td[data-label]::before { content:attr(data-label); display:block; margin-bottom:2px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted,#9aa3b2); }
+    .alm-proy .ap-tabla table.ap-resp td.ap-t1 { font-weight:600; padding-bottom:6px; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,.08); }
+    .alm-proy .ap-tabla table.ap-resp td.ap-t1::before { display:none; }
+    .alm-proy .ap-tabla table.ap-resp td[colspan] { background:transparent !important; padding:0; font-weight:600; }
+    .alm-proy .ap-tabla table.ap-resp tr:has(> td[colspan]) { background:transparent; border:0; padding:6px 2px 0; }
+    .alm-proy .ap-tabla table.ap-resp td:empty { display:none; }
+    .alm-proy .ap-ctl input { width:100%; }
+    .alm-proy .ap-acciones { gap:10px 16px; }
+  }
 </style>
 
 <div class="alm-proy" data-pid="{{ p.id }}"{% if p.tipo == 'Plataforma propia' %} data-plat="1"{% endif %}>
@@ -77,7 +121,7 @@
   const mut = t => '<span class="ap-mut">' + t + "</span>";
   const dato = (t, v) => "<div><span>" + esc(t) + "</span><strong>" + v + "</strong></div>";
   const tabla = (cabeceras, filas, vacio) => filas.length
-    ? '<div class="ap-tabla"><table><thead><tr>' + cabeceras.map(h => '<th' + (h.n ? ' class="n"' : "") + ">" + esc(h.t) + "</th>").join("") +
+    ? '<div class="ap-tabla"><table class="ap-resp"><thead><tr>' + cabeceras.map(h => '<th' + (h.n ? ' class="n"' : "") + ">" + esc(h.t) + "</th>").join("") +
       "</tr></thead><tbody>" + filas.join("") + "</tbody></table></div>"
     : '<div class="ap-mut" style="padding:6px 0;">' + vacio + "</div>";
   const tarjeta = (titulo, cuerpo) => '<div class="luxury-card ap-card"><h3 class="stat-label">' + titulo + "</h3>" + cuerpo + "</div>";
@@ -396,6 +440,24 @@
       .catch(e => fallo("No se pudo consultar el almacenamiento (" + e.message + ")."));
   };
   cargar(false);
+
+  /* etiqueta cada celda con el nombre de su columna: en móvil la fila se muestra como mini-tarjeta */
+  const etiquetar = () => {
+    raiz.querySelectorAll("table.ap-resp").forEach(t => {
+      if (t.dataset.etiquetada === String(t.rows.length)) return;
+      const cab = [...t.querySelectorAll("thead th")].map(th => th.textContent.trim());
+      t.querySelectorAll("tbody tr").forEach(tr => {
+        [...tr.children].forEach((td, i) => {
+          if (td.hasAttribute("colspan")) return;
+          if (i === 0) td.classList.add("ap-t1");
+          if (cab[i]) td.setAttribute("data-label", cab[i]);
+        });
+      });
+      t.dataset.etiquetada = String(t.rows.length);
+    });
+  };
+  let _et = 0;
+  new MutationObserver(() => { clearTimeout(_et); _et = setTimeout(etiquetar, 60); }).observe(raiz, { childList: true, subtree: true });
 
   $(".alm-proy-refrescar").addEventListener("click", e => { e.preventDefault(); cargar(true); });
   raiz.addEventListener("click", e => { if (e.target.closest(".ap-calc")) calcular(); });
