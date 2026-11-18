@@ -357,6 +357,7 @@ class Notificacion(db.Model):
     entregada = db.Column(db.Boolean, default=False)
     intentos = db.Column(db.Integer, default=0)
     clave = db.Column(db.String(120), index=True)    # evita avisar dos veces lo mismo
+    para = db.Column(db.String(80))                  # usuario destinatario; vacío = aviso general (lo ve y recibe todo el equipo)
     hora = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -583,6 +584,7 @@ def migrar_columnas():
         "usuario": [("totp_secret", "VARCHAR(200)"), ("totp_activo", "BOOLEAN DEFAULT 0"), ("totp_ultimo", "INTEGER"),
                     ("cargo", "VARCHAR(80)")],
         "auditoria": [("ip", "VARCHAR(64)")],
+        "notificacion": [("para", "VARCHAR(80)")],
         "pago": [("creado", "TIMESTAMP"), ("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER"), ("motivo", "VARCHAR(120)")],
         "ingreso_plataforma": [("anulado", "BOOLEAN DEFAULT 0"), ("anula_id", "INTEGER")],
     }
@@ -1160,6 +1162,9 @@ def login():
         if not (limitar(k_par, LOGIN_MAX_PAR, LOGIN_VENTANA, sumar=False) and limitar(k_ip, LOGIN_MAX_IP, LOGIN_VENTANA, sumar=False)):
             registrar("login_bloqueado", "Usuario", None, "Demasiados intentos fallidos", usuario=f"(bloqueado) {username}")
             db.session.commit()
+            crear_notificacion("Seguridad", f"Inicio de sesión bloqueado: {username or '(vacío)'}",
+                               f"Demasiados intentos fallidos desde la IP {ip}. Se bloquea 15 min.", "/auditoria",
+                               clave=f"login-bloq-{hashlib.sha1(ip.encode()).hexdigest()[:10]}-{datetime.utcnow():%Y%m%d%H}")
             return render_template('login.html', error="Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.", next=siguiente), 429
 
         user = Usuario.query.filter_by(username=username).first()
@@ -2832,17 +2837,21 @@ def zedith_chat():
         app.logger.warning("Zedith no respondió: %s", e)
         return {"error": "no disponible"}, 503
 
+    if len(mensajes) == 1 and not r["pedido"]:      # primer mensaje del visitante: una conversación nueva (máx. 1 aviso por IP y hora)
+        primero = mensajes[0].get("text") if isinstance(mensajes[0], dict) else ""
+        huella = hashlib.sha1(_ip_cliente().encode()).hexdigest()[:10]
+        crear_notificacion("Chat", "Nueva conversación en Zedith", str(primero or "")[:200], "/leads", urgente=False,
+                           clave=f"zedith-chat-{huella}-{datetime.utcnow():%Y%m%d%H}", externo=False)
+
     wa = None
     if r["pedido"]:
         lead, es_nuevo = guardar_pedido(r["pedido"])
         if es_nuevo:   # un solo aviso por pedido, aunque la conversación siga
-            _push_pedido(lead)
-            notificar.avisar(
-                f"Nuevo pedido en ZEDYTH: {lead.nombre}",
-                f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
-                f"Sistema: {lead.sistema or '-'}\nFunciones: {lead.funciones or '-'}\n"
-                f"Presupuesto: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n\n"
-                f"{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
+            _push_pedido(lead, f"Nuevo pedido en ZEDYTH: {lead.nombre}",
+                         f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
+                         f"Sistema: {lead.sistema or '-'}\nFunciones: {lead.funciones or '-'}\n"
+                         f"Presupuesto: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n\n"
+                         f"{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
         texto = (f"Hola, soy {lead.nombre}. Armé mi pedido con Zedith:\n{lead.resumen or lead.sistema or lead.negocio or ''}"
                  f"\nContacto: {lead.contacto}")
         wa = f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"
@@ -2904,15 +2913,10 @@ def configurador_enviar():
         "funciones": txt('funciones', 1000), "presupuesto": txt('estimado', 100),
         "plazo": txt('plazo', 100), "resumen": txt('resumen', 1500)})
     if es_nuevo:
-        _push_pedido(lead)
-        try:
-            notificar.avisar(
-                f"Nueva configuración en ZEDYTH: {lead.nombre}",
-                f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
-                f"Modelo: {lead.sistema or '-'}\nEstimado: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n"
-                f"Funciones: {lead.funciones or '-'}\n\n{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
-        except Exception as e:   # un fallo de aviso no debe perder el prospecto
-            app.logger.warning("No se pudo avisar de la configuración: %s", e)
+        _push_pedido(lead, f"Nueva configuración en ZEDYTH: {lead.nombre}",       # nunca lanza error: el prospecto ya está guardado
+                     f"Cliente: {lead.nombre}\nContacto: {lead.contacto}\nNegocio: {lead.negocio or '-'}\n"
+                     f"Modelo: {lead.sistema or '-'}\nEstimado: {lead.presupuesto or '-'} · Plazo: {lead.plazo or '-'}\n"
+                     f"Funciones: {lead.funciones or '-'}\n\n{lead.resumen or ''}\n\nVer en el panel: {request.host_url}leads")
     texto = (f"Hola, soy {lead.nombre}. Armé mi sistema en el configurador de ZEDYTH:\n"
              f"{lead.resumen or lead.negocio or ''}\nContacto: {lead.contacto}")
     return {"ok": True, "wa": f"https://wa.me/{CONTACTO['whatsapp']}?text={quote(texto)}"}
@@ -3245,14 +3249,19 @@ def push_configurado():
     return vapid_diagnostico() is None
 
 
-def _enviar_push(n):
-    """Envía la notificación a todos los dispositivos activos. Devuelve cuántos la aceptaron."""
+def _enviar_push(n, excepto=None):
+    """Envía la notificación a los dispositivos activos (si trae `para`, solo a los de esa persona; `excepto` omite
+    los de quien originó el aviso). Devuelve cuántos la aceptaron."""
     from pywebpush import webpush, WebPushException
     _, priv, contacto = _vapid()
     carga = json.dumps({"titulo": n.titulo, "cuerpo": n.cuerpo or "", "url": n.url or "/panel",
                         "urgente": bool(n.urgente), "tag": f"zedyth-{n.id}"}, ensure_ascii=False)
     aceptados = 0
     for d in PushDispositivo.query.filter_by(activo=True).all():
+        if n.para and d.usuario != n.para:
+            continue
+        if excepto and d.usuario == excepto:
+            continue
         info = {"endpoint": d.endpoint, "keys": {"p256dh": d.p256dh, "auth": d.auth}}
         for intento in range(3):
             try:
@@ -3278,20 +3287,21 @@ def _enviar_push(n):
     return aceptados
 
 
-def _entregar(nid, externo=True):
-    """Corre en segundo plano: push y, si nadie lo recibió y es urgente, Telegram/correo como respaldo."""
+def _entregar(nid, externo=True, excepto=None, texto_externo=None, siempre_externo=False):
+    """Corre en segundo plano: push y, si nadie lo recibió y es urgente, Telegram/correo como respaldo.
+    siempre_externo=True manda además Telegram/correo aunque el push haya llegado (pedidos nuevos)."""
     try:
         with app.app_context():
             n = db.session.get(Notificacion, nid)
             if n is None:
                 return
-            ok = _enviar_push(n) if push_configurado() else 0
+            ok = _enviar_push(n, excepto) if push_configurado() else 0
             n.entregada, n.intentos = ok > 0, (n.intentos or 0) + 1
             db.session.commit()
             if not ok:
                 _pendientes["hay"] = True        # que el vigilante lo reintente
-            if not ok and externo and n.urgente and n.intentos == 1:
-                notificar.avisar(n.titulo, f"{n.cuerpo or ''}\n\nVer en el panel: {SITE_URL_PUSH()}{n.url or '/panel'}")
+            if externo and n.urgente and n.intentos == 1 and (siempre_externo or not ok):
+                notificar.avisar(n.titulo, texto_externo or f"{n.cuerpo or ''}\n\nVer en el panel: {SITE_URL_PUSH()}{n.url or '/panel'}")
     except Exception as e:
         app.logger.error("No se pudo entregar la notificación %s: %s", nid, e)
 
@@ -3300,8 +3310,11 @@ def SITE_URL_PUSH():
     return (ajustes.valor("SITE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
 
 
-def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clave=None, externo=True):
-    """Guarda el aviso y lo manda al celular. Nunca lanza error: un fallo aquí no debe romper la acción original."""
+def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clave=None, externo=True,
+                       para=None, excepto=None, texto_externo=None, siempre_externo=False):
+    """Guarda el aviso y lo manda al celular. Nunca lanza error: un fallo aquí no debe romper la acción original.
+    para: usuario destinatario (aviso privado: solo él lo ve y recibe el push). excepto: usuario que NO debe recibirlo
+    (quien originó el aviso). texto_externo / siempre_externo: texto completo y envío fijo por Telegram/correo."""
     try:
         if clave and Notificacion.query.filter_by(clave=clave).first():
             return None
@@ -3313,11 +3326,11 @@ def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clav
                 cuerpo = f"{cuerpo or ''} · Hay un mantenimiento de {v['proveedor']} en curso (termina {v['fin_local']:%H:%M}).".strip(" ·")
         silenciada = operaciones.silenciado(tipo)
         n = Notificacion(tipo=tipo, titulo=titulo[:200], cuerpo=(cuerpo or "")[:500], url=url, urgente=urgente, clave=clave,
-                         leida=silenciada, intentos=10 if silenciada else 0)    # intentos=10: el vigilante no la reintenta
+                         para=(para or None), leida=silenciada, intentos=10 if silenciada else 0)    # intentos=10: el vigilante no la reintenta
         db.session.add(n)
         db.session.commit()
         if not silenciada:
-            threading.Thread(target=_entregar, args=(n.id, externo), daemon=True).start()
+            threading.Thread(target=_entregar, args=(n.id, externo, excepto, texto_externo, siempre_externo), daemon=True).start()
         return n
     except Exception as e:
         db.session.rollback()
@@ -3325,10 +3338,11 @@ def crear_notificacion(tipo, titulo, cuerpo="", url="/panel", urgente=True, clav
         return None
 
 
-def _push_pedido(lead):
-    crear_notificacion("Pedido", f"Nuevo pedido: {lead.nombre}",
+def _push_pedido(lead, titulo=None, texto=None):
+    """Aviso de pedido nuevo: queda en el centro de avisos, llega por push y SIEMPRE por Telegram/correo con el detalle."""
+    crear_notificacion("Pedido", titulo or f"Nuevo pedido: {lead.nombre}",
                        f"{lead.sistema or lead.negocio or 'Pedido nuevo'} · {lead.contacto}", "/leads",
-                       clave=f"lead-{lead.id}", externo=False)   # notificar.avisar ya lo manda por Telegram/correo
+                       clave=f"lead-{lead.id}", texto_externo=texto, siempre_externo=True)
 
 
 _pendientes = {"hay": True}      # True = puede haber avisos sin entregar. Evita consultar la base cada minuto (Neon se duerme)
@@ -3405,6 +3419,8 @@ def _vigilante():
                     llaves.revisar()                         # llaves por vencer, vencidas o con rotación programada
                     conectores.revisar()                     # lee las APIs de tus plataformas (solo lectura), guarda cifras y dispara alertas
                     servicios.revisar()                      # renovaciones de servicios y verificación de sus URLs de estado
+                    render_panel.revisar()                   # deploys fallidos, servicios suspendidos o sin memoria en Render
+                    operaciones.revisar()                    # ventanas de mantenimiento: aviso 24 h antes y al comenzar
                     respaldos.revisar()                      # respaldo diario a R2, verificación y alertas
                     actualizar_cobranza()                    # Pendiente / Atrasado / Suspendido según la fecha de pago
         except Exception as e:
@@ -3477,6 +3493,22 @@ def chat_mensajes():
                           "texto": _chat_descifrar(m), "creado": m.creado.strftime("%Y-%m-%dT%H:%M:%S")} for m in filas]}
 
 
+def _avisar_chat(sala):
+    """Push por mensaje nuevo, sin el texto (va cifrado). Directo: solo al destinatario. General: a todos menos quien escribió.
+    Como máximo un aviso cada 5 min por sala y remitente, para no saturar al equipo en una conversación activa."""
+    yo = current_user.nombre or current_user.username
+    cubeta = int(time.time() // 300)
+    if sala == "general":
+        crear_notificacion("Chat", f"{yo} escribió en el chat general", "", "/chat", urgente=False, externo=False,
+                           clave=f"chat-general-{current_user.id}-{cubeta}", excepto=current_user.username)
+        return
+    _, a, b = sala.split(":")
+    otro = db.session.get(Usuario, int(b) if int(a) == current_user.id else int(a))
+    if otro is not None:
+        crear_notificacion("Chat", f"Mensaje nuevo de {yo}", "", "/chat", urgente=False, externo=False,
+                           clave=f"chat-{sala}-{current_user.id}-{cubeta}", para=otro.username)
+
+
 @app.route('/api/chat/enviar', methods=['POST'])
 def chat_enviar():
     d = request.get_json(silent=True) or {}
@@ -3494,6 +3526,7 @@ def chat_enviar():
     if CHAT_RETENCION_DIAS > 0 and limitar("chat:purga", 1, 86400):      # una limpieza al día
         ChatMensaje.query.filter(ChatMensaje.creado < datetime.utcnow() - timedelta(days=CHAT_RETENCION_DIAS)).delete()
     db.session.commit()
+    _avisar_chat(sala)
     return {"ok": True}
 
 
@@ -3570,12 +3603,17 @@ def auditoria_exportar():
                     headers={"Content-Disposition": f"attachment; filename={nombre}", "Cache-Control": "no-store"})
 
 
+def _avisos_visibles():
+    """Avisos generales y los dirigidos a la persona que tiene la sesión (los mensajes directos del chat son privados)."""
+    return Notificacion.query.filter(db.or_(Notificacion.para.is_(None), Notificacion.para == current_user.username))
+
+
 @app.route('/notificaciones')
 def notificaciones():
     vista = request.args.get('v', 'todas')
     if vista not in ('todas', 'criticas', 'avisos', 'sinleer'):
         vista = 'todas'
-    q = Notificacion.query
+    q = _avisos_visibles()
     if vista == 'criticas':
         q = q.filter(Notificacion.urgente.is_(True))
     elif vista == 'avisos':
@@ -3583,11 +3621,11 @@ def notificaciones():
     elif vista == 'sinleer':
         q = q.filter(Notificacion.leida.is_(False))
     filas = q.order_by(Notificacion.hora.desc()).limit(200).all()
-    cuentas = {"todas": Notificacion.query.count(),
-               "criticas": Notificacion.query.filter(Notificacion.urgente.is_(True)).count(),
-               "avisos": Notificacion.query.filter(Notificacion.urgente.is_(False)).count(),
-               "sinleer": Notificacion.query.filter(Notificacion.leida.is_(False)).count()}
-    tipos = sorted({t for (t,) in db.session.query(Notificacion.tipo).distinct().all() if t} | {"Monitor", "Render", "Cobro", "Vencimiento"})
+    cuentas = {"todas": _avisos_visibles().count(),
+               "criticas": _avisos_visibles().filter(Notificacion.urgente.is_(True)).count(),
+               "avisos": _avisos_visibles().filter(Notificacion.urgente.is_(False)).count(),
+               "sinleer": _avisos_visibles().filter(Notificacion.leida.is_(False)).count()}
+    tipos = sorted({t for (t,) in db.session.query(Notificacion.tipo).distinct().all() if t} | {"Monitor", "Render", "Cobro", "Vencimiento", "Chat", "Seguridad"})
     try:
         silencios = operaciones._api["silencios_activos"]()
     except Exception:
@@ -3600,7 +3638,7 @@ def notificaciones():
 
 @app.route('/notificaciones/leer', methods=['POST'])
 def notificaciones_leer():
-    Notificacion.query.filter_by(leida=False).update({"leida": True})
+    _avisos_visibles().filter(Notificacion.leida.is_(False)).update({"leida": True}, synchronize_session=False)
     db.session.commit()
     return redirect(url_for('notificaciones'))
 
